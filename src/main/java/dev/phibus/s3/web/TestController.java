@@ -37,7 +37,9 @@ public class TestController {
     @GetMapping("/api/tests/{id}") @ResponseBody public TestRun.Snapshot get(@PathVariable UUID id) { return service.get(id).snapshot(); }
     @PostMapping("/api/tests/{id}/cancel") @ResponseBody public TestRun.Snapshot cancel(@PathVariable UUID id) { service.cancel(id); return service.get(id).snapshot(); }
     @PostMapping(path = "/api/buckets", consumes = MediaType.APPLICATION_JSON_VALUE) @ResponseBody
-    public List<String> buckets(@Valid @RequestBody TestRequest request) { return service.listBuckets(request); }
+    public List<String> buckets(@Valid @RequestBody BucketListRequest request) {
+        return service.listBuckets(request.toTestRequest());
+    }
 
     @GetMapping(path = "/api/tests/{id}/report.json", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TestRun.Snapshot> jsonReport(@PathVariable UUID id) {
