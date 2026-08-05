@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 60" role="img" aria-labelledby="title desc">
+  <title id="title">ПАО Транснефть</title>
+  <desc id="desc">Фирменный знак и наименование Транснефть</desc>
+  <g transform="translate(2 2)">
+    <path fill="#005b9f" d="M28 3c12 0 22 6 27 15-5-5-11-8-18-8-14 0-25 10-25 23 0 8 4 15 10 20C9 49 0 39 0 27 0 14 12 3 28 3z"/>
+    <path fill="#005b9f" d="M18 40c13 7 27 2 37-8 7-7 12-17 18-25-1 9-4 19-10 27-10 14-26 25-43 20-8-2-14-7-18-13 5 2 10 2 16-1z"/>
+    <path fill="#e21f2f" d="M24 43c12 3 22-1 31-9 3-3 6-6 9-10-2 8-7 16-14 22-8 6-18 9-26 5-3-1-5-3-7-5 2 0 5-1 7-3z"/>
+  </g>
+  <text x="82" y="40" fill="#005b9f" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="800" font-style="italic" letter-spacing="0.5">ТРАНСНЕФТЬ</text>
+</svg>
