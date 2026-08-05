@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public record TestRequest(
         @NotBlank String endpoint,
@@ -18,17 +20,21 @@ public record TestRequest(
         @Min(1) @Max(32) int parallelism,
         @Min(1) @Max(1000) int objectCount,
         boolean deleteAfterTest,
-        @Pattern(regexp = "UPLOAD|DOWNLOAD|HEAD|LIST|DELETE|LIFECYCLE", message = "Unsupported operation") String operation,
+        @Pattern(regexp = "UPLOAD|DOWNLOAD|HEAD|LIST|DELETE|LIFECYCLE|MIXED", message = "Unsupported operation") String operation,
         @Pattern(regexp = "OBJECT_COUNT|TIME_DURATION", message = "Unsupported execution mode") String executionMode,
         @Min(1) @Max(604800) long durationSeconds,
-        @Min(0) @Max(86400) long warmupSeconds) {
+        @Min(0) @Max(86400) long warmupSeconds,
+        String workloadProfile,
+        Map<String, Integer> workloadWeights,
+        @Min(0) @Max(100000) int targetOperationsPerSecond,
+        Map<String, Integer> operationThreads) {
 
     public TestRequest(String endpoint, String bucket, String region, String accessKey, String secretKey,
                        boolean pathStyleAccess, String objectKey, long objectSizeMiB, long partSizeMiB,
                        int parallelism, int objectCount, boolean deleteAfterTest, String operation) {
         this(endpoint, bucket, region, accessKey, secretKey, pathStyleAccess, objectKey, objectSizeMiB,
                 partSizeMiB, parallelism, objectCount, deleteAfterTest, operation,
-                "OBJECT_COUNT", 60, 0);
+                "OBJECT_COUNT", 60, 0, "CUSTOM", Map.of(), 0, Map.of());
     }
 
     public long objectSizeBytes() { return Math.multiplyExact(objectSizeMiB, 1024L * 1024L); }
@@ -38,11 +44,20 @@ public record TestRequest(
         return executionMode == null || executionMode.isBlank() ? "OBJECT_COUNT" : executionMode;
     }
     public boolean durationMode() { return "TIME_DURATION".equals(normalizedExecutionMode()); }
+    public boolean mixedWorkload() { return "MIXED".equals(normalizedOperation()); }
     public long effectiveDurationSeconds() { return durationMode() ? Math.max(1, durationSeconds) : 0; }
     public long effectiveWarmupSeconds() { return durationMode() ? Math.max(0, warmupSeconds) : 0; }
+    public String normalizedWorkloadProfile() {
+        return workloadProfile == null || workloadProfile.isBlank() ? "CUSTOM" : workloadProfile.trim().toUpperCase();
+    }
+    public Map<String, Integer> normalizedWorkloadWeights() {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        if (workloadWeights != null) workloadWeights.forEach((key, value) -> result.put(key.toUpperCase(), value));
+        return Map.copyOf(result);
+    }
 
     public long totalBytes() {
-        if (durationMode()) return 0;
+        if (durationMode() || mixedWorkload()) return 0;
         return switch (normalizedOperation()) {
             case "UPLOAD", "DOWNLOAD" -> Math.multiplyExact(objectSizeBytes(), objectCount);
             case "LIFECYCLE" -> Math.multiplyExact(Math.multiplyExact(objectSizeBytes(), objectCount), 2L);
