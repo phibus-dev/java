@@ -16,6 +16,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration
 @EnableMethodSecurity
@@ -24,7 +25,8 @@ public class SecurityConfiguration {
     @Bean
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "false", matchIfMissing = true)
     SecurityFilterChain openSecurity(HttpSecurity http) throws Exception {
-        return http.csrf(csrf -> csrf.disable())
+        return http
+                .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .build();
     }
@@ -33,6 +35,12 @@ public class SecurityConfiguration {
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "true")
     SecurityFilterChain keycloakSecurity(HttpSecurity http) throws Exception {
         return http
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .ignoringRequestMatchers(
+                                "/api/agents/register",
+                                "/api/agents/*/heartbeat",
+                                "/api/distributed-tests/agent/**"))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/settings", "/api/settings/**", "/static/**", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN", "OPERATOR")
