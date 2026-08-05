@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - feature/maven-s3-uploader
   pull_request:
     branches:
       - main
@@ -28,8 +27,24 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Build and test
+      - name: Build, test and analyze
         run: mvn -B clean verify
 
       - name: Verify executable JAR
         run: test -f target/s3-multipart-uploader-1.0.0-SNAPSHOT.jar
+
+      - name: Upload executable JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-multipart-uploader
+          path: target/s3-multipart-uploader-1.0.0-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          if-no-files-found: error
+          retention-days: 14
