@@ -1,85 +1,97 @@
 # S3 Performance Test Web
 
-Java 21-приложение для функционального и скоростного тестирования AWS S3 и S3-совместимых хранилищ, включая MinIO.
+Java 21 / Spring Boot приложение для функционального и нагрузочного тестирования AWS S3, MinIO и других S3-совместимых хранилищ.
 
-## Web UI MVP
+## Возможности
 
-Web-интерфейс позволяет:
+- Web UI и REST API;
+- параллельная multipart-загрузка;
+- p50/p95/p99 latency;
+- JSON/CSV-отчёты;
+- автоматическое удаление тестовых объектов;
+- bootstrap-режим настройки внешних PostgreSQL, Vault и S3;
+- endpoint состояния `/actuator/health`.
 
-- задавать endpoint, region, access key и secret key;
-- получать список доступных бакетов;
-- выбирать bucket, object key, размер объекта и multipart-части;
-- запускать тест асинхронно;
-- наблюдать прогресс через Server-Sent Events;
-- видеть переданный объём, текущую и среднюю скорость;
-- отменять тест;
-- просматривать историю запусков в памяти приложения.
+## Bootstrap mode
 
-Ключи используются только для текущего запуска и не возвращаются в REST-ответах. В MVP они временно хранятся в памяти процесса до его перезапуска; для промышленной эксплуатации планируется интеграция с HashiCorp Vault.
+При первом запуске или при недоступном PostgreSQL приложение разрешает только:
+
+```text
+/settings
+/api/settings/**
+/actuator/health
+/static/**
+```
+
+Остальные страницы перенаправляются в `/settings`. После успешной проверки PostgreSQL приложение переходит в состояние `READY`. Изменение JDBC-настроек применяется после перезапуска.
+
+## Внешний PostgreSQL
+
+В Web UI используется готовая JDBC-строка, например:
+
+```text
+jdbc:postgresql://postgres.example.org:5432/s3_performance?sslmode=require
+```
+
+PostgreSQL не включён в приложение и не запускается через Docker Compose.
+
+## HashiCorp Vault
+
+Заявлена поддержка **HashiCorp Vault Community Edition 2.0.x**. В версии 1.3 реализуется Token authentication. AppRole планируется в следующем релизе.
+
+Настраиваются:
+
+- Vault address;
+- token;
+- KV mount;
+- secret prefix;
+- TLS verification;
+- путь к CA certificate;
+- путь и имена полей секрета для профиля S3.
+
+## Bootstrap-хранилище
+
+По умолчанию настройки сохраняются в:
+
+```text
+config/bootstrap-settings.json
+```
+
+Путь можно изменить:
+
+```bash
+export S3_PERF_BOOTSTRAP_FILE=/opt/s3-performance/config/bootstrap-settings.json
+```
+
+Пароли, Vault token и ручные S3 credentials шифруются AES-GCM. До сохранения секретов задайте мастер-фразу:
+
+```bash
+export S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value'
+```
+
+Мастер-фраза не записывается в bootstrap-файл.
 
 ## Запуск
 
-Требуются JDK 21 и Maven 3.9+.
-
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-1.1.0-SNAPSHOT.jar
+java -jar target/s3-multipart-uploader-1.3.0-SNAPSHOT.jar
 ```
 
 Откройте:
 
 ```text
-http://localhost:8080
+http://localhost:8080/settings
 ```
 
-## REST API
-
-```text
-POST /api/tests
-GET  /api/tests
-GET  /api/tests/{id}
-POST /api/tests/{id}/cancel
-GET  /api/tests/{id}/events
-POST /api/buckets
-```
-
-Пример запроса:
-
-```json
-{
-  "endpoint": "http://localhost:9000",
-  "bucket": "performance-test",
-  "region": "us-east-1",
-  "accessKey": "minioadmin",
-  "secretKey": "minioadmin",
-  "pathStyleAccess": true,
-  "objectKey": "performance-test/random-upload.bin",
-  "objectSizeMiB": 1024,
-  "partSizeMiB": 64,
-  "operation": "UPLOAD"
-}
-```
-
-## Сборка Docker
+## Docker
 
 ```bash
-docker build -t s3-performance-test-web .
-docker run --rm -p 8080:8080 s3-performance-test-web
+docker build -t s3-performance-test-web:1.3.0 .
+docker run --rm -p 8080:8080 \
+  -e S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value' \
+  -v "$PWD/config:/app/config" \
+  s3-performance-test-web:1.3.0
 ```
 
-## Текущее ограничение MVP
-
-- поддерживается только последовательный upload-тест;
-- история не сохраняется после перезапуска;
-- профили endpoint пока не сохраняются;
-- нет Vault, PostgreSQL, download-тестов и экспорта отчётов;
-- отмена применяется между multipart-частями.
-
-## Следующие этапы
-
-- профили подключений и HashiCorp Vault;
-- параллельный multipart upload через `S3AsyncClient`;
-- PostgreSQL для истории;
-- графики latency и percentile-метрики;
-- download, list, head и delete тесты;
-- JSON/CSV-отчёты и Prometheus-метрики.
+Приложение подключается к внешним PostgreSQL, Vault и S3/MinIO по адресам, указанным в Web UI.

@@ -1,0 +1,44 @@
+const form = document.getElementById('settings-form');
+
+function value(id) { return document.getElementById(id).value; }
+function checked(id) { return document.getElementById(id).checked; }
+
+function payload() {
+  return {
+    jdbcUrl: value('jdbcUrl'), postgresUsername: value('postgresUsername'), postgresPassword: value('postgresPassword'),
+    vaultAddress: value('vaultAddress'), vaultToken: value('vaultToken'), vaultKvMount: value('vaultKvMount'),
+    vaultSecretPrefix: value('vaultSecretPrefix'), vaultTlsVerify: checked('vaultTlsVerify'),
+    vaultCaCertificatePath: value('vaultCaCertificatePath'), s3ProfileName: value('s3ProfileName'),
+    s3Endpoint: value('s3Endpoint'), s3Region: value('s3Region'), s3Bucket: value('s3Bucket'),
+    s3PathStyleAccess: checked('s3PathStyleAccess'), s3CredentialsSource: value('s3CredentialsSource'),
+    s3VaultSecretPath: value('s3VaultSecretPath'), s3AccessKeyField: value('s3AccessKeyField'),
+    s3SecretKeyField: value('s3SecretKeyField'), s3AccessKey: value('s3AccessKey'), s3SecretKey: value('s3SecretKey')
+  };
+}
+
+async function post(url) {
+  const response = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload())});
+  const text = await response.text();
+  if (!response.ok) throw new Error(text || `HTTP ${response.status}`);
+  return JSON.parse(text);
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const target = document.getElementById('save-result');
+  target.textContent = 'Сохранение…';
+  try { const result = await post('/api/settings'); target.textContent = result.message; }
+  catch (error) { target.textContent = error.message; }
+});
+
+document.getElementById('test-postgres').addEventListener('click', async () => {
+  const target = document.getElementById('postgres-result'); target.textContent = 'Проверка…';
+  try { target.textContent = JSON.stringify(await post('/api/settings/test/postgresql'), null, 2); }
+  catch (error) { target.textContent = error.message; }
+});
+
+document.getElementById('test-vault').addEventListener('click', async () => {
+  const target = document.getElementById('vault-result'); target.textContent = 'Проверка…';
+  try { target.textContent = JSON.stringify(await post('/api/settings/test/vault'), null, 2); }
+  catch (error) { target.textContent = error.message; }
+});

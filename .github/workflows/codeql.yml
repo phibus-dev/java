@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -35,7 +35,14 @@ jobs:
           cache: maven
 
       - name: Build
-        run: mvn -B -DskipTests package
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            mvn -B -DskipTests package && break
+            if [[ $attempt -eq 3 ]]; then exit 1; fi
+            echo "Maven failed, retrying in $((attempt * 15)) seconds..."
+            sleep $((attempt * 15))
+          done
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
