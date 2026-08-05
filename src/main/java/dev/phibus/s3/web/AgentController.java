@@ -5,12 +5,14 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,4 +44,22 @@ public class AgentController {
         registry.heartbeat(agentId, token, request);
         return registry.list().stream().filter(agent -> agent.id().equals(agentId)).findFirst().orElseThrow();
     }
+
+    @PostMapping("/{agentId}/enabled")
+    public AgentRegistry.AgentView setEnabled(@PathVariable UUID agentId, @RequestParam boolean value) {
+        return registry.setEnabled(agentId, value);
+    }
+
+    @PostMapping("/{agentId}/update")
+    public AgentRegistry.AgentView requestUpdate(@PathVariable UUID agentId, @RequestBody UpdateRequest request) {
+        return registry.requestUpdate(agentId, request.desiredVersion());
+    }
+
+    @DeleteMapping("/{agentId}/identity")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeIdentity(@PathVariable UUID agentId) {
+        registry.revokeIdentity(agentId);
+    }
+
+    public record UpdateRequest(String desiredVersion) { }
 }
