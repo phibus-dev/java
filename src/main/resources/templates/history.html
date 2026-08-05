@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>История тестов</title>
+    <style>
+        body{font-family:system-ui,sans-serif;margin:0;background:#f4f6f8;color:#17202a}
+        header{background:#17202a;color:white;padding:16px 24px;display:flex;gap:20px;align-items:center}
+        header a{color:white;text-decoration:none}
+        main{padding:24px;overflow:auto}
+        .card{background:white;border-radius:10px;padding:18px;box-shadow:0 2px 8px #0001}
+        table{width:100%;border-collapse:collapse;font-size:14px}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap}
+        th{background:#f8fafc;position:sticky;top:0}
+        .COMPLETED{color:#087f5b;font-weight:700}.FAILED{color:#c92a2a;font-weight:700}.CANCELLED{color:#e67700;font-weight:700}
+        .empty{padding:30px;text-align:center;color:#64748b}
+    </style>
+</head>
+<body>
+<header>
+    <strong>S3 Performance Test Web</strong>
+    <a href="/">Тестирование</a>
+    <a href="/history">История</a>
+    <a href="/settings">Настройки</a>
+</header>
+<main>
+    <div class="card">
+        <h1>История тестов в PostgreSQL</h1>
+        <p>Результаты сохраняются после завершения теста и доступны после перезапуска приложения.</p>
+        <div class="empty" th:if="${#lists.isEmpty(runs)}">Сохранённых запусков пока нет.</div>
+        <table th:unless="${#lists.isEmpty(runs)}">
+            <thead><tr>
+                <th>Создан</th><th>Статус</th><th>Endpoint</th><th>Bucket</th><th>Объект</th>
+                <th>Передано</th><th>Средняя скорость</th><th>p95</th><th>Ошибки</th><th>Очистка</th>
+            </tr></thead>
+            <tbody>
+            <tr th:each="run : ${runs}">
+                <td th:text="${run.createdAt}"></td>
+                <td th:text="${run.status}" th:class="${run.status}"></td>
+                <td th:text="${run.endpoint}"></td>
+                <td th:text="${run.bucket}"></td>
+                <td th:text="${run.objectKey}"></td>
+                <td th:text="${#numbers.formatDecimal(run.bytesTransferred / 1048576.0,1,1)} + ' MiB'"></td>
+                <td th:text="${#numbers.formatDecimal(run.averageSpeedMiBps,1,2)} + ' MiB/s'"></td>
+                <td th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1)} + ' ms'"></td>
+                <td th:text="${run.failedParts}"></td>
+                <td th:text="${run.cleanupSuccessful ? 'OK' : '—'}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+</body>
+</html>
