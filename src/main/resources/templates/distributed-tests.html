@@ -1,0 +1,22 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Распределённые тесты</title><link rel="stylesheet" href="/app.css"></head><body><main class="container"><header><div><h1>Распределённые тесты</h1><p>Запуск заданий на выбранных агентах и агрегирование промежуточной статистики.</p></div><nav><a href="/">Тестирование</a> · <a href="/agents">Агенты</a></nav></header><section class="panel"><h2>Новый запуск</h2><label>Название<input id="name" value="Distributed S3 test"></label><h3>Агенты</h3><div id="agent-list" class="grid two">Загрузка…</div><label>Параметры TestRequest, JSON<textarea id="request" rows="16">{
+  "endpoint":"http://localhost:9000",
+  "bucket":"test",
+  "region":"us-east-1",
+  "accessKey":null,
+  "secretKey":null,
+  "pathStyleAccess":true,
+  "objectKey":"distributed-test/object.bin",
+  "objectSizeMiB":64,
+  "partSizeMiB":16,
+  "parallelism":4,
+  "objectCount":1,
+  "deleteAfterTest":true,
+  "operation":"UPLOAD",
+  "executionMode":"TIME_DURATION",
+  "durationSeconds":60,
+  "warmupSeconds":5,
+  "workloadProfile":"CUSTOM",
+  "workloadWeights":{},
+  "targetOperationsPerSecond":0,
+  "operationThreads":{}
+}</textarea></label><div class="actions"><button id="start">Запустить</button><span id="message" class="muted"></span></div></section><section class="panel"><div class="title-row"><h2>История распределённых запусков</h2><button id="refresh" class="secondary">Обновить</button></div><div id="runs">Загрузка…</div></section></main><script>const agents=document.getElementById('agent-list'),runs=document.getElementById('runs'),msg=document.getElementById('message');async function j(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error(await r.text());return r.json();}async function loadAgents(){try{const a=await j('/api/agents');agents.innerHTML=a.filter(x=>x.status!=='OFFLINE').map(x=>`<label class="check"><input type="checkbox" name="agent" value="${x.id}"> ${e(x.name)} — ${x.status}</label>`).join('')||'Нет доступных агентов';}catch(x){agents.textContent=x.message;}}async function loadRuns(){try{const list=await j('/api/distributed-tests');runs.innerHTML=list.length?list.map(r=>`<article class="panel"><div class="title-row"><strong>${e(r.name)}</strong><span class="status">${r.status}</span></div><div class="metrics"><article><span>Агенты</span><strong>${r.agents.length}</strong></article><article><span>OPS</span><strong>${r.operationsPerSecond.toFixed(2)}</strong></article><article><span>Throughput</span><strong>${r.throughputMiBps.toFixed(2)} MiB/s</strong></article><article><span>p95</span><strong>${r.p95LatencyMs.toFixed(1)} ms</strong></article><article><span>Ошибки</span><strong>${r.errors}</strong></article></div><table><thead><tr><th>Agent ID</th><th>Статус</th><th>Операции</th><th>MiB/s</th><th>p95</th><th>Ошибки</th></tr></thead><tbody>${r.agents.map(a=>`<tr><td>${a.agentId}</td><td>${a.status}</td><td>${a.completedOperations}</td><td>${a.throughputMiBps.toFixed(2)}</td><td>${a.p95LatencyMs.toFixed(1)}</td><td>${a.errors}</td></tr>`).join('')}</tbody></table></article>`).join(''):'Запусков пока нет';}catch(x){runs.textContent=x.message;}}document.getElementById('start').onclick=async()=>{try{const ids=[...document.querySelectorAll('input[name=agent]:checked')].map(x=>x.value);if(!ids.length)throw new Error('Выберите хотя бы одного агента');const payload={name:document.getElementById('name').value,agentIds:ids,testRequest:JSON.parse(document.getElementById('request').value)};await j('/api/distributed-tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});msg.textContent='Распределённый тест создан';loadRuns();loadAgents();}catch(x){msg.textContent=x.message;}};function e(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}document.getElementById('refresh').onclick=loadRuns;loadAgents();loadRuns();setInterval(loadRuns,5000);</script></body></html>
