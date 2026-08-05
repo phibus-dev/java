@@ -31,13 +31,13 @@ jobs:
         run: mvn -B clean verify
 
       - name: Verify executable JAR
-        run: test -f target/s3-multipart-uploader-1.0.0-SNAPSHOT.jar
+        run: test -f target/s3-multipart-uploader-1.1.0-SNAPSHOT.jar
 
       - name: Upload executable JAR
         uses: actions/upload-artifact@v4
         with:
-          name: s3-multipart-uploader
-          path: target/s3-multipart-uploader-1.0.0-SNAPSHOT.jar
+          name: s3-performance-test-web
+          path: target/s3-multipart-uploader-1.1.0-SNAPSHOT.jar
           if-no-files-found: error
           retention-days: 14
 
