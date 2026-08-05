@@ -12,7 +12,7 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <aws.sdk.version>2.25.60</aws.sdk.version>
+        <aws.sdk.version>2.50.2</aws.sdk.version>
         <junit.version>5.10.2</junit.version>
         <jacoco.version>0.8.12</jacoco.version>
         <spotbugs.version>4.8.6.4</spotbugs.version>
