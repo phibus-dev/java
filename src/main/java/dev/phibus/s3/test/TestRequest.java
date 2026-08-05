@@ -18,7 +18,7 @@ public record TestRequest(
         @Min(1) @Max(32) int parallelism,
         @Min(1) @Max(1000) int objectCount,
         boolean deleteAfterTest,
-        @Pattern(regexp = "UPLOAD", message = "Only UPLOAD is supported") String operation) {
+        @Pattern(regexp = "UPLOAD|DOWNLOAD|HEAD|LIST|DELETE|LIFECYCLE", message = "Unsupported operation") String operation) {
 
     public long objectSizeBytes() {
         return Math.multiplyExact(objectSizeMiB, 1024L * 1024L);
@@ -28,7 +28,15 @@ public record TestRequest(
         return Math.multiplyExact(partSizeMiB, 1024L * 1024L);
     }
 
+    public String normalizedOperation() {
+        return operation == null || operation.isBlank() ? "UPLOAD" : operation;
+    }
+
     public long totalBytes() {
-        return Math.multiplyExact(objectSizeBytes(), objectCount);
+        return switch (normalizedOperation()) {
+            case "UPLOAD", "DOWNLOAD" -> Math.multiplyExact(objectSizeBytes(), objectCount);
+            case "LIFECYCLE" -> Math.multiplyExact(Math.multiplyExact(objectSizeBytes(), objectCount), 2L);
+            default -> 0L;
+        };
     }
 }
