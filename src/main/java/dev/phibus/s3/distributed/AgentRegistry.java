@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgentRegistry {
     private final Map<UUID, AgentRecord> agents = new ConcurrentHashMap<>();
+    private final Map<UUID, AgentManagement> management = new ConcurrentHashMap<>();
     private final String registrationToken;
 
     public AgentRegistry(@Value("${s3perf.distributed.registration-token:change-me}") String registrationToken) {
@@ -28,6 +29,7 @@ public class AgentRegistry {
                 request.cpuCount(), request.memoryBytes(), request.tags() == null ? Map.of() : Map.copyOf(request.tags()),
                 now, now, AgentStatus.ONLINE, agentToken);
         agents.put(id, record);
+        management.put(id, new AgentManagement(true, null, false, null, now));
         return new RegistrationResult(id, agentToken, now);
     }
 
@@ -38,29 +40,61 @@ public class AgentRegistry {
                 request.memoryBytes() <= 0 ? current.memoryBytes() : request.memoryBytes(), current.tags(), current.registeredAt(),
                 Instant.now(), current.status() == AgentStatus.BUSY ? AgentStatus.BUSY : AgentStatus.ONLINE, current.agentToken());
         agents.put(id, updated);
+        AgentManagement state = management.getOrDefault(id, AgentManagement.defaults());
+        if (state.updateRequested() && state.desiredVersion() != null && state.desiredVersion().equals(updated.version())) {
+            management.put(id, new AgentManagement(state.enabled(), state.desiredVersion(), false, Instant.now(), state.changedAt()));
+        }
         return updated;
     }
 
     public List<AgentView> list() {
         Instant now = Instant.now();
         return agents.values().stream().map(agent -> {
+            AgentManagement state = management.getOrDefault(agent.id(), AgentManagement.defaults());
             boolean online = Duration.between(agent.lastSeenAt(), now).compareTo(Duration.ofSeconds(45)) <= 0;
-            AgentStatus status = online ? agent.status() : AgentStatus.OFFLINE;
+            AgentStatus status = !state.enabled() ? AgentStatus.DISABLED : online ? agent.status() : AgentStatus.OFFLINE;
             return new AgentView(agent.id(), agent.name(), agent.hostname(), agent.address(), agent.version(), agent.cpuCount(),
-                    agent.memoryBytes(), agent.tags(), agent.registeredAt(), agent.lastSeenAt(), status);
+                    agent.memoryBytes(), agent.tags(), agent.registeredAt(), agent.lastSeenAt(), status, state.enabled(),
+                    state.desiredVersion(), state.updateRequested(), state.updateCompletedAt(), state.changedAt());
         }).sorted(Comparator.comparing(AgentView::name)).toList();
     }
 
     public AgentRecord authenticate(UUID id, String token) {
         AgentRecord agent = agents.get(id);
         if (agent == null) throw new IllegalArgumentException("Agent not found");
+        AgentManagement state = management.getOrDefault(id, AgentManagement.defaults());
+        if (!state.enabled()) throw new SecurityException("Agent is disabled");
         if (token == null || !agent.agentToken().equals(token)) throw new SecurityException("Invalid agent token");
         return agent;
+    }
+
+    public AgentView setEnabled(UUID id, boolean enabled) {
+        requirePresent(id);
+        AgentManagement current = management.getOrDefault(id, AgentManagement.defaults());
+        management.put(id, new AgentManagement(enabled, current.desiredVersion(), current.updateRequested(),
+                current.updateCompletedAt(), Instant.now()));
+        return view(id);
+    }
+
+    public AgentView requestUpdate(UUID id, String desiredVersion) {
+        requirePresent(id);
+        if (desiredVersion == null || desiredVersion.isBlank()) throw new IllegalArgumentException("Desired version is required");
+        AgentManagement current = management.getOrDefault(id, AgentManagement.defaults());
+        management.put(id, new AgentManagement(current.enabled(), desiredVersion.trim(), true, null, Instant.now()));
+        return view(id);
+    }
+
+    public void revokeIdentity(UUID id) {
+        requirePresent(id);
+        agents.remove(id);
+        management.remove(id);
     }
 
     public void requireOnline(UUID id) {
         AgentRecord agent = agents.get(id);
         if (agent == null) throw new IllegalArgumentException("Agent not found: " + id);
+        AgentManagement state = management.getOrDefault(id, AgentManagement.defaults());
+        if (!state.enabled()) throw new IllegalStateException("Agent is disabled: " + id);
         if (Duration.between(agent.lastSeenAt(), Instant.now()).compareTo(Duration.ofSeconds(45)) > 0)
             throw new IllegalStateException("Agent is offline: " + id);
     }
@@ -73,7 +107,15 @@ public class AgentRegistry {
                 busy ? AgentStatus.BUSY : AgentStatus.ONLINE, current.agentToken()));
     }
 
-    public enum AgentStatus { ONLINE, OFFLINE, BUSY }
+    private AgentView view(UUID id) {
+        return list().stream().filter(agent -> agent.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    private void requirePresent(UUID id) {
+        if (!agents.containsKey(id)) throw new IllegalArgumentException("Agent not found: " + id);
+    }
+
+    public enum AgentStatus { ONLINE, OFFLINE, BUSY, DISABLED }
     public record RegistrationRequest(String name, String hostname, String address, String version,
                                       int cpuCount, long memoryBytes, Map<String, String> tags) { }
     public record HeartbeatRequest(String version, int cpuCount, long memoryBytes) { }
@@ -83,5 +125,10 @@ public class AgentRegistry {
                               Instant lastSeenAt, AgentStatus status, String agentToken) { }
     public record AgentView(UUID id, String name, String hostname, String address, String version,
                             int cpuCount, long memoryBytes, Map<String, String> tags, Instant registeredAt,
-                            Instant lastSeenAt, AgentStatus status) { }
+                            Instant lastSeenAt, AgentStatus status, boolean enabled, String desiredVersion,
+                            boolean updateRequested, Instant updateCompletedAt, Instant managementChangedAt) { }
+    private record AgentManagement(boolean enabled, String desiredVersion, boolean updateRequested,
+                                   Instant updateCompletedAt, Instant changedAt) {
+        static AgentManagement defaults() { return new AgentManagement(true, null, false, null, Instant.EPOCH); }
+    }
 }
