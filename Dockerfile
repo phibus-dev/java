@@ -7,7 +7,7 @@ RUN mvn -B clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN useradd --system --uid 10001 uploader
-COPY --from=build /workspace/target/s3-multipart-uploader-1.1.0-SNAPSHOT.jar /app/application.jar
+COPY --from=build /workspace/target/s3-multipart-uploader-1.2.0.jar /app/application.jar
 USER uploader
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/application.jar"]
