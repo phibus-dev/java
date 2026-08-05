@@ -1,6 +1,6 @@
 package dev.phibus.s3.test;
 
-import dev.phibus.s3.history.HistoryOperationUpdater;
+import dev.phibus.s3.history.HistoryRequestMetadataUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
 import java.util.Comparator;
 import java.util.List;
@@ -17,14 +17,14 @@ public class TestRunService {
     private final UploadTestEngine engine;
     private final Executor testExecutor;
     private final TestHistoryStore historyStore;
-    private final HistoryOperationUpdater operationUpdater;
+    private final HistoryRequestMetadataUpdater metadataUpdater;
 
     public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor,
-                          TestHistoryStore historyStore, HistoryOperationUpdater operationUpdater) {
+                          TestHistoryStore historyStore, HistoryRequestMetadataUpdater metadataUpdater) {
         this.engine = engine;
         this.testExecutor = testExecutor;
         this.historyStore = historyStore;
-        this.operationUpdater = operationUpdater;
+        this.metadataUpdater = metadataUpdater;
     }
 
     public TestRun create(TestRequest request) {
@@ -39,7 +39,7 @@ public class TestRunService {
             engine.execute(run);
         } finally {
             historyStore.save(run.snapshot());
-            operationUpdater.update(run.id(), run.request().operation());
+            metadataUpdater.update(run.id(), run.request());
         }
     }
 
@@ -54,13 +54,8 @@ public class TestRunService {
                 .sorted(Comparator.comparing(TestRun.Snapshot::createdAt).reversed()).toList();
     }
 
-    public void cancel(UUID id) {
-        get(id).cancel();
-    }
-
-    public List<String> listBuckets(TestRequest request) {
-        return engine.listBuckets(request);
-    }
+    public void cancel(UUID id) { get(id).cancel(); }
+    public List<String> listBuckets(TestRequest request) { return engine.listBuckets(request); }
 
     public static final class TestNotFoundException extends RuntimeException {
         public TestNotFoundException(UUID id) { super("Test not found: " + id); }
