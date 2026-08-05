@@ -5,8 +5,13 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.SplittableRandom;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -19,6 +24,7 @@ import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 
@@ -31,14 +37,22 @@ public class UploadTestEngine {
         TestRequest request = run.request();
         long totalSize = request.objectSizeBytes();
         long partSize = normalizePartSize(request.partSizeBytes(), totalSize);
-        int totalParts = (int) ((totalSize + partSize - 1) / partSize);
-        run.start(totalParts);
+        int partsPerObject = totalSize < MIN_PART_SIZE ? 1 : (int) ((totalSize + partSize - 1) / partSize);
+        run.start(Math.multiplyExact(partsPerObject, request.objectCount()));
 
         try (S3Client client = client(request)) {
-            if (totalSize < MIN_PART_SIZE) {
-                uploadSingle(client, run, request, totalSize);
-            } else {
-                uploadMultipart(client, run, request, totalSize, partSize);
+            for (int objectNumber = 1; objectNumber <= request.objectCount(); objectNumber++) {
+                if (run.isCancelled()) return;
+                String key = objectKey(request, objectNumber);
+                if (totalSize < MIN_PART_SIZE) uploadSingle(client, run, request, key, objectNumber, totalSize);
+                else uploadMultipart(client, run, request, key, objectNumber, totalSize, partSize);
+            }
+            if (request.deleteAfterTest() && !run.isCancelled()) {
+                for (int objectNumber = 1; objectNumber <= request.objectCount(); objectNumber++) {
+                    client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket())
+                            .key(objectKey(request, objectNumber)).build());
+                }
+                run.cleanupSuccessful();
             }
             if (!run.isCancelled()) run.complete();
         } catch (Exception e) {
@@ -52,69 +66,88 @@ public class UploadTestEngine {
         }
     }
 
-    private void uploadSingle(S3Client client, TestRun run, TestRequest request, long size) {
+    private void uploadSingle(S3Client client, TestRun run, TestRequest request, String key, int objectNumber, long size) {
         Instant start = Instant.now();
-        try (InputStream input = new GeneratedInputStream(size)) {
-            client.putObject(PutObjectRequest.builder().bucket(request.bucket()).key(request.objectKey()).build(),
-                    RequestBody.fromInputStream(input, size));
+        try (InputStream input = new GeneratedInputStream(size, objectNumber)) {
+            String eTag = client.putObject(PutObjectRequest.builder().bucket(request.bucket()).key(key).build(),
+                    RequestBody.fromInputStream(input, size)).eTag();
+            long duration = elapsedMillis(start);
+            run.partCompleted(new PartResult(objectNumber, 1, size, duration, speed(size, duration), eTag, "SUCCESS", null));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
-        double speed = speed(size, start);
-        run.progress(size, 1, speed, speed);
     }
 
-    private void uploadMultipart(S3Client client, TestRun run, TestRequest request, long totalSize, long partSize) {
+    private void uploadMultipart(S3Client client, TestRun run, TestRequest request, String key,
+                                 int objectNumber, long totalSize, long partSize) throws Exception {
         String uploadId = client.createMultipartUpload(CreateMultipartUploadRequest.builder()
-                .bucket(request.bucket()).key(request.objectKey()).build()).uploadId();
-        List<CompletedPart> completed = new ArrayList<>();
-        Instant overallStart = Instant.now();
-        long transferred = 0;
-
-        try (InputStream input = new GeneratedInputStream(totalSize)) {
-            long remaining = totalSize;
-            for (int partNumber = 1; remaining > 0; partNumber++) {
-                if (run.isCancelled()) throw new InterruptedException("Test cancelled");
-                long currentSize = Math.min(partSize, remaining);
-                Instant partStart = Instant.now();
-                String eTag = client.uploadPart(UploadPartRequest.builder()
-                                .bucket(request.bucket()).key(request.objectKey()).uploadId(uploadId)
-                                .partNumber(partNumber).contentLength(currentSize).build(),
-                        RequestBody.fromInputStream(input, currentSize)).eTag();
-                completed.add(CompletedPart.builder().partNumber(partNumber).eTag(eTag).build());
-                transferred += currentSize;
-                run.progress(transferred, partNumber, speed(currentSize, partStart), speed(transferred, overallStart));
-                remaining -= currentSize;
+                .bucket(request.bucket()).key(key).build()).uploadId();
+        ExecutorService pool = Executors.newFixedThreadPool(request.parallelism());
+        try {
+            List<Callable<CompletedPart>> tasks = new ArrayList<>();
+            long offset = 0;
+            for (int partNumber = 1; offset < totalSize; partNumber++) {
+                long currentSize = Math.min(partSize, totalSize - offset);
+                int currentPart = partNumber;
+                long seed = (((long) objectNumber) << 32) ^ currentPart;
+                tasks.add(() -> uploadPart(client, run, request, key, uploadId, objectNumber, currentPart, currentSize, seed));
+                offset += currentSize;
             }
+            List<Future<CompletedPart>> futures = pool.invokeAll(tasks);
+            List<CompletedPart> completed = new ArrayList<>();
+            for (Future<CompletedPart> future : futures) {
+                if (run.isCancelled()) throw new InterruptedException("Test cancelled");
+                completed.add(future.get());
+            }
+            completed.sort(Comparator.comparingInt(CompletedPart::partNumber));
             client.completeMultipartUpload(CompleteMultipartUploadRequest.builder()
-                    .bucket(request.bucket()).key(request.objectKey()).uploadId(uploadId)
+                    .bucket(request.bucket()).key(key).uploadId(uploadId)
                     .multipartUpload(CompletedMultipartUpload.builder().parts(completed).build()).build());
         } catch (Exception e) {
             client.abortMultipartUpload(AbortMultipartUploadRequest.builder()
-                    .bucket(request.bucket()).key(request.objectKey()).uploadId(uploadId).build());
+                    .bucket(request.bucket()).key(key).uploadId(uploadId).build());
+            throw e;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private CompletedPart uploadPart(S3Client client, TestRun run, TestRequest request, String key, String uploadId,
+                                     int objectNumber, int partNumber, long size, long seed) {
+        if (run.isCancelled()) throw new IllegalStateException("Test cancelled");
+        Instant start = Instant.now();
+        try (InputStream input = new GeneratedInputStream(size, seed)) {
+            String eTag = client.uploadPart(UploadPartRequest.builder().bucket(request.bucket()).key(key)
+                            .uploadId(uploadId).partNumber(partNumber).contentLength(size).build(),
+                    RequestBody.fromInputStream(input, size)).eTag();
+            long duration = elapsedMillis(start);
+            run.partCompleted(new PartResult(objectNumber, partNumber, size, duration,
+                    speed(size, duration), eTag, "SUCCESS", null));
+            return CompletedPart.builder().partNumber(partNumber).eTag(eTag).build();
+        } catch (Exception e) {
             throw new IllegalStateException(e);
         }
     }
 
     private S3Client client(TestRequest request) {
-        return S3Client.builder()
-                .endpointOverride(URI.create(request.endpoint()))
-                .region(Region.of(request.region()))
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(request.accessKey(), request.secretKey())))
-                .serviceConfiguration(S3Configuration.builder()
-                        .pathStyleAccessEnabled(request.pathStyleAccess()).build())
-                .build();
+        return S3Client.builder().endpointOverride(URI.create(request.endpoint())).region(Region.of(request.region()))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(request.accessKey(), request.secretKey())))
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(request.pathStyleAccess()).build()).build();
+    }
+
+    private static String objectKey(TestRequest request, int objectNumber) {
+        return request.objectCount() == 1 ? request.objectKey() : request.objectKey() + "." + objectNumber;
     }
 
     private static long normalizePartSize(long requested, long total) {
-        long partSize = Math.max(MIN_PART_SIZE, requested);
-        long required = (total + MAX_PARTS - 1) / MAX_PARTS;
-        return Math.max(partSize, required);
+        return Math.max(Math.max(MIN_PART_SIZE, requested), (total + MAX_PARTS - 1) / MAX_PARTS);
     }
 
-    private static double speed(long bytes, Instant start) {
-        long millis = Math.max(1, Duration.between(start, Instant.now()).toMillis());
+    private static long elapsedMillis(Instant start) {
+        return Math.max(1, Duration.between(start, Instant.now()).toMillis());
+    }
+
+    private static double speed(long bytes, long millis) {
         return (bytes / 1024.0 / 1024.0) / (millis / 1000.0);
     }
 
@@ -126,10 +159,9 @@ public class UploadTestEngine {
 
     private static final class GeneratedInputStream extends InputStream {
         private final long size;
-        private final SplittableRandom random = new SplittableRandom();
+        private final SplittableRandom random;
         private long position;
-
-        GeneratedInputStream(long size) { this.size = size; }
+        GeneratedInputStream(long size, long seed) { this.size = size; this.random = new SplittableRandom(seed); }
         @Override public int read() { if (position >= size) return -1; position++; return random.nextInt(256); }
         @Override public int read(byte[] buffer, int offset, int length) {
             if (position >= size) return -1;
