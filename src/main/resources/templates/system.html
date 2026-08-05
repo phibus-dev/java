@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Состояние системы</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;color:#17202a}.wrap{max-width:1100px;margin:32px auto;padding:0 20px}nav{display:flex;gap:16px;margin-bottom:24px}nav a{color:#1769aa;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px #0001}.ok{color:#16803c}.fail{color:#b42318}.row{display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:1px solid #edf0f2}.row:last-child{border:0}.muted{color:#667085;font-size:.9rem}button{margin-top:18px;padding:10px 16px;border:0;border-radius:8px;background:#1769aa;color:#fff;cursor:pointer}
+  </style>
+</head>
+<body><main class="wrap">
+  <nav><a href="/">Тестирование</a><a href="/history">История</a><a href="/settings">Настройки</a><strong>Состояние системы</strong></nav>
+  <h1>Состояние системы</h1>
+  <p class="muted">Проверка выполняется при каждом открытии страницы.</p>
+  <section class="grid">
+    <article class="card" th:with="item=${report.postgresql}"><h2>PostgreSQL</h2><h3 th:class="${item.success} ? 'ok' : 'fail'" th:text="${item.success} ? 'Доступен' : 'Недоступен'"></h3><p th:text="${item.message}"></p><div class="row"><span>Задержка</span><span th:text="${item.latencyMs + ' ms'}"></span></div><div class="row" th:each="entry:${item.details}"><span th:text="${entry.key}"></span><span th:text="${entry.value}"></span></div></article>
+    <article class="card" th:with="item=${report.vault}"><h2>Vault</h2><h3 th:class="${item.success} ? 'ok' : 'fail'" th:text="${item.success} ? 'Доступен' : 'Недоступен'"></h3><p th:text="${item.message}"></p><div class="row"><span>Задержка</span><span th:text="${item.latencyMs + ' ms'}"></span></div><div class="row" th:each="entry:${item.details}"><span th:text="${entry.key}"></span><span th:text="${entry.value}"></span></div></article>
+    <article class="card" th:with="item=${report.s3}"><h2>S3</h2><h3 th:class="${item.success} ? 'ok' : 'fail'" th:text="${item.success} ? 'Доступен' : 'Недоступен'"></h3><p th:text="${item.message}"></p><div class="row"><span>Задержка</span><span th:text="${item.latencyMs + ' ms'}"></span></div><div class="row" th:each="entry:${item.details}"><span th:text="${entry.key}"></span><span th:text="${entry.value}"></span></div></article>
+    <article class="card"><h2>Приложение</h2><h3 class="ok">Работает</h3><div class="row" th:each="entry:${report.application}"><span th:text="${entry.key}"></span><span th:text="${entry.value}"></span></div></article>
+  </section>
+  <button onclick="location.reload()">Повторить проверку</button>
+</main></body></html>
