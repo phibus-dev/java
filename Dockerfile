@@ -7,7 +7,7 @@ RUN mvn -B clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN useradd --system --uid 10001 s3perf && mkdir -p /app/config && chown -R s3perf /app
-COPY --from=build /workspace/target/s3-multipart-uploader-2.0.2.jar /app/application.jar
+COPY --from=build /workspace/target/s3-multipart-uploader-2.0.3.jar /app/application.jar
 USER s3perf
 VOLUME ["/app/config"]
 ENV S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json
