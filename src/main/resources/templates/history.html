@@ -1,55 +1,15 @@
 <!doctype html>
-<html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>История тестов</title>
-    <style>
-        body{font-family:system-ui,sans-serif;margin:0;background:#f4f6f8;color:#17202a}
-        header{background:#17202a;color:white;padding:16px 24px;display:flex;gap:20px;align-items:center}
-        header a{color:white;text-decoration:none}
-        main{padding:24px;overflow:auto}
-        .card{background:white;border-radius:10px;padding:18px;box-shadow:0 2px 8px #0001}
-        table{width:100%;border-collapse:collapse;font-size:14px}
-        th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap}
-        th{background:#f8fafc;position:sticky;top:0}
-        .COMPLETED{color:#087f5b;font-weight:700}.FAILED{color:#c92a2a;font-weight:700}.CANCELLED{color:#e67700;font-weight:700}
-        .empty{padding:30px;text-align:center;color:#64748b}
-    </style>
-</head>
-<body>
-<header>
-    <strong>S3 Performance Test Web</strong>
-    <a href="/">Тестирование</a>
-    <a href="/history">История</a>
-    <a href="/settings">Настройки</a>
-</header>
-<main>
-    <div class="card">
-        <h1>История тестов в PostgreSQL</h1>
-        <p>Результаты сохраняются после завершения теста и доступны после перезапуска приложения.</p>
-        <div class="empty" th:if="${#lists.isEmpty(runs)}">Сохранённых запусков пока нет.</div>
-        <table th:unless="${#lists.isEmpty(runs)}">
-            <thead><tr>
-                <th>Создан</th><th>Статус</th><th>Endpoint</th><th>Bucket</th><th>Объект</th>
-                <th>Передано</th><th>Средняя скорость</th><th>p95</th><th>Ошибки</th><th>Очистка</th>
-            </tr></thead>
-            <tbody>
-            <tr th:each="run : ${runs}">
-                <td th:text="${run.createdAt}"></td>
-                <td th:text="${run.status}" th:class="${run.status}"></td>
-                <td th:text="${run.endpoint}"></td>
-                <td th:text="${run.bucket}"></td>
-                <td th:text="${run.objectKey}"></td>
-                <td th:text="${#numbers.formatDecimal(run.bytesTransferred / 1048576.0,1,1)} + ' MiB'"></td>
-                <td th:text="${#numbers.formatDecimal(run.averageSpeedMiBps,1,2)} + ' MiB/s'"></td>
-                <td th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1)} + ' ms'"></td>
-                <td th:text="${run.failedParts}"></td>
-                <td th:text="${run.cleanupSuccessful ? 'OK' : '—'}"></td>
-            </tr>
-            </tbody>
-        </table>
-    </div>
-</main>
-</body>
-</html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>История тестов</title><link rel="stylesheet" href="/app.css"><style>.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.pager{display:flex;gap:12px;align-items:center;margin-top:16px}.baseline{font-weight:700}.actions-inline{display:flex;gap:8px}</style></head>
+<body><main class="container"><header><div><h1>История тестов</h1><p>Фильтрация, постраничный просмотр и детальный анализ результатов.</p></div><nav><a href="/">Тестирование</a> · <a href="/baselines">Baseline</a> · <a href="/system">Система</a> · <a href="/settings">Настройки</a></nav></header>
+<section class="panel"><form method="get" action="/history"><div class="filters">
+<label>Поиск<input name="q" th:value="${filter.query}" placeholder="endpoint, bucket, object key"></label>
+<label>Операция<select name="operation"><option value="">Все</option><option th:each="op : ${ {'UPLOAD','DOWNLOAD','HEAD','LIST','DELETE','LIFECYCLE'} }" th:value="${op}" th:text="${op}" th:selected="${op == filter.operation}"></option></select></label>
+<label>Статус<select name="status"><option value="">Все</option><option th:each="s : ${ {'COMPLETED','FAILED','CANCELLED'} }" th:value="${s}" th:text="${s}" th:selected="${s == filter.status}"></option></select></label>
+<label>Endpoint<input name="endpoint" th:value="${filter.endpoint}"></label><label>Bucket<input name="bucket" th:value="${filter.bucket}"></label><label>Размер страницы<input name="size" type="number" min="1" max="200" th:value="${result.size}"></label>
+</div><div class="actions"><button type="submit">Применить</button><a class="button secondary" href="/history">Сбросить</a></div></form></section>
+<section class="panel"><div class="title-row"><h2>Запуски</h2><span th:text="${result.totalElements + ' записей'}"></span></div>
+<div class="table-wrap"><table><thead><tr><th></th><th>Создан</th><th>Операция</th><th>Статус</th><th>Endpoint / Bucket</th><th>Объект</th><th>Средняя скорость</th><th>p95</th><th>Ошибки</th><th>Действия</th></tr></thead><tbody>
+<tr th:each="run : ${result.items}"><td><input type="checkbox" class="compare-id" th:value="${run.id}"></td><td th:text="${run.createdAt}"></td><td th:text="${run.operation}"></td><td th:text="${run.status}"></td><td th:text="${run.endpoint + ' / ' + run.bucket}"></td><td th:text="${run.objectKey}"></td><td th:text="${#numbers.formatDecimal(run.averageSpeedMiBps,1,2) + ' MiB/s'}"></td><td th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1) + ' ms'}"></td><td th:text="${run.failedParts}"></td><td class="actions-inline"><a th:href="@{/history/{id}(id=${run.id})}">Открыть</a><span class="baseline" th:if="${run.baseline}">Baseline</span></td></tr>
+</tbody></table></div><div class="actions"><button type="button" onclick="compareSelected()">Сравнить выбранные</button></div>
+<div class="pager"><a th:if="${result.page > 0}" th:href="@{/history(page=${result.page-1},size=${result.size},status=${filter.status},operation=${filter.operation},endpoint=${filter.endpoint},bucket=${filter.bucket},q=${filter.query})}">← Назад</a><span th:text="${'Страница ' + (result.page+1) + ' из ' + (result.totalPages == 0 ? 1 : result.totalPages)}"></span><a th:if="${result.page+1 < result.totalPages}" th:href="@{/history(page=${result.page+1},size=${result.size},status=${filter.status},operation=${filter.operation},endpoint=${filter.endpoint},bucket=${filter.bucket},q=${filter.query})}">Вперёд →</a></div></section></main>
+<script>function compareSelected(){const ids=[...document.querySelectorAll('.compare-id:checked')].map(x=>x.value);if(ids.length!==2){alert('Выберите ровно два запуска');return;}location.href='/api/history/compare?left='+ids[0]+'&right='+ids[1];}</script></body></html>
