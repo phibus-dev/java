@@ -37,8 +37,11 @@ jobs:
             sleep $((attempt * 15))
           done
 
-      - name: Verify executable JAR
-        run: test -f target/s3-multipart-uploader-1.3.0-SNAPSHOT.jar
+      - name: Verify executable JAR and SBOM
+        run: |
+          test -f target/s3-multipart-uploader-1.3.0-SNAPSHOT.jar
+          test -f target/bom.json
+          test -f target/bom.xml
 
       - name: Upload executable JAR
         uses: actions/upload-artifact@v7
@@ -47,6 +50,16 @@ jobs:
           path: target/s3-multipart-uploader-1.3.0-SNAPSHOT.jar
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload CycloneDX SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: cyclonedx-sbom
+          path: |
+            target/bom.json
+            target/bom.xml
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload JaCoCo report
         uses: actions/upload-artifact@v7
