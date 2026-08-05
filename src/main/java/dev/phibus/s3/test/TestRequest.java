@@ -15,7 +15,10 @@ public record TestRequest(
         @NotBlank String objectKey,
         @Min(1) @Max(1024 * 1024) long objectSizeMiB,
         @Min(5) @Max(5120) long partSizeMiB,
-        @Pattern(regexp = "UPLOAD", message = "Only UPLOAD is supported in the MVP") String operation) {
+        @Min(1) @Max(32) int parallelism,
+        @Min(1) @Max(1000) int objectCount,
+        boolean deleteAfterTest,
+        @Pattern(regexp = "UPLOAD", message = "Only UPLOAD is supported") String operation) {
 
     public long objectSizeBytes() {
         return Math.multiplyExact(objectSizeMiB, 1024L * 1024L);
@@ -23,5 +26,9 @@ public record TestRequest(
 
     public long partSizeBytes() {
         return Math.multiplyExact(partSizeMiB, 1024L * 1024L);
+    }
+
+    public long totalBytes() {
+        return Math.multiplyExact(objectSizeBytes(), objectCount);
     }
 }
