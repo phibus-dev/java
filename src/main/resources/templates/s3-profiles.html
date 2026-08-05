@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>S3 profiles</title>
+    <style>
+        body{font-family:system-ui,sans-serif;margin:2rem;max-width:1200px}input,select,button{padding:.55rem;margin:.2rem}fieldset{margin:1rem 0;padding:1rem}table{width:100%;border-collapse:collapse}th,td{padding:.6rem;border-bottom:1px solid #ddd;text-align:left}.default{font-weight:700}.muted{color:#666}.error{color:#b00020}
+    </style>
+</head>
+<body>
+<h1>Профили подключений S3</h1>
+<p class="muted">Секретные ключи не сохраняются в PostgreSQL. Профиль хранит только параметры подключения и ссылку на путь в Vault.</p>
+
+<fieldset>
+    <legend>Создание профиля</legend>
+    <input id="name" placeholder="Имя профиля" required>
+    <input id="endpoint" placeholder="https://s3.example.org" size="35" required>
+    <input id="region" value="us-east-1" placeholder="Регион">
+    <input id="bucket" placeholder="Бакет">
+    <select id="credentialsSource"><option>VAULT</option><option>ENVIRONMENT</option><option>MANUAL</option></select>
+    <input id="vaultSecretPath" placeholder="secret/data/s3/profile" size="30">
+    <input id="caCertificatePath" placeholder="Путь к CA certificate" size="28">
+    <label><input id="pathStyleAccess" type="checkbox" checked> Path-style</label>
+    <label><input id="defaultProfile" type="checkbox"> По умолчанию</label>
+    <button onclick="createProfile()">Создать</button>
+    <div id="message"></div>
+</fieldset>
+
+<table>
+<thead><tr><th>Имя</th><th>Endpoint</th><th>Регион</th><th>Бакет</th><th>Credentials</th><th>Vault path</th><th>Действия</th></tr></thead>
+<tbody id="profiles"></tbody>
+</table>
+
+<script>
+const csrf = document.cookie.split('; ').find(v=>v.startsWith('XSRF-TOKEN='));
+const headers = {'Content-Type':'application/json', ...(csrf ? {'X-XSRF-TOKEN':decodeURIComponent(csrf.split('=')[1])} : {})};
+async function load(){
+ const response=await fetch('/api/s3-profiles'); const profiles=await response.json();
+ document.getElementById('profiles').innerHTML=profiles.map(p=>`<tr class="${p.defaultProfile?'default':''}">
+ <td>${esc(p.name)}${p.defaultProfile?' ★':''}</td><td>${esc(p.endpoint)}</td><td>${esc(p.region)}</td><td>${esc(p.bucket||'')}</td>
+ <td>${esc(p.credentialsSource)}</td><td>${esc(p.vaultSecretPath||'')}</td><td>
+ <button onclick="makeDefault('${p.id}')">Default</button><button onclick="cloneProfile('${p.id}','${escAttr(p.name)}')">Clone</button>
+ <button onclick="removeProfile('${p.id}',${p.defaultProfile})">Delete</button></td></tr>`).join('');
+}
+async function createProfile(){
+ const body={name:v('name'),endpoint:v('endpoint'),region:v('region'),bucket:v('bucket'),pathStyleAccess:c('pathStyleAccess'),
+ credentialsSource:v('credentialsSource'),vaultSecretPath:v('vaultSecretPath'),accessKeyField:'accessKey',secretKeyField:'secretKey',
+ sessionTokenField:'sessionToken',caCertificatePath:v('caCertificatePath'),defaultProfile:c('defaultProfile')};
+ await call('/api/s3-profiles','POST',body); await load();
+}
+async function makeDefault(id){await call(`/api/s3-profiles/${id}/default`,'POST',{});await load()}
+async function cloneProfile(id,name){const cloneName=prompt('Имя копии',name+' copy');if(cloneName){await call(`/api/s3-profiles/${id}/clone`,'POST',{name:cloneName});await load()}}
+async function removeProfile(id,isDefault){if(isDefault){alert('Сначала назначьте другой профиль по умолчанию');return}if(confirm('Удалить профиль?')){await call(`/api/s3-profiles/${id}`,'DELETE');await load()}}
+async function call(url,method,body){const r=await fetch(url,{method,headers,body:method==='DELETE'?undefined:JSON.stringify(body)});if(!r.ok){const text=await r.text();document.getElementById('message').innerHTML=`<span class="error">${esc(text)}</span>`;throw new Error(text)}document.getElementById('message').textContent='Сохранено'}
+function v(id){return document.getElementById(id).value}function c(id){return document.getElementById(id).checked}
+function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}function escAttr(s){return esc(s).replace(/`/g,'&#96;')}
+load();
+</script>
+</body>
+</html>
