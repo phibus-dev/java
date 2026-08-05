@@ -22,6 +22,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <spotbugs.version>4.10.3.0</spotbugs.version>
         <testcontainers.version>1.21.3</testcontainers.version>
+        <cyclonedx.version>2.9.1</cyclonedx.version>
     </properties>
 
     <dependencyManagement>
@@ -93,6 +94,29 @@
                 <groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId><version>${spotbugs.version}</version>
                 <configuration><effort>Max</effort><threshold>High</threshold><failOnError>true</failOnError></configuration>
                 <executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx.version}</version>
+                <configuration>
+                    <projectType>application</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeTestScope>false</includeTestScope>
+                    <outputDirectory>${project.build.directory}</outputDirectory>
+                    <outputName>bom</outputName>
+                    <outputFormat>all</outputFormat>
+                    <skipAttach>true</skipAttach>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>makeBom</goal></goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

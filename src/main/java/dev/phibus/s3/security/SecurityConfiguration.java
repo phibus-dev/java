@@ -21,10 +21,14 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfiguration {
+    private static final String CONTENT_SECURITY_POLICY =
+            "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; "
+                    + "form-action 'self'; img-src 'self' data:; connect-src 'self'; script-src 'self'; style-src 'self'";
 
     @Bean
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "false", matchIfMissing = true)
     SecurityFilterChain openSecurity(HttpSecurity http) throws Exception {
+        configureHeaders(http);
         return http
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
@@ -34,6 +38,7 @@ public class SecurityConfiguration {
     @Bean
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "true")
     SecurityFilterChain keycloakSecurity(HttpSecurity http) throws Exception {
+        configureHeaders(http);
         return http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
@@ -56,6 +61,19 @@ public class SecurityConfiguration {
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .logout(logout -> logout.logoutSuccessUrl("/"))
                 .build();
+    }
+
+    private static void configureHeaders(HttpSecurity http) throws Exception {
+        http.headers(headers -> headers
+                .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+                .frameOptions(frame -> frame.deny())
+                .referrerPolicy(referrer -> referrer.policy(
+                        org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                .permissionsPolicyHeader(policy -> policy.policy("camera=(), microphone=(), geolocation=(), payment=()"))
+                .httpStrictTransportSecurity(hsts -> hsts
+                        .includeSubDomains(true)
+                        .preload(true)
+                        .maxAgeInSeconds(31536000)));
     }
 
     JwtAuthenticationConverter jwtAuthenticationConverter() {

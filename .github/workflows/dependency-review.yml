@@ -1,0 +1,29 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        id: dependency-review
+        continue-on-error: true
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+      - name: Report dependency review availability
+        if: steps.dependency-review.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Dependency Review is unavailable. Enable Dependency Graph in repository Settings > Security > Code security and analysis to enforce this gate."
