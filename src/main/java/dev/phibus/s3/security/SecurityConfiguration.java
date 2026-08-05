@@ -1,0 +1,75 @@
+package dev.phibus.s3.security;
+
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfiguration {
+
+    @Bean
+    @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "false", matchIfMissing = true)
+    SecurityFilterChain openSecurity(HttpSecurity http) throws Exception {
+        return http.csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .build();
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "true")
+    SecurityFilterChain keycloakSecurity(HttpSecurity http) throws Exception {
+        return http
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/settings", "/api/settings/**", "/static/**", "/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN", "OPERATOR")
+                        .requestMatchers("/api/agents/register", "/api/agents/*/heartbeat",
+                                "/api/distributed-tests/agent/**").permitAll()
+                        .requestMatchers("/api/settings/**").hasRole("ADMIN")
+                        .requestMatchers("/api/schedules/**", "/api/distributed-tests/**", "/api/tests/**")
+                                .hasAnyRole("ADMIN", "OPERATOR")
+                        .requestMatchers("/settings/**").hasRole("ADMIN")
+                        .anyRequest().hasAnyRole("ADMIN", "OPERATOR", "VIEWER"))
+                .oauth2Login(Customizer.withDefaults())
+                .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                .logout(logout -> logout.logoutSuccessUrl("/"))
+                .build();
+    }
+
+    JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+        return converter;
+    }
+
+    static final class KeycloakRoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
+        @Override
+        public Collection<GrantedAuthority> convert(Jwt jwt) {
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>();
+            Object realmAccessValue = jwt.getClaims().get("realm_access");
+            if (realmAccessValue instanceof Map<?, ?> realmAccess) {
+                Object rolesValue = realmAccess.get("roles");
+                if (rolesValue instanceof Collection<?> roles) {
+                    roles.stream().map(String::valueOf).map(String::toUpperCase)
+                            .filter(role -> role.equals("ADMIN") || role.equals("OPERATOR") || role.equals("VIEWER"))
+                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                            .forEach(authorities::add);
+                }
+            }
+            return authorities;
+        }
+    }
+}
