@@ -39,7 +39,9 @@ public class ConfiguredCredentialProvider implements CredentialProvider {
         if (notBlank(request.accessKey()) && notBlank(request.secretKey()))
             return new S3Credentials(request.accessKey(), request.secretKey());
         BootstrapSettings settings = settingsService.load();
-        if (request.profileId() != null) return resolveProfile(settings.vault(), profileService.get(request.profileId()));
+        S3ProfileService.Profile selected = request.profileId() == null
+                ? profileService.defaultProfile() : profileService.get(request.profileId());
+        if (selected != null) return resolveProfile(settings.vault(), selected);
         BootstrapSettings.S3ProfileSettings profile = settings.s3();
         String source = normalizedSource(profile.credentialsSource());
         return switch (source) {
