@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Настройки — S3 Performance Test</title><link rel="stylesheet" href="/app.css"></head>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}"><title>Настройки — S3 Performance Test</title><link rel="stylesheet" href="/app.css"></head>
 <body><main class="container"><header><div><h1>Настройки</h1><p>Внешние PostgreSQL, Vault и профиль S3.</p></div><a href="/">Тестирование</a></header>
 <section class="panel"><div class="title-row"><h2>Состояние</h2><span class="status" th:text="${state}">STATE</span></div><p>Bootstrap-файл: <code th:text="${bootstrapPath}"></code></p><p th:unless="${encryptionReady}" class="warning">Задайте S3_PERF_BOOTSTRAP_KEY перед сохранением секретов.</p></section>
 <form id="settings-form">
