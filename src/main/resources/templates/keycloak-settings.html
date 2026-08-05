@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Настройки Keycloak</title>
+<style>body{font-family:Arial,sans-serif;max-width:980px;margin:30px auto;padding:0 20px;background:#f5f7fa}section{background:#fff;padding:24px;border-radius:10px;box-shadow:0 2px 10px #0001}label{display:block;margin-top:14px;font-weight:600}input,select{width:100%;box-sizing:border-box;padding:9px;margin-top:5px}button{margin:18px 8px 0 0;padding:10px 18px}.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.status{margin-top:16px;white-space:pre-wrap}.hint{color:#666;font-size:13px}</style></head>
+<body><section>
+<h1>Keycloak / OpenID Connect</h1>
+<p><a href="/settings">← Основные настройки</a></p>
+<label><input id="enabled" type="checkbox" th:checked="${keycloak.enabled()}"> Включить Keycloak после перезапуска</label>
+<label>Issuer URI<input id="issuerUri" th:value="${keycloak.issuerUri()}" placeholder="https://keycloak.example/realms/s3perf"></label>
+<div class="row"><label>Client ID<input id="clientId" th:value="${keycloak.clientId()}"></label><label>Client Secret<input id="clientSecret" type="password" placeholder="Оставьте пустым, чтобы сохранить текущий"></label></div>
+<label>Scopes<input id="scopes" th:value="${keycloak.scopes()}"></label>
+<div class="row"><label>Источник ролей<select id="roleSource"><option value="REALM" th:selected="${keycloak.roleSource() == 'REALM'}">Realm roles</option><option value="CLIENT" th:selected="${keycloak.roleSource() == 'CLIENT'}">Client roles</option></select></label><span></span></div>
+<div class="row"><label>Роль администратора<input id="adminRole" th:value="${keycloak.adminRole()}"></label><label>Роль оператора<input id="operatorRole" th:value="${keycloak.operatorRole()}"></label></div>
+<label>Роль наблюдателя<input id="viewerRole" th:value="${keycloak.viewerRole()}"></label>
+<p class="hint">Настройки сохраняются в bootstrap-файле. Client Secret шифруется ключом S3_PERF_BOOTSTRAP_KEY. Изменения применяются после перезапуска.</p>
+<button onclick="testConnection()">Проверить подключение</button><button onclick="saveSettings()">Сохранить</button>
+<div id="status" class="status"></div>
+</section>
+<script>
+function payload(){return {enabled:document.getElementById('enabled').checked,issuerUri:issuerUri.value,clientId:clientId.value,clientSecret:clientSecret.value,scopes:scopes.value,roleSource:roleSource.value,adminRole:adminRole.value,operatorRole:operatorRole.value,viewerRole:viewerRole.value}}
+function csrf(){const m=document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/);return m?decodeURIComponent(m[1]):''}
+async function call(url){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-XSRF-TOKEN':csrf()},body:JSON.stringify(payload())});const text=await r.text();if(!r.ok)throw new Error(text);return JSON.parse(text)}
+async function testConnection(){status.textContent='Проверка...';try{const x=await call('/api/settings/keycloak/test');status.textContent=(x.success?'OK: ':'Ошибка: ')+x.message+' ('+x.latencyMs+' мс)'}catch(e){status.textContent=e.message}}
+async function saveSettings(){status.textContent='Сохранение...';try{const x=await call('/api/settings/keycloak');status.textContent=x.message;clientSecret.value=''}catch(e){status.textContent=e.message}}
+</script></body></html>

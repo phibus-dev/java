@@ -40,7 +40,8 @@ public class SettingsService {
                         blankDefault(form.s3Region(), "us-east-1"), form.s3Bucket(), form.s3PathStyleAccess(),
                         blankDefault(form.s3CredentialsSource(), "VAULT"), form.s3VaultSecretPath(),
                         blankDefault(form.s3AccessKeyField(), "accessKey"), blankDefault(form.s3SecretKeyField(), "secretKey"),
-                        accessKey, secretKey));
+                        accessKey, secretKey),
+                current.keycloak());
         store.save(settings);
         stateService.refresh();
         return settings;
