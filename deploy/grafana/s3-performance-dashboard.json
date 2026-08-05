@@ -1,0 +1,25 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"type":"stat","title":"Active tests","id":1,"gridPos":{"h":4,"w":4,"x":0,"y":0},"targets":[{"expr":"s3_test_active","refId":"A"}]},
+    {"type":"stat","title":"Online agents","id":2,"gridPos":{"h":4,"w":4,"x":4,"y":0},"targets":[{"expr":"s3_agents_online","refId":"A"}]},
+    {"type":"stat","title":"Busy agents","id":3,"gridPos":{"h":4,"w":4,"x":8,"y":0},"targets":[{"expr":"s3_agents_busy","refId":"A"}]},
+    {"type":"stat","title":"Errors","id":4,"gridPos":{"h":4,"w":4,"x":12,"y":0},"targets":[{"expr":"s3_test_errors","refId":"A"}]},
+    {"type":"timeseries","title":"Throughput, MiB/s","id":5,"gridPos":{"h":8,"w":12,"x":0,"y":4},"targets":[{"expr":"s3_test_throughput_mibps","legendFormat":"Throughput","refId":"A"}]},
+    {"type":"timeseries","title":"Operations per second","id":6,"gridPos":{"h":8,"w":12,"x":12,"y":4},"targets":[{"expr":"s3_test_operations_per_second","legendFormat":"OPS","refId":"A"}]},
+    {"type":"timeseries","title":"P95 latency, ms","id":7,"gridPos":{"h":8,"w":12,"x":0,"y":12},"targets":[{"expr":"s3_test_p95_latency_milliseconds","legendFormat":"P95","refId":"A"}]},
+    {"type":"timeseries","title":"Transferred bytes","id":8,"gridPos":{"h":8,"w":12,"x":12,"y":12},"targets":[{"expr":"s3_test_transferred_bytes","legendFormat":"Bytes","refId":"A"}]},
+    {"type":"timeseries","title":"HTTP latency p95","id":9,"gridPos":{"h":8,"w":24,"x":0,"y":20},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, uri, method))","legendFormat":"{{method}} {{uri}}","refId":"A"}]}
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["s3", "performance", "load-testing"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "S3 Performance Test",
+  "uid": "s3-performance-test",
+  "version": 1
+}
