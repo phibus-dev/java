@@ -1,5 +1,6 @@
 package dev.phibus.s3.test;
 
+import dev.phibus.s3.history.TestHistoryStore;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -14,17 +15,28 @@ public class TestRunService {
     private final Map<UUID, TestRun> runs = new ConcurrentHashMap<>();
     private final UploadTestEngine engine;
     private final Executor testExecutor;
+    private final TestHistoryStore historyStore;
 
-    public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor) {
+    public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor,
+                          TestHistoryStore historyStore) {
         this.engine = engine;
         this.testExecutor = testExecutor;
+        this.historyStore = historyStore;
     }
 
     public TestRun create(TestRequest request) {
         TestRun run = new TestRun(request);
         runs.put(run.id(), run);
-        testExecutor.execute(() -> engine.execute(run));
+        testExecutor.execute(() -> executeAndPersist(run));
         return run;
+    }
+
+    private void executeAndPersist(TestRun run) {
+        try {
+            engine.execute(run);
+        } finally {
+            historyStore.save(run.snapshot());
+        }
     }
 
     public TestRun get(UUID id) {
