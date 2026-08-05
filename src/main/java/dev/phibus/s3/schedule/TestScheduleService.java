@@ -2,6 +2,7 @@ package dev.phibus.s3.schedule;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.phibus.s3.settings.ApplicationStateService;
 import dev.phibus.s3.test.TestRequest;
 import dev.phibus.s3.test.TestRun;
 import dev.phibus.s3.test.TestRunService;
@@ -25,11 +26,14 @@ public class TestScheduleService {
     private final TestRunService testRunService;
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final ApplicationStateService stateService;
 
-    public TestScheduleService(TestRunService testRunService, JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public TestScheduleService(TestRunService testRunService, JdbcTemplate jdbc, ObjectMapper objectMapper,
+                               ApplicationStateService stateService) {
         this.testRunService = testRunService;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.stateService = stateService;
     }
 
     public ScheduleView create(CreateScheduleRequest request) {
@@ -80,6 +84,9 @@ public class TestScheduleService {
 
     @Scheduled(fixedDelay = 1000)
     public void dispatchDueSchedules() {
+        if (stateService.current() != ApplicationStateService.State.READY) {
+            return;
+        }
         Instant now = Instant.now();
         List<UUID> due = jdbc.queryForList("""
                 SELECT id
