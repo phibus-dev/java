@@ -38,6 +38,16 @@ public class S3ProfileService {
         return result.getFirst();
     }
 
+    public Profile defaultProfile() {
+        List<Profile> result = jdbc.query("""
+                SELECT id, name, endpoint, region, bucket, path_style_access, credentials_source,
+                       vault_secret_path, access_key_field, secret_key_field, session_token_field,
+                       ca_certificate_path, is_default, created_at, updated_at
+                  FROM s3_profile WHERE is_default = TRUE
+                """, this::map);
+        return result.isEmpty() ? null : result.getFirst();
+    }
+
     @Transactional
     public Profile create(ProfileRequest request) {
         validate(request);
