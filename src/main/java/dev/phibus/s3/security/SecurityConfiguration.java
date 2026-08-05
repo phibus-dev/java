@@ -46,7 +46,7 @@ public class SecurityConfiguration {
                         .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/api/agents/register", "/api/agents/*/heartbeat",
                                 "/api/distributed-tests/agent/**").permitAll()
-                        .requestMatchers("/api/settings/**").hasRole("ADMIN")
+                        .requestMatchers("/api/settings/**", "/api/audit/**", "/audit.html").hasRole("ADMIN")
                         .requestMatchers("/api/schedules/**", "/api/distributed-tests/**", "/api/tests/**")
                                 .hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/settings/**").hasRole("ADMIN")
