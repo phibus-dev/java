@@ -40,12 +40,20 @@ public class TestRunService {
     }
 
     private TestRequest resolveProfile(TestRequest request) {
-        if (request.profileId() == null) return request;
-        S3ProfileService.Profile profile = profileService.get(request.profileId());
+        S3ProfileService.Profile profile = request.profileId() == null
+                ? profileService.defaultProfile() : profileService.get(request.profileId());
+        if (profile == null) return request;
         String bucket = profile.bucket() == null || profile.bucket().isBlank() ? request.bucket() : profile.bucket();
         if (bucket == null || bucket.isBlank())
             throw new IllegalArgumentException("Bucket is not configured in selected S3 profile or request");
-        return request.withConnection(profile.endpoint(), bucket, profile.region(), profile.pathStyleAccess());
+        UUID effectiveProfileId = request.profileId() == null ? profile.id() : request.profileId();
+        TestRequest profiled = new TestRequest(request.endpoint(), request.bucket(), request.region(), request.accessKey(),
+                request.secretKey(), request.pathStyleAccess(), request.objectKey(), request.objectSizeMiB(),
+                request.partSizeMiB(), request.parallelism(), request.objectCount(), request.deleteAfterTest(),
+                request.operation(), request.executionMode(), request.durationSeconds(), request.warmupSeconds(),
+                request.workloadProfile(), request.workloadWeights(), request.targetOperationsPerSecond(),
+                request.operationThreads(), effectiveProfileId);
+        return profiled.withConnection(profile.endpoint(), bucket, profile.region(), profile.pathStyleAccess());
     }
 
     private void executeAndPersist(TestRun run) {
