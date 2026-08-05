@@ -106,13 +106,15 @@
                     <includeCompileScope>true</includeCompileScope>
                     <includeRuntimeScope>true</includeRuntimeScope>
                     <includeTestScope>false</includeTestScope>
+                    <outputDirectory>${project.build.directory}</outputDirectory>
                     <outputName>bom</outputName>
                     <outputFormat>all</outputFormat>
+                    <skipAttach>true</skipAttach>
                 </configuration>
                 <executions>
                     <execution>
                         <phase>package</phase>
-                        <goals><goal>makeAggregateBom</goal></goals>
+                        <goals><goal>makeBom</goal></goals>
                     </execution>
                 </executions>
             </plugin>
