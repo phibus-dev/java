@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+dev.phibus.s3.settings.KeycloakBootstrapEnvironmentPostProcessor
