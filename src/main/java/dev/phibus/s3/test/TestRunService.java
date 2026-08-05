@@ -5,28 +5,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.scheduling.annotation.Async;
+import java.util.concurrent.Executor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TestRunService {
     private final Map<UUID, TestRun> runs = new ConcurrentHashMap<>();
     private final UploadTestEngine engine;
+    private final Executor testExecutor;
 
-    public TestRunService(UploadTestEngine engine) {
+    public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor) {
         this.engine = engine;
+        this.testExecutor = testExecutor;
     }
 
     public TestRun create(TestRequest request) {
         TestRun run = new TestRun(request);
         runs.put(run.id(), run);
-        execute(run);
+        testExecutor.execute(() -> engine.execute(run));
         return run;
-    }
-
-    @Async("testExecutor")
-    public void execute(TestRun run) {
-        engine.execute(run);
     }
 
     public TestRun get(UUID id) {
