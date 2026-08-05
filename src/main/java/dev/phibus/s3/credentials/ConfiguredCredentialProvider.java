@@ -1,35 +1,26 @@
 package dev.phibus.s3.credentials;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.phibus.s3.settings.BootstrapSecretCodec;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.S3ProfileService;
 import dev.phibus.s3.settings.SettingsService;
 import dev.phibus.s3.settings.VaultAuthService;
 import dev.phibus.s3.test.TestRequest;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ConfiguredCredentialProvider implements CredentialProvider {
     private final SettingsService settingsService;
     private final BootstrapSecretCodec codec;
-    private final ObjectMapper objectMapper;
     private final VaultAuthService vaultAuthService;
     private final S3ProfileService profileService;
-    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
     public ConfiguredCredentialProvider(SettingsService settingsService, BootstrapSecretCodec codec,
-                                        ObjectMapper objectMapper, VaultAuthService vaultAuthService,
-                                        S3ProfileService profileService) {
+                                        com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+                                        VaultAuthService vaultAuthService, S3ProfileService profileService) {
         this.settingsService = settingsService;
         this.codec = codec;
-        this.objectMapper = objectMapper;
         this.vaultAuthService = vaultAuthService;
         this.profileService = profileService;
     }
@@ -64,28 +55,13 @@ public class ConfiguredCredentialProvider implements CredentialProvider {
 
     private S3Credentials fromVault(BootstrapSettings.VaultSettings vault, String secretPath,
                                     String accessKeyField, String secretKeyField) {
-        if (vault.address() == null || vault.address().isBlank()) throw new IllegalStateException("Vault address is not configured");
-        if (secretPath == null || secretPath.isBlank()) throw new IllegalStateException("Vault S3 secret path is not configured");
-        String token = vaultAuthService.resolve(vault);
-        String mount = trimSlashes(vault.kvMount());
-        String path = trimSlashes(secretPath);
-        URI uri = URI.create(stripTrailingSlash(vault.address()) + "/v1/" + mount + "/data/" + path);
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10)).header("X-Vault-Token", token).GET().build();
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() / 100 != 2) throw new IllegalStateException("Vault returned HTTP " + response.statusCode());
-            JsonNode data = objectMapper.readTree(response.body()).path("data").path("data");
-            String accessKey = data.path(defaultValue(accessKeyField, "accessKey")).asText("");
-            String secretKey = data.path(defaultValue(secretKeyField, "secretKey")).asText("");
-            if (accessKey.isBlank() || secretKey.isBlank())
-                throw new IllegalStateException("Vault secret does not contain configured S3 credential fields");
-            return new S3Credentials(accessKey, secretKey);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Vault request interrupted", e);
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot read S3 credentials from Vault: " + e.getMessage(), e);
+        JsonNode data = vaultAuthService.readKvV2(vault, secretPath);
+        String accessKey = data.path(defaultValue(accessKeyField, "accessKey")).asText("");
+        String secretKey = data.path(defaultValue(secretKeyField, "secretKey")).asText("");
+        if (accessKey.isBlank() || secretKey.isBlank()) {
+            throw new IllegalStateException("Vault secret does not contain configured S3 credential fields");
         }
+        return new S3Credentials(accessKey, secretKey);
     }
 
     private static S3Credentials environmentCredentials() {
@@ -99,6 +75,4 @@ public class ConfiguredCredentialProvider implements CredentialProvider {
         return value;
     }
     private static boolean notBlank(String value) { return value != null && !value.isBlank(); }
-    private static String stripTrailingSlash(String value) { return value.endsWith("/") ? value.substring(0, value.length() - 1) : value; }
-    private static String trimSlashes(String value) { return value == null ? "" : value.replaceAll("^/+|/+$", ""); }
 }
