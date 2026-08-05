@@ -44,7 +44,7 @@ public final class S3MultipartUploader {
         }
     }
 
-    static void upload(S3Client client, Config config) throws IOException {
+    static void upload(S3Client client, Config config) throws Exception {
         String key = config.objectKey();
         System.out.printf("Uploading s3://%s/%s (%,d bytes)%n", config.bucket(), key, config.sizeBytes());
         if (config.sizeBytes() < MIN_PART_SIZE) {
@@ -60,9 +60,7 @@ public final class S3MultipartUploader {
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(config.pathStyleAccess())
                         .build());
-        if (config.endpoint() != null) {
-            builder.endpointOverride(URI.create(config.endpoint()));
-        }
+        if (config.endpoint() != null) builder.endpointOverride(URI.create(config.endpoint()));
         if (config.accessKey() != null && config.secretKey() != null) {
             builder.credentialsProvider(StaticCredentialsProvider.create(
                     AwsBasicCredentials.create(config.accessKey(), config.secretKey())));
@@ -79,7 +77,7 @@ public final class S3MultipartUploader {
         printSpeed("PutObject completed", config.sizeBytes(), start);
     }
 
-    private static void multipartPut(S3Client client, Config config, String key) throws IOException {
+    private static void multipartPut(S3Client client, Config config, String key) throws Exception {
         long partSize = normalizePartSize(config.partSizeBytes(), config.sizeBytes());
         long partCount = partCount(config.sizeBytes(), partSize);
         String uploadId = client.createMultipartUpload(CreateMultipartUploadRequest.builder()
@@ -100,11 +98,9 @@ public final class S3MultipartUploader {
                 printSpeed("Part " + partNumber + " completed", currentSize, partStart);
                 remaining -= currentSize;
             }
-
             client.completeMultipartUpload(CompleteMultipartUploadRequest.builder()
                     .bucket(config.bucket()).key(key).uploadId(uploadId)
-                    .multipartUpload(CompletedMultipartUpload.builder().parts(completed).build())
-                    .build());
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completed).build()).build());
             printSpeed("Multipart upload completed", config.sizeBytes(), overallStart);
         } catch (Exception e) {
             try {
@@ -124,13 +120,9 @@ public final class S3MultipartUploader {
     }
 
     static long partCount(long totalSize, long partSize) {
-        if (totalSize <= 0 || partSize <= 0) {
-            throw new IllegalArgumentException("Size and part size must be positive");
-        }
+        if (totalSize <= 0 || partSize <= 0) throw new IllegalArgumentException("Size and part size must be positive");
         long count = (totalSize + partSize - 1) / partSize;
-        if (count > MAX_PARTS) {
-            throw new IllegalArgumentException("Multipart upload would exceed 10,000 parts");
-        }
+        if (count > MAX_PARTS) throw new IllegalArgumentException("Multipart upload would exceed 10,000 parts");
         return count;
     }
 
@@ -147,8 +139,7 @@ public final class S3MultipartUploader {
             String region = requiredEnv("S3_REGION");
             long size = args.length > 0 ? parsePositiveLong(args[0], "size")
                     : parsePositiveLong(envOrDefault("S3_SIZE_BYTES", "1073741824"), "S3_SIZE_BYTES");
-            long partSize = parsePositiveLong(envOrDefault("S3_PART_SIZE_BYTES", String.valueOf(DEFAULT_PART_SIZE)),
-                    "S3_PART_SIZE_BYTES");
+            long partSize = parsePositiveLong(envOrDefault("S3_PART_SIZE_BYTES", String.valueOf(DEFAULT_PART_SIZE)), "S3_PART_SIZE_BYTES");
             String key = envOrDefault("S3_OBJECT_KEY", "random-upload-" + System.currentTimeMillis() + ".bin");
             return new Config(bucket, region, blankToNull(System.getenv("S3_ENDPOINT")),
                     blankToNull(System.getenv("S3_ACCESS_KEY")), blankToNull(System.getenv("S3_SECRET_KEY")),
@@ -157,9 +148,7 @@ public final class S3MultipartUploader {
 
         private static String requiredEnv(String name) {
             String value = blankToNull(System.getenv(name));
-            if (value == null) {
-                throw new IllegalArgumentException("Missing environment variable: " + name);
-            }
+            if (value == null) throw new IllegalArgumentException("Missing environment variable: " + name);
             return value;
         }
 
@@ -204,10 +193,7 @@ public final class S3MultipartUploader {
         public int read(byte[] buffer, int offset, int length) {
             if (position >= size) return -1;
             int count = (int) Math.min(length, size - position);
-            int end = offset + count;
-            for (int i = offset; i < end; i++) {
-                buffer[i] = (byte) random.nextInt(256);
-            }
+            for (int i = offset; i < offset + count; i++) buffer[i] = (byte) random.nextInt(256);
             position += count;
             return count;
         }
