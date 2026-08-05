@@ -48,6 +48,18 @@ public record TestRequest(
                 executionMode, durationSeconds, warmupSeconds, "CUSTOM", Map.of(), 0, Map.of(), null);
     }
 
+    public TestRequest(String endpoint, String bucket, String region, String accessKey, String secretKey,
+                       boolean pathStyleAccess, String objectKey, long objectSizeMiB, long partSizeMiB,
+                       int parallelism, int objectCount, boolean deleteAfterTest, String operation,
+                       String executionMode, long durationSeconds, long warmupSeconds,
+                       String workloadProfile, Map<String, Integer> workloadWeights,
+                       int targetOperationsPerSecond, Map<String, Integer> operationThreads) {
+        this(endpoint, bucket, region, accessKey, secretKey, pathStyleAccess, objectKey, objectSizeMiB,
+                partSizeMiB, parallelism, objectCount, deleteAfterTest, operation, executionMode,
+                durationSeconds, warmupSeconds, workloadProfile, workloadWeights,
+                targetOperationsPerSecond, operationThreads, null);
+    }
+
     public TestRequest withConnection(String resolvedEndpoint, String resolvedBucket, String resolvedRegion,
                                       boolean resolvedPathStyleAccess) {
         return new TestRequest(resolvedEndpoint, resolvedBucket, resolvedRegion, accessKey, secretKey,
