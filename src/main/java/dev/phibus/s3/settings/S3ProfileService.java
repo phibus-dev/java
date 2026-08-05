@@ -3,6 +3,7 @@ package dev.phibus.s3.settings;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -119,8 +120,12 @@ public class S3ProfileService {
                 rs.getString("credentials_source"), rs.getString("vault_secret_path"),
                 rs.getString("access_key_field"), rs.getString("secret_key_field"),
                 rs.getString("session_token_field"), rs.getString("ca_certificate_path"),
-                rs.getBoolean("is_default"), rs.getObject("created_at", Instant.class),
-                rs.getObject("updated_at", Instant.class));
+                rs.getBoolean("is_default"), instant(rs, "created_at"), instant(rs, "updated_at"));
+    }
+
+    private static Instant instant(ResultSet rs, String column) throws SQLException {
+        OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
     }
 
     private static void validate(ProfileRequest request) {
