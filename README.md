@@ -1,47 +1,65 @@
-# S3 Performance Test Web
+# S3 Performance Test Web 2.0.0
 
-Java 21 / Spring Boot приложение для функционального, нагрузочного и регрессионного тестирования AWS S3, MinIO и других S3-совместимых объектных хранилищ.
+Java 21 / Spring Boot приложение для функционального, нагрузочного, распределённого и регрессионного тестирования AWS S3, MinIO и других S3-совместимых объектных хранилищ.
 
-Приложение поддерживает локальное и распределённое выполнение тестов, хранение истории во внешнем PostgreSQL, получение секретов из HashiCorp Vault, аутентификацию через Keycloak, планирование запусков, baseline-сравнение и мониторинг через Prometheus/Grafana.
+Приложение предоставляет Web UI и REST API, поддерживает локальные и распределённые тесты, хранение истории во внешнем PostgreSQL, получение секретов из HashiCorp Vault, аутентификацию через Keycloak, планирование запусков, baseline-сравнение, аудит и мониторинг через Prometheus/Grafana.
 
 ## Основные возможности
 
 - Web UI и REST API;
+- локальный режим Coordinator и автономный режим Agent;
+- распределённое выполнение тестов несколькими агентами;
 - выбор S3-профиля, endpoint, региона и bucket;
+- несколько постоянных S3-профилей во внешнем PostgreSQL;
+- автоматическое применение `profileId` при запуске теста;
 - multipart upload и параллельное выполнение операций;
-- тесты загрузки, чтения, удаления и смешанной нагрузки;
+- тесты PUT/UPLOAD, GET, HEAD, LIST, DELETE и mixed workload;
 - выполнение по количеству операций или продолжительности;
 - warm-up перед измеряемой фазой;
-- текущие OPS, throughput, объём, ошибки и p50/p95/p99 latency;
+- OPS, throughput, переданный объём, ошибки и p50/p95/p99 latency;
 - остановка активного теста;
 - история результатов во внешнем PostgreSQL;
 - экспорт результатов в JSON и CSV;
 - повторный запуск теста;
 - baseline и выявление регрессии производительности;
 - постоянный scheduler с восстановлением после перезапуска;
-- распределённое тестирование через coordinator и автономные агенты;
 - промежуточная статистика и агрегация результатов агентов;
-- несколько постоянных S3-профилей;
-- Vault Token и AppRole;
+- HashiCorp Vault Token и AppRole;
 - опциональная аутентификация Keycloak OIDC и RBAC;
 - аудит действий в PostgreSQL и страница `/audit.html`;
 - Prometheus, Grafana, liveness и readiness endpoints;
-- CycloneDX SBOM, CodeQL, SpotBugs, JaCoCo и интеграционные тесты Testcontainers.
+- CSRF protection и security headers;
+- CycloneDX SBOM, CodeQL, SpotBugs, JaCoCo и Testcontainers.
 
 ## Архитектура
 
 ```text
 Web browser / REST client
           |
-          v
-S3 Performance Test Coordinator
-  |       |        |         |
-  |       |        |         +--> Keycloak OIDC
-  |       |        +------------> HashiCorp Vault
-  |       +---------------------> внешний PostgreSQL
-  +-----------------------------> S3 / MinIO
+        HTTPS
           |
-          +----------------------> Distributed agents --> S3 / MinIO
++----------------------------------+
+| S3 Performance Test Coordinator  |
+| - Web UI / REST API              |
+| - Scheduler                      |
+| - History / Baseline             |
+| - Security Audit / RBAC          |
+| - Distributed Test Control       |
++----------------------------------+
+     |          |           |
+   JDBC       HTTPS       Agent API
+     |          |           |
+PostgreSQL   Vault /     +------------------+
+             Keycloak    | Agent 1..N       |
+                         | - registration   |
+                         | - heartbeat      |
+                         | - job polling    |
+                         | - S3 workload    |
+                         +------------------+
+                                |
+                              S3 API
+                                |
+                         S3 / MinIO / Storage
 ```
 
 PostgreSQL, Vault, Keycloak и S3/MinIO являются внешними сервисами. Приложение не разворачивает их в production автоматически.
@@ -50,11 +68,11 @@ PostgreSQL, Vault, Keycloak и S3/MinIO являются внешними сер
 
 ### Coordinator
 
-Основной режим с Web UI, REST API, scheduler, историей и управлением агентами.
+Основной режим с Web UI, REST API, scheduler, историей, baseline, аудитом и управлением агентами.
 
 ### Agent
 
-Один и тот же JAR может запускаться как автономный агент:
+Один и тот же JAR запускается как автономный агент:
 
 ```bash
 export S3PERF_APPLICATION_MODE=AGENT
@@ -64,10 +82,10 @@ export S3PERF_AGENT_NAME=agent-01
 export S3PERF_AGENT_ADDRESS=10.10.10.21
 export S3PERF_AGENT_IDENTITY_FILE=/opt/s3perf/config/agent-identity.json
 
-java -jar s3-multipart-uploader-1.3.0-SNAPSHOT.jar
+java -jar s3-multipart-uploader-2.0.0.jar
 ```
 
-Агент автоматически регистрируется, сохраняет identity и token, отправляет heartbeat, получает задания, передаёт промежуточную статистику и финальный результат.
+Агент автоматически регистрируется, сохраняет identity и agent token, отправляет heartbeat, получает задания, выполняет тесты и передаёт промежуточную и итоговую статистику.
 
 ## Bootstrap mode
 
@@ -115,7 +133,7 @@ config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3-performance/config/bootstrap-settings.json
 ```
 
-Секреты шифруются AES-GCM. Перед их сохранением задайте мастер-фразу:
+Секреты шифруются AES-GCM. Перед сохранением задайте мастер-фразу:
 
 ```bash
 export S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value'
@@ -144,6 +162,8 @@ export S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value'
 
 `profileId` передаётся в запросе запуска. Если он не указан, используется профиль по умолчанию. Endpoint, region, bucket, path-style и Vault path автоматически подставляются в S3 engine.
 
+S3 credentials и session token не сохраняются в PostgreSQL.
+
 ## HashiCorp Vault
 
 Заявлена поддержка **HashiCorp Vault Community Edition 2.0.x**.
@@ -167,7 +187,7 @@ APPROLE
 
 ## Keycloak OIDC и RBAC
 
-Безопасность опциональна и по умолчанию отключена:
+Безопасность опциональна:
 
 ```bash
 export S3PERF_SECURITY_ENABLED=true
@@ -186,27 +206,25 @@ export S3PERF_SECURITY_AUDIT_ENABLED=true
 |---|---|
 | `ADMIN` | Настройки, S3-профили, Vault, Keycloak, аудит и все операции. |
 | `OPERATOR` | Запуск и остановка тестов, scheduler и distributed tests. |
-| `VIEWER` | Просмотр UI, истории и результатов. |
+| `VIEWER` | Просмотр Web UI, истории и результатов. |
 
 Audit events сохраняют пользователя, действие, HTTP method, path, status, remote address и duration. Просмотр доступен на `/audit.html`.
 
-## Запуск теста
-
-Основные страницы:
+## Основные страницы Web UI
 
 ```text
-/                     основной Web UI
-/history.html         история запусков
-/schedules.html       scheduler
-/agents.html          агенты
-/distributed-tests.html распределённые тесты
-/audit.html           аудит
-/settings             bootstrap-настройки
-/settings/s3-profiles S3-профили
-/settings/keycloak    Keycloak
+/                         основной Web UI
+/history.html             история запусков
+/schedules.html           scheduler
+/agents.html              агенты
+/distributed-tests.html   распределённые тесты
+/audit.html               аудит
+/settings                 bootstrap-настройки
+/settings/s3-profiles     S3-профили
+/settings/keycloak        Keycloak
 ```
 
-Пример REST-запроса:
+## Пример REST-запроса запуска
 
 ```json
 {
@@ -224,7 +242,7 @@ Audit events сохраняют пользователя, действие, HTTP
 
 ## Scheduler
 
-Расписания хранятся в PostgreSQL и восстанавливаются после перезапуска. Для предотвращения двойного запуска несколькими экземплярами coordinator используется атомарный claim задания и lease.
+Расписания хранятся в PostgreSQL и восстанавливаются после перезапуска. Для предотвращения двойного запуска несколькими экземплярами Coordinator используется атомарный claim задания и lease.
 
 Сохраняются:
 
@@ -241,27 +259,115 @@ last_error
 
 ## Сборка и запуск
 
+Требования:
+
+- Java 21;
+- Maven 3.9+;
+- Docker Engine для интеграционных тестов Testcontainers.
+
+Сборка:
+
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-1.3.0-SNAPSHOT.jar
 ```
 
-Интеграционные тесты поднимают временные PostgreSQL и MinIO Testcontainers исключительно на время `mvn verify`. Для локального запуска интеграционных тестов требуется Docker Engine.
+Запуск:
+
+```bash
+java -jar target/s3-multipart-uploader-2.0.0.jar
+```
+
+Интеграционные тесты поднимают временные PostgreSQL и MinIO Testcontainers исключительно на время `mvn verify`. Эти контейнеры не являются частью production-архитектуры.
 
 ## Docker
 
+Сборка образа:
+
 ```bash
-docker build -t s3-performance-test-web:1.3.0 .
+docker build -t s3-performance-test-web:2.0.0 .
+```
+
+Запуск Coordinator:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value' \
+  -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
+  -v "$PWD/config:/app/config" \
+  s3-performance-test-web:2.0.0
+```
+
+Запуск из GHCR:
+
+```bash
 docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='use-a-long-random-secret-value' \
   -v "$PWD/config:/app/config" \
-  s3-performance-test-web:1.3.0
+  ghcr.io/phibus-dev/s3-performance-test-web:2.0.0
 ```
 
-Контейнер запускает приложение непривилегированным пользователем. Для HTTPS-развёртываний рекомендуется:
+Контейнер запускает приложение непривилегированным пользователем.
+
+Для HTTPS-развёртываний:
 
 ```bash
 export S3PERF_SESSION_COOKIE_SECURE=true
+```
+
+## Kubernetes
+
+Рекомендуемая схема:
+
+- отдельный Deployment Coordinator;
+- Service и HTTPS Ingress;
+- Secret для `S3_PERF_BOOTSTRAP_KEY`;
+- PVC для `bootstrap-settings.json`;
+- отдельный Deployment или StatefulSet для Agent;
+- readiness probe `/actuator/health/readiness`;
+- liveness probe `/actuator/health/liveness`;
+- внешние PostgreSQL, Vault, Keycloak и S3.
+
+Пример фрагмента Deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3perf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3perf
+  template:
+    metadata:
+      labels:
+        app: s3perf
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: app
+          image: ghcr.io/phibus-dev/s3-performance-test-web:2.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: S3_PERF_BOOTSTRAP_FILE
+              value: /app/config/bootstrap-settings.json
+            - name: S3_PERF_BOOTSTRAP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3perf-bootstrap
+                  key: S3_PERF_BOOTSTRAP_KEY
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
 ```
 
 ## Health и Prometheus
@@ -294,18 +400,7 @@ application="s3-performance-test"
 | `s3_agents_busy` | Gauge | Агенты `BUSY`. |
 | `s3_agents_offline` | Gauge | Агенты `OFFLINE`. |
 
-Также доступны JVM, process, disk и HTTP metrics:
-
-```text
-jvm_memory_used_bytes
-jvm_threads_live_threads
-process_cpu_usage
-system_cpu_usage
-process_uptime_seconds
-http_server_requests_seconds_count
-http_server_requests_seconds_sum
-http_server_requests_seconds_bucket
-```
+Также доступны JVM, process, disk и HTTP metrics.
 
 Пример p95 HTTP latency:
 
@@ -354,36 +449,11 @@ Dashboard содержит:
 - Transferred bytes;
 - HTTP latency p95.
 
-Минимальный код dashboard:
-
-```json
-{
-  "editable": true,
-  "refresh": "10s",
-  "schemaVersion": 41,
-  "tags": ["s3", "performance", "load-testing"],
-  "time": {"from": "now-1h", "to": "now"},
-  "timezone": "browser",
-  "title": "S3 Performance Test",
-  "uid": "s3-performance-test",
-  "panels": [
-    {"type":"stat","title":"Active tests","targets":[{"expr":"s3_test_active"}]},
-    {"type":"stat","title":"Online agents","targets":[{"expr":"s3_agents_online"}]},
-    {"type":"stat","title":"Busy agents","targets":[{"expr":"s3_agents_busy"}]},
-    {"type":"stat","title":"Errors","targets":[{"expr":"s3_test_errors"}]},
-    {"type":"timeseries","title":"Throughput, MiB/s","targets":[{"expr":"s3_test_throughput_mibps"}]},
-    {"type":"timeseries","title":"Operations per second","targets":[{"expr":"s3_test_operations_per_second"}]},
-    {"type":"timeseries","title":"P95 latency, ms","targets":[{"expr":"s3_test_p95_latency_milliseconds"}]},
-    {"type":"timeseries","title":"Transferred bytes","targets":[{"expr":"s3_test_transferred_bytes"}]},
-    {"type":"timeseries","title":"HTTP latency p95","targets":[{"expr":"histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, uri, method))"}]}
-  ]
-}
-```
-
 ## Безопасность
 
 Приложение включает:
 
+- OIDC/JWT и RBAC;
 - CSRF protection с cookie-based token repository;
 - исключения CSRF только для token-based agent API;
 - Content-Security-Policy;
@@ -392,18 +462,21 @@ Dashboard содержит:
 - Permissions Policy;
 - HSTS при HTTPS;
 - `HttpOnly` и `SameSite=Lax` session cookies;
+- опциональный `Secure` cookie;
 - скрытие stack trace и внутренних сообщений в HTTP errors;
-- CodeQL и Dependency Review;
-- SpotBugs;
+- аудит действий в PostgreSQL;
+- CodeQL, Dependency Review и SpotBugs;
 - CycloneDX SBOM.
 
-SBOM формируется при сборке и публикуется CI как artifact:
+## SBOM
+
+SBOM формируется при Maven-сборке и публикуется CI как artifact:
 
 ```text
 target/classes/META-INF/sbom/application.cdx.json
 ```
 
-## CI
+## CI/CD
 
 GitHub Actions выполняет:
 
@@ -412,20 +485,56 @@ unit tests
 PostgreSQL integration tests
 MinIO S3 compatibility tests
 Flyway migration tests
-JaCoCo report
 SpotBugs
+JaCoCo
 CodeQL
 Dependency Review
-CycloneDX SBOM
-executable JAR verification
+CycloneDX SBOM generation
+JAR verification
 ```
 
-## Текущая версия
+Release workflow формирует:
 
-В ветке `main` используется версия:
+- исполняемый JAR;
+- sources JAR;
+- javadoc JAR;
+- CycloneDX SBOM;
+- SHA256SUMS;
+- README;
+- release notes;
+- upgrade guide;
+- Docker image в GHCR.
+
+## Релиз 2.0.0
+
+Основной артефакт:
 
 ```text
-1.3.0-SNAPSHOT
+s3-multipart-uploader-2.0.0.jar
 ```
 
-Подготовка релиза `2.0.0` выполняется отдельно и после слияния release-изменений README и команды запуска должны использовать финальное имя JAR `s3-multipart-uploader-2.0.0.jar`.
+Docker image:
+
+```text
+ghcr.io/phibus-dev/s3-performance-test-web:2.0.0
+```
+
+Дополнительные документы:
+
+```text
+RELEASE_NOTES_2.0.0.md
+UPGRADE_2.0.0.md
+```
+
+## Документация
+
+Для проекта подготовлены отдельные документы:
+
+- архитектурное решение;
+- руководство по установке в Linux, Docker и Kubernetes;
+- руководство пользователя;
+- руководство по функциональному тестированию.
+
+## Лицензия
+
+Укажите лицензию проекта в отдельном файле `LICENSE`, если она ещё не добавлена.
