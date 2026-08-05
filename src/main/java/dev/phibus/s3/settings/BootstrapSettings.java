@@ -13,6 +13,10 @@ public record BootstrapSettings(
         keycloak = keycloak == null ? KeycloakSettings.empty() : keycloak;
     }
 
+    public BootstrapSettings(PostgreSqlSettings postgresql, VaultSettings vault, S3ProfileSettings s3) {
+        this(postgresql, vault, s3, KeycloakSettings.empty());
+    }
+
     public static BootstrapSettings empty() {
         return new BootstrapSettings(PostgreSqlSettings.empty(), VaultSettings.empty(), S3ProfileSettings.empty(), KeycloakSettings.empty());
     }
