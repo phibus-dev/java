@@ -1,0 +1,27 @@
+package dev.phibus.s3.test;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+
+public record TestRequest(
+        @NotBlank String endpoint,
+        @NotBlank String bucket,
+        @NotBlank String region,
+        @NotBlank String accessKey,
+        @NotBlank String secretKey,
+        boolean pathStyleAccess,
+        @NotBlank String objectKey,
+        @Min(1) @Max(1024 * 1024) long objectSizeMiB,
+        @Min(5) @Max(5120) long partSizeMiB,
+        @Pattern(regexp = "UPLOAD", message = "Only UPLOAD is supported in the MVP") String operation) {
+
+    public long objectSizeBytes() {
+        return Math.multiplyExact(objectSizeMiB, 1024L * 1024L);
+    }
+
+    public long partSizeBytes() {
+        return Math.multiplyExact(partSizeMiB, 1024L * 1024L);
+    }
+}
