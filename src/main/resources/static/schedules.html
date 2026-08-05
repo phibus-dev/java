@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Расписания тестов</title>
+<style>body{font-family:Arial,sans-serif;margin:2rem;max-width:1200px}input,select,button,textarea{padding:.55rem;margin:.25rem}textarea{width:100%;min-height:180px}table{border-collapse:collapse;width:100%;margin-top:1rem}th,td{border:1px solid #ddd;padding:.55rem;text-align:left}.error{color:#b00020}.ok{color:#067d17}</style></head>
+<body>
+<nav><a href="/">Тестирование</a> · <a href="/history">История</a> · <a href="/agents">Агенты</a> · <a href="/distributed-tests">Распределённые тесты</a></nav>
+<h1>Расписания тестов</h1>
+<p>Используется шестипольное Spring cron-выражение: секунды, минуты, часы, день месяца, месяц, день недели.</p>
+<div>
+<input id="name" placeholder="Название" value="Nightly S3 test">
+<input id="cron" placeholder="0 0 1 * * *" value="0 0 1 * * *">
+<input id="zone" placeholder="Europe/Riga" value="Europe/Riga">
+<label><input id="enabled" type="checkbox" checked> Включено</label>
+</div>
+<textarea id="request">{"endpoint":"http://localhost:9000","bucket":"test","region":"us-east-1","pathStyleAccess":true,"objectKey":"scheduled/test.bin","objectSizeMiB":64,"partSizeMiB":16,"parallelism":4,"objectCount":1,"deleteAfterTest":true,"operation":"UPLOAD","executionMode":"OBJECT_COUNT","durationSeconds":60,"warmupSeconds":0,"workloadProfile":"CUSTOM","workloadWeights":{},"targetOperationsPerSecond":0,"operationThreads":{}}</textarea>
+<button onclick="createSchedule()">Создать расписание</button><span id="message"></span>
+<table><thead><tr><th>Название</th><th>Cron</th><th>Часовой пояс</th><th>Статус</th><th>Следующий запуск</th><th>Последний запуск</th><th>Действия</th></tr></thead><tbody id="rows"></tbody></table>
+<script>
+async function load(){const r=await fetch('/api/schedules');const data=await r.json();rows.innerHTML=data.map(s=>`<tr><td>${esc(s.name)}</td><td><code>${esc(s.cronExpression)}</code></td><td>${esc(s.timeZone)}</td><td>${s.enabled?'ENABLED':'DISABLED'}</td><td>${s.nextRunAt||'-'}</td><td>${s.lastRunAt||'-'}${s.lastError?'<div class="error">'+esc(s.lastError)+'</div>':''}</td><td><button onclick="runNow('${s.id}')">Запустить</button><button onclick="toggle('${s.id}',${!s.enabled})">${s.enabled?'Отключить':'Включить'}</button><button onclick="removeSchedule('${s.id}')">Удалить</button></td></tr>`).join('')}
+async function createSchedule(){try{const payload={name:name.value,enabled:enabled.checked,cronExpression:cron.value,timeZone:zone.value,testRequest:JSON.parse(request.value)};const r=await fetch('/api/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok)throw new Error(await r.text());message.className='ok';message.textContent=' Создано';await load()}catch(e){message.className='error';message.textContent=' '+e.message}}
+async function runNow(id){await fetch(`/api/schedules/${id}/run`,{method:'POST'});load()}
+async function toggle(id,enabled){await fetch(`/api/schedules/${id}/enabled`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});load()}
+async function removeSchedule(id){await fetch(`/api/schedules/${id}`,{method:'DELETE'});load()}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+load();setInterval(load,5000);
+</script></body></html>
