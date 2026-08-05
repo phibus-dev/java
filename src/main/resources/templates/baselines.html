@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Baselines</title><link rel="stylesheet" href="/app.css"></head>
+<body><main class="container">
+<header><div><h1>Baseline и регрессия производительности</h1><p>Эталонные тесты для каждой комбинации endpoint, bucket и operation.</p></div><a class="button secondary" href="/history">История</a></header>
+<section class="panel"><h2>Активные baseline</h2><div class="table-wrap"><table><thead><tr><th>Название</th><th>Endpoint / bucket</th><th>Операция</th><th>Скорость</th><th>p95 / p99</th><th>Ошибки</th><th>Отмечен</th></tr></thead><tbody>
+<tr th:each="item : ${baselines}"><td th:text="${item.name()}">Baseline</td><td th:text="${item.endpoint() + ' / ' + item.bucket()}">endpoint</td><td th:text="${item.operation()}">UPLOAD</td><td th:text="${#numbers.formatDecimal(item.averageSpeedMiBps(),1,2) + ' MiB/s'}">0</td><td th:text="${#numbers.formatDecimal(item.p95LatencyMs(),1,0) + ' / ' + #numbers.formatDecimal(item.p99LatencyMs(),1,0) + ' ms'}">0</td><td th:text="${item.errors()}">0</td><td th:text="${item.markedAt()}">time</td></tr>
+<tr th:if="${#lists.isEmpty(baselines)}"><td colspan="7">Baseline пока не назначены. Используйте POST /api/history/{id}/baseline.</td></tr>
+</tbody></table></div></section>
+<section class="panel"><h2>Правила определения регрессии</h2><p>Статус <strong>REGRESSION</strong> устанавливается при снижении скорости более чем на 10%, росте p95 более чем на 15%, росте p99 более чем на 20% либо увеличении числа ошибок.</p><p>Сравнение доступно через <code>GET /api/history/{id}/regression</code>.</p></section>
+</main></body></html>
