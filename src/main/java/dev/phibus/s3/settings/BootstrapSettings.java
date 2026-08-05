@@ -10,39 +10,33 @@ public record BootstrapSettings(
     }
 
     public record PostgreSqlSettings(String jdbcUrl, String username, String encryptedPassword) {
-        public static PostgreSqlSettings empty() {
-            return new PostgreSqlSettings("", "", "");
-        }
-
-        public boolean configured() {
-            return jdbcUrl != null && !jdbcUrl.isBlank() && username != null && !username.isBlank();
-        }
+        public static PostgreSqlSettings empty() { return new PostgreSqlSettings("", "", ""); }
+        public boolean configured() { return jdbcUrl != null && !jdbcUrl.isBlank() && username != null && !username.isBlank(); }
     }
 
     public record VaultSettings(
             String address,
+            String authMethod,
             String encryptedToken,
+            String authMount,
+            String roleId,
+            String encryptedSecretId,
             String kvMount,
             String secretPrefix,
             boolean tlsVerify,
             String caCertificatePath) {
         public static VaultSettings empty() {
-            return new VaultSettings("", "", "secret", "s3-performance", true, "");
+            return new VaultSettings("", "TOKEN", "", "approle", "", "", "secret", "s3-performance", true, "");
+        }
+        public String normalizedAuthMethod() {
+            return authMethod == null || authMethod.isBlank() ? "TOKEN" : authMethod.trim().toUpperCase();
         }
     }
 
     public record S3ProfileSettings(
-            String name,
-            String endpoint,
-            String region,
-            String bucket,
-            boolean pathStyleAccess,
-            String credentialsSource,
-            String vaultSecretPath,
-            String accessKeyField,
-            String secretKeyField,
-            String encryptedAccessKey,
-            String encryptedSecretKey) {
+            String name, String endpoint, String region, String bucket, boolean pathStyleAccess,
+            String credentialsSource, String vaultSecretPath, String accessKeyField, String secretKeyField,
+            String encryptedAccessKey, String encryptedSecretKey) {
         public static S3ProfileSettings empty() {
             return new S3ProfileSettings("default", "", "us-east-1", "", true, "VAULT", "", "accessKey", "secretKey", "", "");
         }
