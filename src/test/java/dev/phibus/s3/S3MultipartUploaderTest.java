@@ -21,8 +21,9 @@ class S3MultipartUploaderTest {
 
     @Test
     void raisesPartSizeToRespectTenThousandPartLimit() {
-        long total = 100_000L;
-        assertEquals(10L, S3MultipartUploader.normalizePartSize(1, total));
+        long total = 60_000L * 1024 * 1024;
+        long expected = (total + S3MultipartUploader.MAX_PARTS - 1) / S3MultipartUploader.MAX_PARTS;
+        assertEquals(expected, S3MultipartUploader.normalizePartSize(1, total));
     }
 
     @Test
