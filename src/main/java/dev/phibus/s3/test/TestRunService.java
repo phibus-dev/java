@@ -1,5 +1,6 @@
 package dev.phibus.s3.test;
 
+import dev.phibus.s3.history.HistoryOperationUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
 import java.util.Comparator;
 import java.util.List;
@@ -16,12 +17,14 @@ public class TestRunService {
     private final UploadTestEngine engine;
     private final Executor testExecutor;
     private final TestHistoryStore historyStore;
+    private final HistoryOperationUpdater operationUpdater;
 
     public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor,
-                          TestHistoryStore historyStore) {
+                          TestHistoryStore historyStore, HistoryOperationUpdater operationUpdater) {
         this.engine = engine;
         this.testExecutor = testExecutor;
         this.historyStore = historyStore;
+        this.operationUpdater = operationUpdater;
     }
 
     public TestRun create(TestRequest request) {
@@ -36,6 +39,7 @@ public class TestRunService {
             engine.execute(run);
         } finally {
             historyStore.save(run.snapshot());
+            operationUpdater.update(run.id(), run.request().operation());
         }
     }
 
