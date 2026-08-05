@@ -44,11 +44,8 @@ public class AgentRuntimeService {
     private final AtomicReference<ActiveAssignment> active = new AtomicReference<>();
     private final AtomicBoolean registering = new AtomicBoolean();
 
-    public AgentRuntimeService(
-            RestClient.Builder restClientBuilder,
-            ObjectMapper objectMapper,
-            TestRunService testRunService,
-            @Qualifier("testExecutor") Executor executor,
+    public AgentRuntimeService(RestClient.Builder restClientBuilder, ObjectMapper objectMapper,
+            TestRunService testRunService, @Qualifier("testExecutor") Executor executor,
             @Value("${s3perf.agent.coordinator-url:http://localhost:8080}") String coordinatorUrl,
             @Value("${s3perf.agent.registration-token:change-me}") String registrationToken,
             @Value("${s3perf.agent.name:}") String configuredName,
@@ -95,7 +92,7 @@ public class AgentRuntimeService {
             if (assignment != null && active.compareAndSet(null, new ActiveAssignment(assignment, null))) {
                 executor.execute(() -> execute(assignment));
             }
-        } catch (HttpClientErrorException.NoContent | HttpClientErrorException.NotFound ignored) {
+        } catch (HttpClientErrorException.NotFound ignored) {
             // No assignment is currently available.
         } catch (RuntimeException e) {
             LOG.warn("Cannot poll distributed assignment: {}", e.getMessage());
@@ -118,10 +115,7 @@ public class AgentRuntimeService {
 
     private void execute(DistributedTestService.Assignment assignment) {
         AgentIdentity agent = ensureRegistered();
-        if (agent == null) {
-            active.set(null);
-            return;
-        }
+        if (agent == null) { active.set(null); return; }
         try {
             TestRun run = testRunService.create(assignment.testRequest());
             active.set(new ActiveAssignment(assignment, run.id()));
@@ -138,12 +132,10 @@ public class AgentRuntimeService {
         if (existing != null || !registering.compareAndSet(false, true)) return existing;
         try {
             AgentRegistry.RegistrationRequest request = new AgentRegistry.RegistrationRequest(
-                    agentName, hostname(), advertisedAddress, version(), availableProcessors(), maxMemory(),
-                    Map.of("mode", "AGENT"));
-            AgentRegistry.RegistrationResult result = client.post()
-                    .uri(coordinatorUrl + "/api/agents/register")
-                    .header("X-Agent-Registration-Token", registrationToken)
-                    .body(request).retrieve().body(AgentRegistry.RegistrationResult.class);
+                    agentName, hostname(), advertisedAddress, version(), availableProcessors(), maxMemory(), Map.of("mode", "AGENT"));
+            AgentRegistry.RegistrationResult result = client.post().uri(coordinatorUrl + "/api/agents/register")
+                    .header("X-Agent-Registration-Token", registrationToken).body(request)
+                    .retrieve().body(AgentRegistry.RegistrationResult.class);
             if (result == null) return null;
             AgentIdentity created = new AgentIdentity(result.agentId(), result.agentToken(), coordinatorUrl, Instant.now());
             saveIdentity(created);
@@ -160,9 +152,8 @@ public class AgentRuntimeService {
 
     private void report(AgentIdentity agent, UUID runId, String status, TestRun.Snapshot snapshot) {
         DistributedTestService.AgentStatistics statistics = new DistributedTestService.AgentStatistics(
-                runId, status, snapshot.completedParts(), snapshot.bytesTransferred(),
-                snapshot.operationsPerSecond(), snapshot.averageSpeedMiBps(), snapshot.p95LatencyMs(),
-                snapshot.failedParts(), snapshot.message());
+                runId, status, snapshot.completedParts(), snapshot.bytesTransferred(), snapshot.operationsPerSecond(),
+                snapshot.averageSpeedMiBps(), snapshot.p95LatencyMs(), snapshot.failedParts(), snapshot.message());
         client.post().uri(coordinatorUrl + "/api/distributed-tests/agent/" + agent.agentId() + "/statistics")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + agent.agentToken())
                 .body(statistics).retrieve().toBodilessEntity();
@@ -211,7 +202,6 @@ public class AgentRuntimeService {
     private static boolean terminal(TestStatus status) {
         return status == TestStatus.COMPLETED || status == TestStatus.FAILED || status == TestStatus.CANCELLED;
     }
-
     private static String status(TestStatus status) {
         return switch (status) {
             case QUEUED -> "ASSIGNED";
@@ -221,7 +211,6 @@ public class AgentRuntimeService {
             case CANCELLED -> "CANCELLED";
         };
     }
-
     private static String hostname() {
         try { return InetAddress.getLocalHost().getHostName(); }
         catch (Exception e) { return "unknown-agent"; }
