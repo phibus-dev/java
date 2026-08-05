@@ -36,7 +36,7 @@ public final class TestRun {
         this.totalParts = totalParts;
         this.startedAt = Instant.now();
         this.status = TestStatus.RUNNING;
-        this.message = "Upload started";
+        this.message = request.normalizedOperation() + " started";
     }
 
     public void partCompleted(PartResult result) {
@@ -44,7 +44,7 @@ public final class TestRun {
         bytesTransferred.addAndGet(result.bytes());
         int done = completedParts.incrementAndGet();
         currentSpeedMiBps = result.speedMiBps();
-        message = "Part " + done + " of " + totalParts + " completed";
+        message = "Operation " + done + " of " + totalParts + " completed";
     }
 
     public void cleanupSuccessful() { cleanupSuccessful = true; }
@@ -54,13 +54,16 @@ public final class TestRun {
     public Snapshot snapshot() {
         long total = request.totalBytes();
         long transferred = bytesTransferred.get();
-        double percent = total == 0 ? 0 : Math.min(100.0, transferred * 100.0 / total);
+        int completed = completedParts.get();
+        double percent = total > 0
+                ? Math.min(100.0, transferred * 100.0 / total)
+                : totalParts == 0 ? 0 : Math.min(100.0, completed * 100.0 / totalParts);
         long durationMillis = startedAt == null ? 0 : Duration.between(startedAt, finishedAt == null ? Instant.now() : finishedAt).toMillis();
         double average = durationMillis == 0 ? 0 : (transferred / 1024.0 / 1024.0) / (durationMillis / 1000.0);
         List<PartResult> copy;
         synchronized (parts) { copy = List.copyOf(parts); }
         return new Snapshot(id, status, createdAt, startedAt, finishedAt, request.endpoint(), request.bucket(),
-                request.region(), request.objectKey(), total, transferred, completedParts.get(), totalParts,
+                request.region(), request.objectKey(), request.normalizedOperation(), total, transferred, completed, totalParts,
                 percent, currentSpeedMiBps, average, percentile(copy, 50), percentile(copy, 95), percentile(copy, 99),
                 copy.size(), (int) copy.stream().filter(p -> !"SUCCESS".equals(p.status())).count(),
                 request.deleteAfterTest(), cleanupSuccessful, message, copy);
@@ -74,8 +77,8 @@ public final class TestRun {
     }
 
     public record Snapshot(UUID id, TestStatus status, Instant createdAt, Instant startedAt, Instant finishedAt,
-                           String endpoint, String bucket, String region, String objectKey, long totalBytes,
-                           long bytesTransferred, int completedParts, int totalParts, double percent,
+                           String endpoint, String bucket, String region, String objectKey, String operation,
+                           long totalBytes, long bytesTransferred, int completedParts, int totalParts, double percent,
                            double currentSpeedMiBps, double averageSpeedMiBps, double p50LatencyMs,
                            double p95LatencyMs, double p99LatencyMs, int successfulParts, int failedParts,
                            boolean deleteAfterTest, boolean cleanupSuccessful, String message,
