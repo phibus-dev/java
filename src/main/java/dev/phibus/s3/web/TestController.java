@@ -27,10 +27,22 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Controller
 public class TestController {
+    private static final String DEVELOPMENT_VERSION = "2.1.0-SNAPSHOT";
     private final TestRunService service;
     public TestController(TestRunService service) { this.service = service; }
 
-    @GetMapping("/") public String index(Model model) { model.addAttribute("runs", service.list()); return "index"; }
+    @GetMapping("/")
+    public String index(Model model) {
+        model.addAttribute("runs", service.list());
+        model.addAttribute("applicationVersion", applicationVersion());
+        return "index";
+    }
+
+    private static String applicationVersion() {
+        String version = TestController.class.getPackage().getImplementationVersion();
+        return version == null || version.isBlank() ? DEVELOPMENT_VERSION : version;
+    }
+
     @PostMapping(path = "/api/tests", consumes = MediaType.APPLICATION_JSON_VALUE) @ResponseBody @ResponseStatus(HttpStatus.ACCEPTED)
     public TestRun.Snapshot create(@Valid @RequestBody TestRequest request) { return service.create(request).snapshot(); }
     @GetMapping("/api/tests") @ResponseBody public List<TestRun.Snapshot> list() { return service.list(); }
