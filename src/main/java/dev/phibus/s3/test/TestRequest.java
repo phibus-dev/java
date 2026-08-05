@@ -37,6 +37,15 @@ public record TestRequest(
                 "OBJECT_COUNT", 60, 0, "CUSTOM", Map.of(), 0, Map.of());
     }
 
+    public TestRequest(String endpoint, String bucket, String region, String accessKey, String secretKey,
+                       boolean pathStyleAccess, String objectKey, long objectSizeMiB, long partSizeMiB,
+                       int parallelism, int objectCount, boolean deleteAfterTest, String operation,
+                       String executionMode, long durationSeconds, long warmupSeconds) {
+        this(endpoint, bucket, region, accessKey, secretKey, pathStyleAccess, objectKey, objectSizeMiB,
+                partSizeMiB, parallelism, objectCount, deleteAfterTest, operation,
+                executionMode, durationSeconds, warmupSeconds, "CUSTOM", Map.of(), 0, Map.of());
+    }
+
     public long objectSizeBytes() { return Math.multiplyExact(objectSizeMiB, 1024L * 1024L); }
     public long partSizeBytes() { return Math.multiplyExact(partSizeMiB, 1024L * 1024L); }
     public String normalizedOperation() { return operation == null || operation.isBlank() ? "UPLOAD" : operation; }
