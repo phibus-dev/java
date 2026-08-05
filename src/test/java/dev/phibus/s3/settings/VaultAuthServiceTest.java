@@ -2,6 +2,7 @@ package dev.phibus.s3.settings;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,7 +35,7 @@ class VaultAuthServiceTest {
                 json(exchange, 200, "{\"data\":{\"data\":{\"accessKey\":\"aaa\",\"secretKey\":\"bbb\"}}}"));
         server.start();
 
-        VaultAuthService service = new VaultAuthService(mock(BootstrapSecretCodec.class), new ObjectMapper());
+        VaultAuthService service = service();
         BootstrapSettings.VaultSettings settings = settings();
 
         JsonNode first = service.readKvV2(settings, "s3/test");
@@ -63,18 +64,23 @@ class VaultAuthServiceTest {
         });
         server.start();
 
-        VaultAuthService service = new VaultAuthService(mock(BootstrapSecretCodec.class), new ObjectMapper());
-        JsonNode data = service.readKvV2(settings(), "s3/test");
+        JsonNode data = service().readKvV2(settings(), "s3/test");
 
         assertEquals("new", data.path("accessKey").asText());
         assertEquals(2, logins.get());
         assertEquals(2, reads.get());
     }
 
+    private static VaultAuthService service() {
+        BootstrapSecretCodec codec = mock(BootstrapSecretCodec.class);
+        when(codec.decrypt("encrypted-secret-id")).thenReturn("secret-id");
+        return new VaultAuthService(codec, new ObjectMapper());
+    }
+
     private BootstrapSettings.VaultSettings settings() {
         return new BootstrapSettings.VaultSettings(
                 "http://127.0.0.1:" + server.getAddress().getPort(), "APPROLE", "", "approle",
-                "role-id", "secret-id", "secret", "s3", true, "");
+                "role-id", "encrypted-secret-id", "secret", "s3", true, "");
     }
 
     private static HttpServer server() throws IOException {
