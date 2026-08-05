@@ -14,13 +14,14 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Configuration;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 
 public final class S3MultipartUploader {
@@ -55,12 +56,14 @@ public final class S3MultipartUploader {
     }
 
     static S3Client buildClient(Config config) {
-        S3Client.Builder builder = S3Client.builder()
+        S3ClientBuilder builder = S3Client.builder()
                 .region(Region.of(config.region()))
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(config.pathStyleAccess())
                         .build());
-        if (config.endpoint() != null) builder.endpointOverride(URI.create(config.endpoint()));
+        if (config.endpoint() != null) {
+            builder.endpointOverride(URI.create(config.endpoint()));
+        }
         if (config.accessKey() != null && config.secretKey() != null) {
             builder.credentialsProvider(StaticCredentialsProvider.create(
                     AwsBasicCredentials.create(config.accessKey(), config.secretKey())));
@@ -120,9 +123,13 @@ public final class S3MultipartUploader {
     }
 
     static long partCount(long totalSize, long partSize) {
-        if (totalSize <= 0 || partSize <= 0) throw new IllegalArgumentException("Size and part size must be positive");
+        if (totalSize <= 0 || partSize <= 0) {
+            throw new IllegalArgumentException("Size and part size must be positive");
+        }
         long count = (totalSize + partSize - 1) / partSize;
-        if (count > MAX_PARTS) throw new IllegalArgumentException("Multipart upload would exceed 10,000 parts");
+        if (count > MAX_PARTS) {
+            throw new IllegalArgumentException("Multipart upload would exceed 10,000 parts");
+        }
         return count;
     }
 
@@ -139,7 +146,9 @@ public final class S3MultipartUploader {
             String region = requiredEnv("S3_REGION");
             long size = args.length > 0 ? parsePositiveLong(args[0], "size")
                     : parsePositiveLong(envOrDefault("S3_SIZE_BYTES", "1073741824"), "S3_SIZE_BYTES");
-            long partSize = parsePositiveLong(envOrDefault("S3_PART_SIZE_BYTES", String.valueOf(DEFAULT_PART_SIZE)), "S3_PART_SIZE_BYTES");
+            long partSize = parsePositiveLong(
+                    envOrDefault("S3_PART_SIZE_BYTES", String.valueOf(DEFAULT_PART_SIZE)),
+                    "S3_PART_SIZE_BYTES");
             String key = envOrDefault("S3_OBJECT_KEY", "random-upload-" + System.currentTimeMillis() + ".bin");
             return new Config(bucket, region, blankToNull(System.getenv("S3_ENDPOINT")),
                     blankToNull(System.getenv("S3_ACCESS_KEY")), blankToNull(System.getenv("S3_SECRET_KEY")),
@@ -148,7 +157,9 @@ public final class S3MultipartUploader {
 
         private static String requiredEnv(String name) {
             String value = blankToNull(System.getenv(name));
-            if (value == null) throw new IllegalArgumentException("Missing environment variable: " + name);
+            if (value == null) {
+                throw new IllegalArgumentException("Missing environment variable: " + name);
+            }
             return value;
         }
 
@@ -164,7 +175,9 @@ public final class S3MultipartUploader {
         private static long parsePositiveLong(String value, String name) {
             try {
                 long parsed = Long.parseLong(value);
-                if (parsed <= 0) throw new NumberFormatException();
+                if (parsed <= 0) {
+                    throw new NumberFormatException();
+                }
                 return parsed;
             } catch (NumberFormatException e) {
                 throw new IllegalArgumentException(name + " must be a positive integer: " + value, e);
@@ -178,22 +191,30 @@ public final class S3MultipartUploader {
         private long position;
 
         RandomInputStream(long size) {
-            if (size < 0) throw new IllegalArgumentException("size must be non-negative");
+            if (size < 0) {
+                throw new IllegalArgumentException("size must be non-negative");
+            }
             this.size = size;
         }
 
         @Override
         public int read() {
-            if (position >= size) return -1;
+            if (position >= size) {
+                return -1;
+            }
             position++;
             return random.nextInt(256);
         }
 
         @Override
         public int read(byte[] buffer, int offset, int length) {
-            if (position >= size) return -1;
+            if (position >= size) {
+                return -1;
+            }
             int count = (int) Math.min(length, size - position);
-            for (int i = offset; i < offset + count; i++) buffer[i] = (byte) random.nextInt(256);
+            for (int i = offset; i < offset + count; i++) {
+                buffer[i] = (byte) random.nextInt(256);
+            }
             position += count;
             return count;
         }
