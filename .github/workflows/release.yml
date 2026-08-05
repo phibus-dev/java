@@ -4,14 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v1.2.0'
+        description: 'Release tag, for example v2.0.0'
         required: true
-        default: 'v1.2.0'
+        default: 'v2.0.0'
   push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/release.yml'
     tags:
       - 'v*'
 
@@ -24,24 +20,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Resolve release version
-        id: version
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF_NAME}"
-          else
-            VERSION="v1.2.0"
-          fi
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version: $VERSION" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "image_version=${VERSION#v}" >> "$GITHUB_OUTPUT"
-
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -52,22 +30,35 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Resolve versions
+        id: version
+        shell: bash
+        run: |
+          PROJECT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            RELEASE_TAG="${{ inputs.version }}"
+          else
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          fi
+          test "$RELEASE_TAG" = "v${PROJECT_VERSION}"
+          echo "project=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Build, test and create documentation artifacts
         run: mvn -B clean verify source:jar javadoc:jar
 
       - name: Prepare release assets
         shell: bash
         run: |
+          VERSION="${{ steps.version.outputs.project }}"
           mkdir -p dist
-          cp target/s3-multipart-uploader-1.2.0.jar \
-             "dist/s3-performance-test-web-${{ steps.version.outputs.version }}.jar"
-          cp target/s3-multipart-uploader-1.2.0-sources.jar \
-             "dist/s3-performance-test-web-${{ steps.version.outputs.version }}-sources.jar"
-          cp target/s3-multipart-uploader-1.2.0-javadoc.jar \
-             "dist/s3-performance-test-web-${{ steps.version.outputs.version }}-javadoc.jar"
-          cp README.md dist/README.md
+          cp "target/s3-multipart-uploader-${VERSION}.jar" "dist/s3-performance-test-web-${VERSION}.jar"
+          cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/s3-performance-test-web-${VERSION}-sources.jar"
+          cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/s3-performance-test-web-${VERSION}-javadoc.jar"
+          cp target/classes/META-INF/sbom/application.cdx.json "dist/s3-performance-test-web-${VERSION}-sbom.cdx.json"
+          cp README.md RELEASE_NOTES_2.0.0.md UPGRADE_2.0.0.md dist/
           cd dist
-          sha256sum *.jar README.md > SHA256SUMS
+          sha256sum *.jar *.json README.md RELEASE_NOTES_2.0.0.md UPGRADE_2.0.0.md > SHA256SUMS
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -85,19 +76,22 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.image_version }}
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: S3 Performance Test Web ${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          name: S3 Performance Test Web ${{ steps.version.outputs.tag }}
+          body_path: RELEASE_NOTES_2.0.0.md
           files: |
-            dist/s3-performance-test-web-${{ steps.version.outputs.version }}.jar
-            dist/s3-performance-test-web-${{ steps.version.outputs.version }}-sources.jar
-            dist/s3-performance-test-web-${{ steps.version.outputs.version }}-javadoc.jar
+            dist/s3-performance-test-web-${{ steps.version.outputs.project }}.jar
+            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-sources.jar
+            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-javadoc.jar
+            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-sbom.cdx.json
             dist/SHA256SUMS
             dist/README.md
+            dist/RELEASE_NOTES_2.0.0.md
+            dist/UPGRADE_2.0.0.md
