@@ -1,9 +1,11 @@
 package dev.phibus.s3.web;
 
 import dev.phibus.s3.history.AdvancedHistoryStore;
+import dev.phibus.s3.history.HistoryTrendService;
 import dev.phibus.s3.test.TestRun;
 import dev.phibus.s3.test.TestRunService;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -20,10 +22,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class HistoryController {
     private final AdvancedHistoryStore historyStore;
     private final TestRunService testRunService;
+    private final HistoryTrendService trendService;
 
-    public HistoryController(AdvancedHistoryStore historyStore, TestRunService testRunService) {
+    public HistoryController(AdvancedHistoryStore historyStore, TestRunService testRunService,
+                             HistoryTrendService trendService) {
         this.historyStore = historyStore;
         this.testRunService = testRunService;
+        this.trendService = trendService;
     }
 
     @GetMapping("/history")
@@ -76,6 +81,16 @@ public class HistoryController {
         AdvancedHistoryStore.Comparison comparison = historyStore.compare(left, right);
         if (comparison == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "History item not found");
         return comparison;
+    }
+
+    @GetMapping("/api/history/trends")
+    @ResponseBody
+    public HistoryTrendService.TrendReport trends(@RequestParam List<UUID> ids) {
+        try {
+            return trendService.build(ids);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        }
     }
 
     @PostMapping("/api/history/{id}/rerun")
