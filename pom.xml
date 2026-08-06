@@ -19,6 +19,7 @@
     <properties>
         <java.version>21</java.version>
         <aws.sdk.version>2.50.2</aws.sdk.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
         <jacoco.version>0.8.15</jacoco.version>
         <spotbugs.version>4.10.3.0</spotbugs.version>
         <testcontainers.version>1.21.3</testcontainers.version>
@@ -59,6 +60,7 @@
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId></dependency>
+        <dependency><groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId><version>${pdfbox.version}</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
