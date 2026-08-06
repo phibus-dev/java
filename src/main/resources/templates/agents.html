@@ -1,1 +1,55 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}"><title>Агенты — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head><body><main class="container"><header><div><h1>Агенты нагрузки</h1><p>Регистрация, состояние, блокировка identity и управление обновлением исполнителей.</p></div><nav><a href="/tasks">Задания</a> · <a href="/distributed-tests">Распределённые тесты</a> · <a href="/settings">Настройки</a></nav></header><section class="panel"><div class="title-row"><h2>Зарегистрированные агенты</h2><button id="refresh" class="secondary">Обновить</button></div><div class="table-wrap"><table><thead><tr><th>Имя</th><th>Hostname / адрес</th><th>Версия</th><th>Ресурсы</th><th>Статус</th><th>Обновление</th><th>Последняя активность</th><th>Управление</th></tr></thead><tbody id="agents"><tr><td colspan="8">Загрузка…</td></tr></tbody></table></div><pre id="result"></pre></section></main><script src="/csrf-fetch.js"></script><script>const body=document.getElementById('agents'),result=document.getElementById('result');async function load(){try{const r=await fetch('/api/agents');if(!r.ok)throw new Error(await r.text());const a=await r.json();body.innerHTML=a.length?a.map(row).join(''):'<tr><td colspan="8">Агенты не зарегистрированы</td></tr>';}catch(err){body.innerHTML=`<tr><td colspan="8">${e(err.message)}</td></tr>`;}}function row(x){const update=x.updateRequested?`Ожидается ${e(x.desiredVersion||'версия не указана')}`:(x.updateCompletedAt?`Завершено ${new Date(x.updateCompletedAt).toLocaleString()}`:'—');return `<tr><td>${e(x.name)}</td><td>${e(x.hostname)}<br><small>${e(x.address)}</small></td><td>${e(x.version||'—')}</td><td>${x.cpuCount} CPU<br>${(x.memoryBytes/1073741824).toFixed(1)} GiB</td><td><strong>${e(x.status)}</strong></td><td>${update}</td><td>${new Date(x.lastSeenAt).toLocaleString()}</td><td><button class="secondary" onclick="toggle('${x.id}',${!x.enabled})">${x.enabled?'Отключить':'Включить'}</button> <button class="secondary" onclick="updateAgent('${x.id}','${eAttr(x.version||'')}')">Обновить</button> <button class="danger" onclick="revoke('${x.id}')">Отозвать identity</button></td></tr>`;}async function toggle(id,value){await action(`/api/agents/${id}/enabled?value=${value}`,{method:'POST'});}async function updateAgent(id,current){const version=prompt('Желаемая версия агента',current);if(version)await action(`/api/agents/${id}/update`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desiredVersion:version})});}async function revoke(id){if(confirm('Отозвать identity агента? Агент должен повторно зарегистрироваться.'))await action(`/api/agents/${id}/identity`,{method:'DELETE'});}async function action(url,options){try{const r=await fetch(url,options);if(!r.ok)throw new Error(await r.text());result.textContent='Операция выполнена';await load();}catch(err){result.textContent=err.message;}}function e(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}function eAttr(v){return String(v??'').replace(/[\\']/g,'\\$&');}document.getElementById('refresh').onclick=load;load();setInterval(load,10000);</script></body></html>
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="_csrf" th:content="${_csrf.token}">
+    <meta name="_csrf_header" th:content="${_csrf.headerName}">
+    <title>Агенты — ЭВО.СНТ</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main class="container">
+    <header>
+        <div>
+            <h1>Агенты нагрузки</h1>
+            <p>Регистрация, состояние, блокировка identity и управление обновлением исполнителей.</p>
+        </div>
+        <nav>
+            <a href="/tasks">Задания</a> ·
+            <a href="/distributed-tests">Распределённые тесты</a> ·
+            <a href="/settings">Настройки</a>
+        </nav>
+    </header>
+
+    <section class="panel">
+        <div class="title-row">
+            <h2>Зарегистрированные агенты</h2>
+            <button id="refresh" type="button" class="secondary">Обновить</button>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Имя</th>
+                    <th>Hostname / адрес</th>
+                    <th>Версия</th>
+                    <th>Ресурсы</th>
+                    <th>Статус</th>
+                    <th>Обновление</th>
+                    <th>Последняя активность</th>
+                    <th>Управление</th>
+                </tr>
+                </thead>
+                <tbody id="agents" aria-live="polite">
+                <tr><td colspan="8">Получение списка агентов…</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <pre id="result" aria-live="polite"></pre>
+    </section>
+</main>
+<script src="/csrf-fetch.js"></script>
+<script src="/agents.js"></script>
+</body>
+</html>
