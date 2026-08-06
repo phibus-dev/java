@@ -16,14 +16,26 @@ class BucketSelectorUiTest {
 
         assertThat(template)
                 .contains("id=\"bucket-select\"")
+                .contains("id=\"load-buckets\"")
                 .contains("Выберите бакет");
 
         assertThat(script)
                 .contains("applyBucketOptions")
+                .contains("resetBucketSelector")
                 .contains("localeCompare")
                 .contains("el('bucket-select').addEventListener('change'")
-                .contains("input.value=event.target.value")
-                .doesNotContain("el('bucket').value=buckets[0]");
+                .contains("el('bucket').value=event.target.value")
+                .doesNotContain("el('bucket').value=buckets[0]")
+                .doesNotContain("bucket.value=buckets[0]");
+    }
+
+    @Test
+    void keepsSelectedBucketInRequestPayload() throws IOException {
+        String script = resource("/static/app.js");
+
+        assertThat(script)
+                .contains("bucket:value('bucket').trim()")
+                .contains("el('bucket').value=event.target.value");
     }
 
     @Test
