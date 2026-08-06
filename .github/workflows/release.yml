@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.1.0'
+        description: 'Release tag, for example v2.2.0'
         required: true
-        default: 'v2.1.0'
+        default: 'v2.2.0'
   push:
     tags:
       - 'v*'
@@ -51,15 +51,17 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.project }}"
           RELEASE_NOTES="RELEASE_NOTES_${VERSION}.md"
+          UPGRADE_GUIDE="UPGRADE_${VERSION}.md"
           mkdir -p dist
           test -f "$RELEASE_NOTES"
+          test -f "$UPGRADE_GUIDE"
           cp "target/s3-multipart-uploader-${VERSION}.jar" "dist/evo-snt-s3-${VERSION}.jar"
           cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/evo-snt-s3-${VERSION}-sources.jar"
           cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/evo-snt-s3-${VERSION}-javadoc.jar"
           cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
-          cp README.md "$RELEASE_NOTES" UPGRADE_2.1.0.md dist/
+          cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" dist/
           cd dist
-          sha256sum *.jar *.json README.md "$RELEASE_NOTES" UPGRADE_2.1.0.md > SHA256SUMS
+          sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" > SHA256SUMS
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -78,7 +80,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.1
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.2
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
 
       - name: Create GitHub release
@@ -96,4 +98,4 @@ jobs:
             dist/SHA256SUMS
             dist/README.md
             dist/RELEASE_NOTES_${{ steps.version.outputs.project }}.md
-            dist/UPGRADE_2.1.0.md
+            dist/UPGRADE_${{ steps.version.outputs.project }}.md
