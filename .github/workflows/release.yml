@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.0.5'
+        description: 'Release tag, for example v2.1.0'
         required: true
-        default: 'v2.0.5'
+        default: 'v2.1.0'
   push:
     tags:
       - 'v*'
@@ -18,7 +18,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -54,13 +53,13 @@ jobs:
           RELEASE_NOTES="RELEASE_NOTES_${VERSION}.md"
           mkdir -p dist
           test -f "$RELEASE_NOTES"
-          cp "target/s3-multipart-uploader-${VERSION}.jar" "dist/s3-performance-test-web-${VERSION}.jar"
-          cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/s3-performance-test-web-${VERSION}-sources.jar"
-          cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/s3-performance-test-web-${VERSION}-javadoc.jar"
-          cp target/classes/META-INF/sbom/application.cdx.json "dist/s3-performance-test-web-${VERSION}-sbom.cdx.json"
-          cp README.md "$RELEASE_NOTES" UPGRADE_2.0.0.md dist/
+          cp "target/s3-multipart-uploader-${VERSION}.jar" "dist/evo-snt-s3-${VERSION}.jar"
+          cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/evo-snt-s3-${VERSION}-sources.jar"
+          cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/evo-snt-s3-${VERSION}-javadoc.jar"
+          cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
+          cp README.md "$RELEASE_NOTES" UPGRADE_2.1.0.md dist/
           cd dist
-          sha256sum *.jar *.json README.md "$RELEASE_NOTES" UPGRADE_2.0.0.md > SHA256SUMS
+          sha256sum *.jar *.json README.md "$RELEASE_NOTES" UPGRADE_2.1.0.md > SHA256SUMS
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -79,6 +78,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.1
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
 
       - name: Create GitHub release
@@ -86,14 +86,14 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: S3 Performance Test Web ${{ steps.version.outputs.tag }}
+          name: ЭВО.СНТ S3 ${{ steps.version.outputs.tag }}
           body_path: RELEASE_NOTES_${{ steps.version.outputs.project }}.md
           files: |
-            dist/s3-performance-test-web-${{ steps.version.outputs.project }}.jar
-            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-sources.jar
-            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-javadoc.jar
-            dist/s3-performance-test-web-${{ steps.version.outputs.project }}-sbom.cdx.json
+            dist/evo-snt-s3-${{ steps.version.outputs.project }}.jar
+            dist/evo-snt-s3-${{ steps.version.outputs.project }}-sources.jar
+            dist/evo-snt-s3-${{ steps.version.outputs.project }}-javadoc.jar
+            dist/evo-snt-s3-${{ steps.version.outputs.project }}-sbom.cdx.json
             dist/SHA256SUMS
             dist/README.md
             dist/RELEASE_NOTES_${{ steps.version.outputs.project }}.md
-            dist/UPGRADE_2.0.0.md
+            dist/UPGRADE_2.1.0.md
