@@ -1,16 +1,132 @@
 <!doctype html>
-<html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}"><title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
-<body><main class="container"><header><div><h1>Настройки</h1><p>Параметры PostgreSQL, Vault, Keycloak и S3.</p></div><nav><a href="/tasks">Задания</a> · <a href="/settings/keycloak">Keycloak</a> · <a href="/settings/s3-profiles">Профили S3</a> · <a href="/settings/configuration">Импорт / Экспорт</a></nav></header>
-<section class="panel"><div class="title-row"><h2>Состояние</h2><span class="status" th:text="${state}">STATE</span></div><p>Bootstrap-файл: <code th:text="${bootstrapPath}"></code></p><p th:unless="${encryptionReady}" class="warning">Задайте S3_PERF_BOOTSTRAP_KEY перед сохранением секретов.</p></section>
-<form id="settings-form">
-<section class="panel"><h2>PostgreSQL</h2><div class="grid two"><label>JDBC-строка<input id="jdbcUrl" required th:value="${settings.postgresql.jdbcUrl}"></label><label>Пользователь<input id="postgresUsername" required th:value="${settings.postgresql.username}"></label><label>Пароль<input id="postgresPassword" type="password" placeholder="Оставьте пустым, чтобы не менять"></label></div><button type="button" id="test-postgres" class="secondary">Проверить PostgreSQL</button><pre id="postgres-result"></pre></section>
-<section class="panel"><h2>Vault Community Edition 2.0.x</h2><div class="grid two">
-<label>Vault address<input id="vaultAddress" th:value="${settings.vault.address}" placeholder="https://vault.example.org:8200"></label>
-<label>Механизм аутентификации<select id="vaultAuthMethod"><option value="TOKEN" th:selected="${settings.vault.normalizedAuthMethod() == 'TOKEN'}">Token</option><option value="APPROLE" th:selected="${settings.vault.normalizedAuthMethod() == 'APPROLE'}">AppRole</option></select></label>
-<label class="vault-token-field">Token<input id="vaultToken" type="password" placeholder="Оставьте пустым, чтобы не менять"></label>
-<label class="vault-approle-field">Auth mount<input id="vaultAuthMount" th:value="${settings.vault.authMount}" placeholder="approle"></label>
-<label class="vault-approle-field">Role ID<input id="vaultRoleId" th:value="${settings.vault.roleId}"></label>
-<label class="vault-approle-field">Secret ID<input id="vaultSecretId" type="password" placeholder="Оставьте пустым, чтобы не менять"></label>
-<label>KV mount<input id="vaultKvMount" th:value="${settings.vault.kvMount}"></label><label>Secret prefix<input id="vaultSecretPrefix" th:value="${settings.vault.secretPrefix}"></label><label>CA certificate path<input id="vaultCaCertificatePath" th:value="${settings.vault.caCertificatePath}"></label><label class="check"><input id="vaultTlsVerify" type="checkbox" th:checked="${settings.vault.tlsVerify}"> Проверять TLS</label></div><button type="button" id="test-vault" class="secondary">Проверить Vault</button><pre id="vault-result"></pre></section>
-<section class="panel"><h2>Профиль S3</h2><div class="grid two"><label>Название<input id="s3ProfileName" th:value="${settings.s3.name}"></label><label>Endpoint<input id="s3Endpoint" th:value="${settings.s3.endpoint}"></label><label>Регион<input id="s3Region" th:value="${settings.s3.region}"></label><label>Bucket<input id="s3Bucket" th:value="${settings.s3.bucket}"></label><label>Источник credentials<select id="s3CredentialsSource"><option>VAULT</option><option>MANUAL</option><option>ENVIRONMENT</option></select></label><label>Vault secret path<input id="s3VaultSecretPath" th:value="${settings.s3.vaultSecretPath}"></label><label>Поле access key<input id="s3AccessKeyField" th:value="${settings.s3.accessKeyField}"></label><label>Поле secret key<input id="s3SecretKeyField" th:value="${settings.s3.secretKeyField}"></label><label>Access key<input id="s3AccessKey" type="password"></label><label>Secret key<input id="s3SecretKey" type="password"></label><label class="check"><input id="s3PathStyleAccess" type="checkbox" th:checked="${settings.s3.pathStyleAccess}"> Path-style access</label></div></section>
-<section class="panel"><button type="submit">Сохранить настройки</button> <span id="save-result"></span><p class="muted">Изменения PostgreSQL и Keycloak применяются после перезапуска приложения. Изменения Vault применяются без перезапуска.</p></section></form></main><script src="/settings.js"></script></body></html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="_csrf" th:content="${_csrf.token}">
+    <meta name="_csrf_header" th:content="${_csrf.headerName}">
+    <title>Настройки — ЭВО.СНТ</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main class="container">
+    <header class="brand-header">
+        <div class="brand-title">
+            <h1>ЭВО.СНТ S3</h1>
+            <p>Центр настройки инфраструктурных подключений и безопасности.</p>
+        </div>
+        <div class="corporate-brand">
+            <img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo">
+            <div class="platform-name">ТПП ЭВОПЛАТФОРМА</div>
+        </div>
+        <span class="badge" th:text="${'Версия ' + applicationVersion}">Версия 2.1.0</span>
+    </header>
+
+    <nav class="corporate-nav" aria-label="Основная навигация">
+        <a href="/tasks">Задания</a>
+        <a href="/history">История</a>
+        <a href="/schedules">Расписания</a>
+        <a href="/agents">Агенты</a>
+        <a href="/distributed-tests">Распределённые тесты</a>
+        <a href="/settings" aria-current="page">Настройки</a>
+    </nav>
+
+    <section class="panel settings-overview">
+        <div class="title-row">
+            <div>
+                <h2>Настройки приложения</h2>
+                <p class="muted">PostgreSQL, Vault, Keycloak, профили S3 и перенос конфигурации.</p>
+            </div>
+            <span class="status" th:text="${state}">STATE</span>
+        </div>
+        <div class="settings-links" aria-label="Разделы настроек">
+            <a href="#postgresql"><strong>PostgreSQL</strong><span>Хранилище истории и служебных данных</span></a>
+            <a href="#vault"><strong>Vault</strong><span>Token и AppRole, TLS и KV v2</span></a>
+            <a href="/settings/keycloak"><strong>Keycloak</strong><span>OIDC, роли и параметры клиента</span></a>
+            <a href="/settings/s3-profiles"><strong>Профили S3</strong><span>Endpoint, bucket и источник credentials</span></a>
+            <a href="/settings/configuration"><strong>Импорт / Экспорт</strong><span>JSON и защищённый формат EVOS3</span></a>
+        </div>
+        <div class="config-state">
+            <p><strong>Bootstrap-файл:</strong> <code th:text="${bootstrapPath}"></code></p>
+            <p th:unless="${encryptionReady}" class="warning">Задайте S3_PERF_BOOTSTRAP_KEY перед сохранением секретов.</p>
+        </div>
+    </section>
+
+    <form id="settings-form">
+        <section class="panel" id="postgresql">
+            <div class="section-heading">
+                <div><h2>PostgreSQL</h2><p class="muted">Проверка выполняется до сохранения и показывает фактическую задержку подключения.</p></div>
+                <span class="connection-state" id="postgres-state">Не проверено</span>
+            </div>
+            <div class="grid two">
+                <label>JDBC-строка<input id="jdbcUrl" required th:value="${settings.postgresql.jdbcUrl}" placeholder="jdbc:postgresql://host:5432/database"></label>
+                <label>Пользователь<input id="postgresUsername" required th:value="${settings.postgresql.username}"></label>
+                <label>Пароль<input id="postgresPassword" type="password" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять"></label>
+            </div>
+            <div class="actions"><button type="button" id="test-postgres" class="secondary">Проверить PostgreSQL</button></div>
+            <pre id="postgres-result" class="diagnostic-output" aria-live="polite"></pre>
+        </section>
+
+        <section class="panel" id="vault">
+            <div class="section-heading">
+                <div><h2>Vault Community Edition 2.0.x</h2><p class="muted">Поддерживаются Token и AppRole с KV v2 и пользовательским CA.</p></div>
+                <span class="connection-state" id="vault-state">Не проверено</span>
+            </div>
+            <div class="grid two">
+                <label>Vault address<input id="vaultAddress" th:value="${settings.vault.address}" placeholder="https://vault.example.org:8200"></label>
+                <label>Механизм аутентификации<select id="vaultAuthMethod"><option value="TOKEN" th:selected="${settings.vault.normalizedAuthMethod() == 'TOKEN'}">Token</option><option value="APPROLE" th:selected="${settings.vault.normalizedAuthMethod() == 'APPROLE'}">AppRole</option></select></label>
+                <label class="vault-token-field">Token<input id="vaultToken" type="password" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять"></label>
+                <label class="vault-approle-field">Auth mount<input id="vaultAuthMount" th:value="${settings.vault.authMount}" placeholder="approle"></label>
+                <label class="vault-approle-field">Role ID<input id="vaultRoleId" th:value="${settings.vault.roleId}"></label>
+                <label class="vault-approle-field">Secret ID<input id="vaultSecretId" type="password" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять"></label>
+                <label>KV mount<input id="vaultKvMount" th:value="${settings.vault.kvMount}"></label>
+                <label>Secret prefix<input id="vaultSecretPrefix" th:value="${settings.vault.secretPrefix}"></label>
+                <label>CA certificate path<input id="vaultCaCertificatePath" th:value="${settings.vault.caCertificatePath}"></label>
+                <label class="check"><input id="vaultTlsVerify" type="checkbox" th:checked="${settings.vault.tlsVerify}"> Проверять TLS-сертификат</label>
+            </div>
+            <div class="actions"><button type="button" id="test-vault" class="secondary">Проверить Vault</button></div>
+            <pre id="vault-result" class="diagnostic-output" aria-live="polite"></pre>
+        </section>
+
+        <section class="panel" id="s3-bootstrap-profile">
+            <div class="section-heading">
+                <div><h2>Bootstrap-профиль S3</h2><p class="muted">Начальный профиль. Дополнительные профили создаются в отдельном разделе.</p></div>
+                <a class="button secondary" href="/settings/s3-profiles">Управление профилями</a>
+            </div>
+            <div class="grid two">
+                <label>Название<input id="s3ProfileName" th:value="${settings.s3.name}"></label>
+                <label>Endpoint<input id="s3Endpoint" th:value="${settings.s3.endpoint}"></label>
+                <label>Регион<input id="s3Region" th:value="${settings.s3.region}"></label>
+                <label>Bucket<input id="s3Bucket" th:value="${settings.s3.bucket}"></label>
+                <label>Источник credentials<select id="s3CredentialsSource"><option>VAULT</option><option>MANUAL</option><option>ENVIRONMENT</option></select></label>
+                <label>Vault secret path<input id="s3VaultSecretPath" th:value="${settings.s3.vaultSecretPath}"></label>
+                <label>Поле access key<input id="s3AccessKeyField" th:value="${settings.s3.accessKeyField}"></label>
+                <label>Поле secret key<input id="s3SecretKeyField" th:value="${settings.s3.secretKeyField}"></label>
+                <label>Access key<input id="s3AccessKey" type="password" autocomplete="new-password"></label>
+                <label>Secret key<input id="s3SecretKey" type="password" autocomplete="new-password"></label>
+                <label class="check"><input id="s3PathStyleAccess" type="checkbox" th:checked="${settings.s3.pathStyleAccess}"> Path-style access</label>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="title-row"><h2>Сохранение</h2><a href="/settings/configuration">Резервное копирование и перенос</a></div>
+            <div class="actions"><button id="save-settings" type="submit">Сохранить настройки</button><span id="save-result" class="save-result" aria-live="polite"></span></div>
+            <p class="muted">PostgreSQL и Keycloak применяются после перезапуска приложения. Vault применяется без перезапуска. Перед заменой bootstrap-файла создаётся резервная копия.</p>
+        </section>
+    </form>
+
+    <section class="panel" id="system-information">
+        <h2>Система</h2>
+        <div class="system-grid">
+            <div><span>Версия приложения</span><strong th:text="${applicationVersion}">2.1.0</strong></div>
+            <div><span>Режим конфигурации</span><strong th:text="${state}">STATE</strong></div>
+            <div><span>Браузерная платформа</span><strong id="system-platform">—</strong></div>
+            <div><span>Язык интерфейса</span><strong id="system-language">—</strong></div>
+            <div><span>Логические CPU клиента</span><strong id="system-cpu">—</strong></div>
+            <div><span>Состояние сети клиента</span><strong id="system-online">—</strong></div>
+        </div>
+    </section>
+</main>
+<script src="/settings.js"></script>
+</body>
+</html>
