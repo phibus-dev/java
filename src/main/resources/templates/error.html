@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<body><main class="container"><header><div><h1>Ошибка</h1><p>Не удалось открыть запрошенный раздел.</p></div><nav><a href="/tasks">Задания</a> · <a href="/history">История</a> · <a href="/settings">Настройки</a></nav></header>
+<section class="panel"><h2 th:text="${status != null ? 'HTTP ' + status : 'Ошибка приложения'}">Ошибка приложения</h2><p th:text="${message != null && !message.isBlank() ? message : 'Запрошенный ресурс не найден или временно недоступен.'}"></p><p class="muted" th:if="${path != null}">Путь: <code th:text="${path}"></code></p><div class="actions"><a class="button" href="/tasks">Вернуться к заданиям</a></div></section></main></body></html>
