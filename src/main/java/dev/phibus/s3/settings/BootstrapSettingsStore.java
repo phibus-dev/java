@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -17,6 +18,7 @@ public class BootstrapSettingsStore {
     private final ObjectMapper objectMapper;
     private final Path path;
 
+    @Autowired
     public BootstrapSettingsStore(ObjectMapper objectMapper) {
         this(objectMapper, configuredPath());
     }
