@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css">
+</head>
+<body><main class="container">
+<header><div><h1>Расписания тестов</h1><p>Планирование автоматических запусков S3-тестов.</p></div><nav><a href="/tasks">Задания</a> · <a href="/history">История</a> · <a href="/agents">Агенты</a> · <a href="/distributed-tests">Распределённые тесты</a> · <a href="/settings">Настройки</a></nav></header>
+<section class="panel">
+<p>Используется шестипольное Spring cron-выражение: секунды, минуты, часы, день месяца, месяц, день недели.</p>
+<div class="grid two">
+<label>Название<input id="name" value="Nightly S3 test"></label>
+<label>Cron<input id="cron" value="0 0 1 * * *"></label>
+<label>Часовой пояс<input id="zone" value="Europe/Riga"></label>
+<label class="check"><input id="enabled" type="checkbox" checked> Включено</label>
+</div>
+<label>Параметры теста<textarea id="request" rows="12">{"endpoint":"http://localhost:9000","bucket":"test","region":"us-east-1","pathStyleAccess":true,"objectKey":"scheduled/test.bin","objectSizeMiB":64,"partSizeMiB":16,"parallelism":4,"objectCount":1,"deleteAfterTest":true,"operation":"UPLOAD","executionMode":"OBJECT_COUNT","durationSeconds":60,"warmupSeconds":0,"workloadProfile":"CUSTOM","workloadWeights":{},"targetOperationsPerSecond":0,"operationThreads":{}}</textarea></label>
+<div class="actions"><button id="create-schedule" type="button">Создать расписание</button><span id="message"></span></div>
+</section>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Название</th><th>Cron</th><th>Часовой пояс</th><th>Статус</th><th>Следующий запуск</th><th>Последний запуск</th><th>Действия</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</main><script src="/csrf-fetch.js"></script><script src="/schedules.js"></script></body></html>
