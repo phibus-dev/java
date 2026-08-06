@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><script src="/csrf-fetch.js"></script>
+  <style>.transfer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}.drop{border:2px dashed #8aa0b8;padding:28px;text-align:center;border-radius:8px}.warning{border-left:4px solid #c8102e;padding:10px 14px;background:#fff4f5}.status{white-space:pre-wrap}</style>
+</head>
+<body><main class="container">
+<header><div><h1>Импорт / экспорт конфигурации</h1><p>Перенос настроек ЭВО.СНТ S3 между стендами.</p></div><nav><a href="/settings">← Настройки</a> · <a href="/tasks">Задания</a> · <a href="/history">История</a></nav></header>
+<section class="transfer-grid">
+  <article class="panel"><h2>Экспорт</h2>
+    <label><input id="encrypted" type="checkbox" checked> Зашифровать экспорт</label>
+    <label><input id="secrets" type="checkbox"> Включить секреты</label>
+    <label>Пароль шифрования<input id="exportPassword" type="password" minlength="12" autocomplete="new-password"></label>
+    <p class="muted">Для экспорта секретов шифрование обязательно. Используется AES-256-GCM и PBKDF2-HMAC-SHA256.</p>
+    <button type="button" onclick="exportConfig()">Экспортировать</button>
+  </article>
+  <article class="panel"><h2>Импорт</h2>
+    <div class="drop"><input id="file" type="file" accept=".json,.evos3,application/json,application/octet-stream"><p>Выберите JSON или зашифрованный файл .evos3</p></div>
+    <label>Пароль для .evos3<input id="importPassword" type="password" autocomplete="current-password"></label>
+    <div class="actions"><button type="button" class="secondary" onclick="validateConfig()">Проверить</button><button type="button" onclick="importConfig()">Импортировать</button></div>
+    <p class="warning">Перед импортом автоматически создаётся резервная копия bootstrap-файла. Для применения PostgreSQL и Keycloak потребуется перезапуск.</p>
+    <pre id="status" class="status muted"></pre>
+  </article>
+</section></main>
+<script>
+const statusNode=document.getElementById('status');
+function password(id){return document.getElementById(id).value;}
+async function exportConfig(){
+ const encrypted=document.getElementById('encrypted').checked,secrets=document.getElementById('secrets').checked,p=password('exportPassword');
+ if(secrets&&!encrypted){alert('Экспорт секретов возможен только с шифрованием');return;}
+ if(encrypted&&p.length<12){alert('Пароль должен содержать не менее 12 символов');return;}
+ const q=new URLSearchParams({encrypted,includeSecrets:secrets});if(encrypted)q.set('password',p);
+ const r=await fetch('/api/config/export?'+q);if(!r.ok){alert(await r.text());return;}
+ const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);
+ const cd=r.headers.get('Content-Disposition')||'';a.download=cd.includes('.evos3')?'evo-snt-s3-config.evos3':'evo-snt-s3-config.json';a.click();URL.revokeObjectURL(a.href);
+}
+function form(){const f=document.getElementById('file').files[0];if(!f)throw new Error('Выберите файл');const d=new FormData();d.append('file',f);const p=password('importPassword');if(p)d.append('password',p);return d;}
+async function validateConfig(){try{const r=await fetch('/api/config/validate',{method:'POST',body:form()});const j=await r.json();statusNode.textContent=JSON.stringify(j,null,2);}catch(e){statusNode.textContent=e.message;}}
+async function importConfig(){if(!confirm('Импортировать конфигурацию и заменить текущие настройки?'))return;try{const r=await fetch('/api/config/import',{method:'POST',body:form()});const j=await r.json();statusNode.textContent=JSON.stringify(j,null,2);}catch(e){statusNode.textContent=e.message;}}
+</script></body></html>
