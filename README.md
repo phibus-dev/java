@@ -2,24 +2,36 @@
 
 Java 21 / Spring Boot приложение для функционального, нагрузочного, распределённого и регрессионного тестирования AWS S3, MinIO и других S3-совместимых объектных хранилищ.
 
-> **Текущий стабильный релиз:** `2.1.0`  
-> **Статус:** Release Candidate — после успешного CI и приёмочной проверки помечается как Stable / Production Ready  
-> **Ветка релиза:** `release/2.1.0`
+> **Текущий стабильный релиз:** `2.2.0`  
+> **Статус:** Stable / Production Ready  
+> **Ветка релиза:** `release/2.2.0`
+
+## Что нового в 2.2.0
+
+- усилен bootstrap-режим: отсутствующий, пустой или содержащий пробелы `bootstrap-settings.json` больше не блокирует запуск;
+- добавлены резервные копии bootstrap-конфигурации и безопасная атомарная запись;
+- унифицированы Web UI маршруты без обязательного суффикса `.html`;
+- исправлена CSP-совместимость страницы агентов и зависавшее состояние «Загрузка…»;
+- получение S3-бакетов переведено на сортированный выпадающий список без автоматического выбора первого элемента;
+- переработан единый центр настроек и диагностика PostgreSQL/Vault;
+- добавлен раздел `/monitoring` с Health Dashboard базовых компонентов;
+- добавлены локальные сохранённые задания без хранения Access Key и Secret Key.
 
 ## Возможности
 
 - корпоративный Web UI «ЭВО.СНТ S3»;
-- разделы «Задания», «История», «Агенты» и «Настройки»;
+- разделы «Задания», «История», «Мониторинг», «Агенты», «Расписания» и «Настройки»;
 - локальные и распределённые S3-тесты;
 - S3-профили с автоматическим применением endpoint, region, bucket и Vault path;
 - UPLOAD, DOWNLOAD, HEAD, LIST, DELETE, LIFECYCLE и MIXED;
 - multipart upload, parallelism, warm-up и ограничение OPS;
 - throughput, OPS, bytes, errors, p50, p95 и p99;
 - история, baseline, регрессия и тренды 2–20 запусков;
-- экспорт результатов в HTML и PDF;
+- экспорт результатов в JSON, CSV, HTML и PDF;
 - Vault Token и production-ready AppRole;
 - управление агентами: включение, отключение, отзыв identity и обновление;
 - Keycloak OIDC и RBAC;
+- REST API v2;
 - импорт/экспорт конфигурации, включая защищённый `.evos3`;
 - Prometheus, расширенные Grafana dashboards и alert rules;
 - Flyway, audit, CSRF, security headers, SpotBugs, JaCoCo, CodeQL и CycloneDX SBOM.
@@ -33,9 +45,9 @@ Browser / REST client
         |
 +----------------------------------+
 | ЭВО.СНТ S3 Coordinator           |
-| Web UI / API / Scheduler         |
+| Web UI / API v2 / Scheduler      |
 | History / Baseline / Trends      |
-| Audit / RBAC / Agent control     |
+| Monitoring / Audit / RBAC        |
 +----------------------------------+
    | JDBC       | HTTPS       | Agent API
 PostgreSQL    Vault/Keycloak   Agents 1..N
@@ -54,6 +66,7 @@ PostgreSQL, Vault, Keycloak и S3 являются внешними сервис
 | Java | 21+ |
 | PostgreSQL | 15–18 |
 | Vault Community Edition | 2.0.x |
+| Keycloak | 26+ |
 | Kubernetes | 1.28+ |
 | Linux | systemd-based |
 | S3 | AWS S3, MinIO и совместимые реализации |
@@ -63,25 +76,20 @@ PostgreSQL, Vault, Keycloak и S3 являются внешними сервис
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.1.0.jar
+java -jar evo-snt-s3-2.2.0.jar
 ```
 
-Откройте:
-
-```text
-http://localhost:8080/settings
-```
-
-После первого сохранения PostgreSQL-настроек перезапустите приложение.
+Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
 
 ## Основные страницы
 
 ```text
-/tasks                       задания и запуск тестов
+/tasks                       задания, запуск и локальные шаблоны
 /history                     история, сравнение и тренды
+/monitoring                  Health Dashboard
 /agents                      управление агентами
-/distributed-tests.html      распределённые тесты
-/schedules.html              расписания
+/distributed-tests           распределённые тесты
+/schedules                   расписания
 /baselines                   baseline и регрессия
 /settings                    PostgreSQL и Vault
 /settings/keycloak           Keycloak
@@ -89,44 +97,21 @@ http://localhost:8080/settings
 /settings/configuration      импорт и экспорт конфигурации
 ```
 
-Название вкладки браузера: `ЭВО.СНТ`.
+Старые адреса с `.html` перенаправляются на канонические маршруты.
+
+## Bootstrap и секреты
+
+Приложение запускается, если bootstrap-файл отсутствует, пуст или содержит только пробелы. Перед заменой существующей конфигурации создаётся backup в каталоге `config/backups`.
+
+Секреты шифруются с использованием `S3_PERF_BOOTSTRAP_KEY`. Сохранённые задания браузера не содержат Access Key и Secret Key.
 
 ## Vault
 
-Поддерживаются:
-
-```text
-TOKEN
-APPROLE
-```
-
-AppRole включает кеширование client token, lease-aware renewal, повторный login после 401/403, TLS verification и пользовательский CA. `secret_id` хранится только в зашифрованном bootstrap-файле.
+Поддерживаются `TOKEN` и `APPROLE`. AppRole включает кеширование client token, lease-aware renewal, повторный login после 401/403, TLS verification и пользовательский CA. `secret_id` хранится только в зашифрованном bootstrap-файле.
 
 ## Импорт и экспорт конфигурации
 
-Раздел:
-
-```text
-/settings/configuration
-```
-
-Открытый JSON не содержит секретов. Для переноса секретов используется файл `.evos3`:
-
-- AES-256-GCM;
-- PBKDF2-HMAC-SHA256;
-- 210 000 итераций;
-- уникальные salt и IV;
-- пароль от 12 символов;
-- GCM authentication tag;
-- автоматический backup перед импортом.
-
-## HTML/PDF отчёты
-
-В карточке запуска доступны HTML и PDF. Для PDF необходим Unicode TTF-шрифт. При необходимости задайте:
-
-```bash
-export S3PERF_REPORTS_PDF_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
-```
+Раздел `/settings/configuration` поддерживает открытый JSON без секретов и защищённый `.evos3` с AES-256-GCM, PBKDF2-HMAC-SHA256, 210 000 итераций, уникальными salt/IV и автоматическим backup перед импортом.
 
 ## Docker
 
@@ -135,10 +120,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.1.0
+  ghcr.io/phibus-dev/s3-performance-test-web:2.2.0
 ```
 
-Для production используйте фиксированный тег `2.1.0`.
+Для production используйте фиксированный тег `2.2.0`.
 
 ## Systemd
 
@@ -166,10 +151,12 @@ SuccessExitStatus=143
 ## Monitoring
 
 ```text
+/monitoring
+GET /api/health/overview
 GET /actuator/prometheus
 ```
 
-Dashboards:
+Grafana dashboards:
 
 ```text
 deploy/grafana/s3-performance-overview.json
@@ -177,7 +164,7 @@ deploy/grafana/s3-agents-dashboard.json
 deploy/grafana/s3-runtime-dashboard.json
 ```
 
-Alerts:
+Prometheus alerts:
 
 ```text
 deploy/prometheus/s3-performance-alerts.yml
@@ -187,20 +174,18 @@ deploy/prometheus/s3-performance-alerts.yml
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.1.0.jar
+java -jar target/s3-multipart-uploader-2.2.0.jar
 ```
 
-## Обновление с 2.0.5
+## Обновление с 2.1.0
 
-См. `UPGRADE_2.1.0.md`. До обновления сохраните bootstrap-файл и PostgreSQL. Не запускайте 2.0.5 и 2.1.0 одновременно с одной базой.
+См. `UPGRADE_2.2.0.md`. Миграция PostgreSQL не требуется. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL.
 
 ## Релиз
 
-После успешного CI и приёмочной проверки создайте тег:
-
 ```bash
-git tag -a v2.1.0 -m "ЭВО.СНТ S3 2.1.0"
-git push origin v2.1.0
+git tag -a v2.2.0 -m "ЭВО.СНТ S3 2.2.0"
+git push origin v2.2.0
 ```
 
 Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker image.
