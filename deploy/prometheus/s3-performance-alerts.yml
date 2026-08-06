@@ -1,0 +1,79 @@
+groups:
+  - name: evo-snt-s3-availability
+    rules:
+      - alert: EvoSntS3ApplicationDown
+        expr: up{job="s3-performance-test"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ЭВО.СНТ S3 недоступен"
+          description: "Prometheus не может получить метрики с {{ $labels.instance }} более 2 минут."
+      - alert: EvoSntS3Http5xxRateHigh
+        expr: sum(rate(http_server_requests_seconds_count{job="s3-performance-test",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job="s3-performance-test"}[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая доля HTTP 5xx"
+          description: "Доля HTTP 5xx превышает 5% в течение 10 минут."
+      - alert: EvoSntS3HttpP95High
+        expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job="s3-performance-test"}[5m])) by (le,instance)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка Web/API"
+          description: "p95 HTTP latency на {{ $labels.instance }} превышает 2 секунды."
+  - name: evo-snt-s3-runtime
+    rules:
+      - alert: EvoSntS3HeapUsageHigh
+        expr: sum(jvm_memory_used_bytes{job="s3-performance-test",area="heap"}) by (instance) / sum(jvm_memory_max_bytes{job="s3-performance-test",area="heap"}) by (instance) > 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое использование JVM heap"
+          description: "Heap на {{ $labels.instance }} используется более чем на 85%."
+      - alert: EvoSntS3OpenFilesHigh
+        expr: process_files_open_files{job="s3-performance-test"} / process_files_max_files{job="s3-performance-test"} > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Заканчиваются файловые дескрипторы"
+          description: "Использовано более 80% лимита файловых дескрипторов на {{ $labels.instance }}."
+      - alert: EvoSntS3ExecutorQueueGrowing
+        expr: max_over_time(executor_queued_tasks{job="s3-performance-test"}[10m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь executor растёт"
+          description: "В executor {{ $labels.name }} более 100 ожидающих задач."
+  - name: evo-snt-s3-load-tests
+    rules:
+      - alert: EvoSntS3TestErrors
+        expr: s3_test_errors{job="s3-performance-test"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ошибки нагрузочного теста S3"
+          description: "Текущий или последний тест содержит ошибки на {{ $labels.instance }}."
+      - alert: EvoSntS3AgentsOffline
+        expr: s3_agents_offline{job="s3-performance-test"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Есть недоступные агенты"
+          description: "Coordinator сообщает о {{ $value }} недоступных агентах."
+      - alert: EvoSntS3ThroughputDropped
+        expr: s3_test_active{job="s3-performance-test"} > 0 and s3_test_throughput_mibps{job="s3-performance-test"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Активный тест не передаёт данные"
+          description: "Тест активен, но throughput равен нулю более 5 минут на {{ $labels.instance }}."
