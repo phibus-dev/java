@@ -10,7 +10,7 @@
 <label id="duration-field" hidden>Продолжительность, секунд<input id="durationSeconds" type="number" min="1" max="604800" value="300"></label>
 <label id="warmup-field" hidden>Warm-up, секунд<input id="warmupSeconds" type="number" min="0" max="86400" value="0"><small class="muted">Операции выполняются, но не входят в итоговую статистику.</small></label>
 <label>Endpoint<input id="endpoint" required value="http://localhost:9000"></label><label>Регион<input id="region" required value="us-east-1"></label>
-<label>Bucket<div class="inline"><input id="bucket" required><button id="load-buckets" type="button" class="secondary">Получить бакеты</button></div></label>
+<label>Bucket<div class="inline"><input id="bucket" required placeholder="Введите имя или получите список"><select id="bucket-select" hidden aria-label="Доступные бакеты"><option value="">Выберите бакет</option></select><button id="load-buckets" type="button" class="secondary">Получить бакеты</button></div></label>
 <label>Access key<input id="accessKey" placeholder="необязательно при Vault/Environment"></label><label>Secret key<input id="secretKey" type="password" placeholder="необязательно при Vault/Environment"></label>
 <label>Object key / prefix<input id="objectKey" required value="performance-test/random-upload.bin"></label><label id="object-count-field">Количество объектов / max keys<input id="objectCount" required type="number" min="1" max="1000" value="1"></label>
 <label>Размер объекта, MiB<input id="objectSizeMiB" required type="number" min="1" value="1024"></label><label>Размер части, MiB<input id="partSizeMiB" required type="number" min="5" value="64"></label>
