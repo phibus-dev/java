@@ -41,9 +41,22 @@ class TestPresetUiTest {
         String script = resource("/static/test-presets.js");
 
         assertThat(script)
-                .contains("byId('accessKey').value = ''")
-                .contains("byId('secretKey').value = ''")
-                .contains("dispatchEvent(new Event('change'");
+                .contains("if (accessKey) accessKey.value = ''")
+                .contains("if (secretKey) secretKey.value = ''");
+    }
+
+    @Test
+    void selectingPresetAutomaticallyLoadsSavedConfiguration() throws IOException {
+        String script = resource("/static/test-presets.js");
+
+        assertThat(script)
+                .contains("function loadSelectedPreset()")
+                .contains("select.addEventListener('change'")
+                .contains("loadSelectedPreset();")
+                .contains("assignField('profileId', config.profileId, true)")
+                .contains("assignField('scenario', config.scenario, true)")
+                .contains("syncBucketSelector(config.bucket)")
+                .contains("byId('load-preset').addEventListener('click', loadSelectedPreset)");
     }
 
     private String resource(String path) throws IOException {

@@ -38,17 +38,52 @@
         return configuration;
     }
 
+    function assignField(id, storedValue, dispatchChange = false) {
+        if (SENSITIVE_FIELDS.has(id)) return;
+        const element = byId(id);
+        if (!element) return;
+        if (element.type === 'checkbox') element.checked = Boolean(storedValue);
+        else element.value = String(storedValue ?? '');
+        if (dispatchChange) element.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+
+    function syncBucketSelector(bucket) {
+        const input = byId('bucket');
+        const bucketSelect = byId('bucket-select');
+        if (!input || !bucketSelect) return;
+        const value = String(bucket ?? '');
+        input.value = value;
+        if (bucketSelect.hidden) return;
+        const optionExists = [...bucketSelect.options].some(option => option.value === value);
+        if (optionExists) {
+            bucketSelect.value = value;
+        } else {
+            bucketSelect.value = '';
+            bucketSelect.hidden = true;
+            input.hidden = false;
+        }
+    }
+
     function applyConfiguration(configuration) {
-        Object.entries(configuration || {}).forEach(([id, storedValue]) => {
-            if (SENSITIVE_FIELDS.has(id)) return;
-            const element = byId(id);
-            if (!element) return;
-            if (element.type === 'checkbox') element.checked = Boolean(storedValue);
-            else element.value = String(storedValue ?? '');
-            element.dispatchEvent(new Event('change', {bubbles: true}));
+        const config = configuration || {};
+
+        // Profile and scenario have change handlers in app.js which can overwrite dependent fields.
+        // Apply them first, then restore the exact values saved in the preset.
+        if (Object.prototype.hasOwnProperty.call(config, 'profileId')) assignField('profileId', config.profileId, true);
+        if (Object.prototype.hasOwnProperty.call(config, 'scenario')) assignField('scenario', config.scenario, true);
+
+        FIELD_IDS.forEach(id => {
+            if (id === 'profileId' || id === 'scenario' || id === 'bucket') return;
+            if (!Object.prototype.hasOwnProperty.call(config, id)) return;
+            assignField(id, config[id], id === 'executionMode');
         });
-        byId('accessKey').value = '';
-        byId('secretKey').value = '';
+
+        if (Object.prototype.hasOwnProperty.call(config, 'bucket')) syncBucketSelector(config.bucket);
+
+        const accessKey = byId('accessKey');
+        const secretKey = byId('secretKey');
+        if (accessKey) accessKey.value = '';
+        if (secretKey) secretKey.value = '';
     }
 
     function render(selectedName = '') {
@@ -62,6 +97,15 @@
 
     function selectedPreset() {
         return readPresets().find(item => item.name === select.value);
+    }
+
+    function loadSelectedPreset() {
+        const preset = selectedPreset();
+        if (!preset) return false;
+        applyConfiguration(preset.configuration);
+        nameInput.value = preset.name;
+        status.textContent = 'Параметры задания загружены. Проверьте профиль, bucket и credentials перед запуском.';
+        return true;
     }
 
     byId('save-preset').addEventListener('click', () => {
@@ -81,13 +125,7 @@
         status.textContent = 'Задание сохранено в браузере. Секретные ключи не сохраняются.';
     });
 
-    byId('load-preset').addEventListener('click', () => {
-        const preset = selectedPreset();
-        if (!preset) return;
-        applyConfiguration(preset.configuration);
-        nameInput.value = preset.name;
-        status.textContent = 'Параметры задания загружены. Проверьте профиль, bucket и credentials перед запуском.';
-    });
+    byId('load-preset').addEventListener('click', loadSelectedPreset);
 
     byId('delete-preset').addEventListener('click', () => {
         const name = select.value;
@@ -99,9 +137,15 @@
     });
 
     select.addEventListener('change', () => {
-        byId('load-preset').disabled = !select.value;
-        byId('delete-preset').disabled = !select.value;
-        if (select.value) nameInput.value = select.value;
+        const hasSelection = Boolean(select.value);
+        byId('load-preset').disabled = !hasSelection;
+        byId('delete-preset').disabled = !hasSelection;
+        if (!hasSelection) {
+            nameInput.value = '';
+            status.textContent = '';
+            return;
+        }
+        loadSelectedPreset();
     });
 
     render();
