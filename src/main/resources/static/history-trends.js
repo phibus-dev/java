@@ -2,11 +2,26 @@
   const selected = () => [...document.querySelectorAll('.compare-id:checked')].map(x => x.value);
   const byId = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const trendCharts = {};
 
   function compareSelected() {
     const ids = selected();
     if (ids.length !== 2) { alert('Выберите ровно два запуска'); return; }
     location.href = '/api/history/compare?left=' + encodeURIComponent(ids[0]) + '&right=' + encodeURIComponent(ids[1]);
+  }
+
+  function metricCard(name, value, unit, lowerIsBetter = false) {
+    const numeric = Number(value) || 0;
+    const improved = lowerIsBetter ? numeric < 0 : numeric > 0;
+    const degraded = lowerIsBetter ? numeric > 0 : numeric < 0;
+    const css = improved ? 'trend-good' : degraded ? 'trend-bad' : 'trend-neutral';
+    const arrow = numeric > 0 ? '▲' : numeric < 0 ? '▼' : '●';
+    return `<div class="metric ${css}"><span>${escapeHtml(name)}</span><strong>${arrow} ${numeric > 0 ? '+' : ''}${numeric.toFixed(unit ? 1 : 0)}${unit}</strong></div>`;
+  }
+
+  function chart(id, options) {
+    if (!trendCharts[id]) trendCharts[id] = new EvoPerformanceChart(byId(id), options);
+    return trendCharts[id];
   }
 
   async function buildTrends() {
@@ -20,45 +35,27 @@
     const report = await response.json();
     byId('trend-panel').hidden = false;
     byId('trend-summary').innerHTML = [
-      ['Throughput', report.throughputChangePercent, '%'],
-      ['OPS', report.operationsChangePercent, '%'],
-      ['p95', report.p95ChangePercent, '%'],
-      ['p99', report.p99ChangePercent, '%'],
-      ['Ошибки', report.errorDifference, '']
-    ].map(x => `<div class="metric"><span>${escapeHtml(x[0])}</span><strong>${Number(x[1]).toFixed(x[2] ? 1 : 0)}${x[2]}</strong></div>`).join('');
+      metricCard('Throughput', report.throughputChangePercent, '%'),
+      metricCard('OPS', report.operationsChangePercent, '%'),
+      metricCard('p95', report.p95ChangePercent, '%', true),
+      metricCard('p99', report.p99ChangePercent, '%', true),
+      metricCard('Ошибки', report.errorDifference, '', true)
+    ].join('');
     byId('trend-warning').textContent = report.grouping.homogeneous ? '' :
       'Выбраны запуски с разными endpoint, bucket или операциями. Сравнение отображается, но интерпретировать тренд следует с осторожностью.';
-    draw('throughput-chart', report.points, 'throughputMiBps', 'MiB/s');
-    draw('ops-chart', report.points, 'operationsPerSecond', 'OPS');
-    draw('latency-chart', report.points, 'p95LatencyMs', 'p95 ms');
-    draw('errors-chart', report.points, 'errors', 'Ошибки');
-    byId('trend-table').innerHTML = report.points.map(p => `<tr><td>${new Date(p.createdAt).toLocaleString()}</td><td>${escapeHtml(p.operation)}</td><td>${Number(p.throughputMiBps).toFixed(2)}</td><td>${Number(p.operationsPerSecond).toFixed(2)}</td><td>${Number(p.p50LatencyMs).toFixed(1)}</td><td>${Number(p.p95LatencyMs).toFixed(1)}</td><td>${Number(p.p99LatencyMs).toFixed(1)}</td><td>${p.errors}</td></tr>`).join('');
-  }
 
-  function draw(id, points, field, label) {
-    const canvas = byId(id), ctx = canvas.getContext('2d');
-    const width = canvas.clientWidth || 600, height = 220, dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr; canvas.height = height * dpr; ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-    const values = points.map(p => Number(p[field]) || 0);
-    const max = Math.max(1, ...values), min = Math.min(0, ...values);
-    const pad = 32, span = Math.max(1, max - min);
-    ctx.strokeStyle = '#d8dde5'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(pad, 10); ctx.lineTo(pad, height-pad); ctx.lineTo(width-10, height-pad); ctx.stroke();
-    ctx.fillStyle = '#334155'; ctx.font = '12px sans-serif'; ctx.fillText(label, pad + 4, 18);
-    ctx.strokeStyle = '#004b8d'; ctx.lineWidth = 2; ctx.beginPath();
-    values.forEach((v, i) => {
-      const x = pad + (width-pad-14) * (points.length === 1 ? 0 : i/(points.length-1));
-      const y = height-pad - ((v-min)/span) * (height-pad-18);
-      if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    });
-    ctx.stroke();
-    ctx.fillStyle = '#c8102e';
-    values.forEach((v, i) => {
-      const x = pad + (width-pad-14) * (points.length === 1 ? 0 : i/(points.length-1));
-      const y = height-pad - ((v-min)/span) * (height-pad-18);
-      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
-    });
+    const common = {height:320,xTitle:'Запуски',xLabel:p=>new Date(p.createdAt).toLocaleString()};
+    chart('throughput-chart',{...common,yUnit:'MiB/s'}).setData(report.points,[{name:'Throughput',unit:'MiB/s',value:p=>p.throughputMiBps}]);
+    chart('ops-chart',{...common,yUnit:'OPS'}).setData(report.points,[{name:'Operations/sec',unit:'OPS',value:p=>p.operationsPerSecond}]);
+    chart('latency-chart',{...common,yUnit:'ms'}).setData(report.points,[
+      {name:'p50',unit:'ms',value:p=>p.p50LatencyMs},
+      {name:'p95',unit:'ms',value:p=>p.p95LatencyMs},
+      {name:'p99',unit:'ms',value:p=>p.p99LatencyMs}
+    ]);
+    chart('errors-chart',{...common,yUnit:'ошибок'}).setData(report.points,[{name:'Ошибки',unit:'',value:p=>p.errors}]);
+
+    byId('trend-table').innerHTML = report.points.map(p => `<tr><td>${new Date(p.createdAt).toLocaleString()}</td><td>${escapeHtml(p.operation)}</td><td>${Number(p.throughputMiBps).toFixed(2)}</td><td>${Number(p.operationsPerSecond).toFixed(2)}</td><td>${Number(p.p50LatencyMs).toFixed(1)}</td><td>${Number(p.p95LatencyMs).toFixed(1)}</td><td>${Number(p.p99LatencyMs).toFixed(1)}</td><td>${p.errors}</td></tr>`).join('');
+    byId('trend-panel').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
   byId('compare-selected')?.addEventListener('click', compareSelected);
