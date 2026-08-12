@@ -87,7 +87,7 @@ jobs:
 
       - name: Build and publish prerelease Docker image
         if: ${{ contains(steps.version.outputs.project, '-') }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -95,7 +95,7 @@ jobs:
 
       - name: Build and publish stable Docker image
         if: ${{ !contains(steps.version.outputs.project, '-') }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
