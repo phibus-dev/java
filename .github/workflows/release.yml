@@ -68,7 +68,7 @@ jobs:
           sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" > SHA256SUMS
 
       - name: Upload release assets to Actions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: evo-snt-s3-${{ steps.version.outputs.project }}-release-assets
           path: dist/*
