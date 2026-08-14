@@ -56,7 +56,8 @@ public class AgentRegistry {
             return new AgentView(agent.id(), agent.name(), agent.hostname(), agent.address(), agent.version(), agent.cpuCount(),
                     agent.memoryBytes(), agent.tags(), agent.registeredAt(), agent.lastSeenAt(), status, state.enabled(),
                     state.desiredVersion(), state.updateRequested(), state.updateCompletedAt(), state.changedAt());
-        }).sorted(Comparator.comparing(AgentView::name)).toList();
+        }).sorted(Comparator.comparing(AgentView::name,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))).toList();
     }
 
     public AgentRecord authenticate(UUID id, String token) {
