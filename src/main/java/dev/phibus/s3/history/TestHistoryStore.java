@@ -13,7 +13,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.springframework.stereotype.Repository;
@@ -160,7 +162,7 @@ public class TestHistoryStore {
                     speed_mibps, etag, status, error_message) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
-            for (PartResult part : run.parts()) {
+            for (PartResult part : deduplicateParts(run.parts())) {
                 insert.setObject(1, run.id());
                 insert.setInt(2, part.objectNumber());
                 insert.setInt(3, part.partNumber());
@@ -176,6 +178,14 @@ public class TestHistoryStore {
         }
     }
 
+    static List<PartResult> deduplicateParts(List<PartResult> parts) {
+        Map<PartKey, PartResult> unique = new LinkedHashMap<>();
+        for (PartResult part : parts) {
+            unique.put(new PartKey(part.objectNumber(), part.partNumber()), part);
+        }
+        return List.copyOf(unique.values());
+    }
+
     private static HistoryRow map(ResultSet rs) throws SQLException {
         return new HistoryRow(rs.getObject("id", UUID.class), rs.getString("status"),
                 instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("started_at")),
@@ -189,6 +199,8 @@ public class TestHistoryStore {
 
     private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }
     private static Instant instant(Timestamp value) { return value == null ? null : value.toInstant(); }
+
+    private record PartKey(int objectNumber, int partNumber) { }
 
     public record HistoryRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                              String endpoint, String bucket, String region, String objectKey, long totalBytes,
