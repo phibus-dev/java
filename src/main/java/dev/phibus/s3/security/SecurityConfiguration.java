@@ -25,12 +25,20 @@ public class SecurityConfiguration {
             "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; "
                     + "form-action 'self'; img-src 'self' data:; connect-src 'self'; script-src 'self'; style-src 'self'";
 
+    private static final String[] AGENT_API_CSRF_IGNORED = {
+            "/api/agents/register",
+            "/api/agents/*/heartbeat",
+            "/api/distributed-tests/agent/**"
+    };
+
     @Bean
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "false", matchIfMissing = true)
     SecurityFilterChain openSecurity(HttpSecurity http) throws Exception {
         configureHeaders(http);
         return http
-                .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .ignoringRequestMatchers(AGENT_API_CSRF_IGNORED))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .build();
     }
@@ -42,10 +50,7 @@ public class SecurityConfiguration {
         return http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .ignoringRequestMatchers(
-                                "/api/agents/register",
-                                "/api/agents/*/heartbeat",
-                                "/api/distributed-tests/agent/**"))
+                        .ignoringRequestMatchers(AGENT_API_CSRF_IGNORED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/settings", "/api/settings/**", "/static/**", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN", "OPERATOR")
