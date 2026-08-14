@@ -7,7 +7,7 @@
   function compareSelected() {
     const ids = selected();
     if (ids.length !== 2) { alert('Выберите ровно два запуска'); return; }
-    location.href = '/api/history/compare?left=' + encodeURIComponent(ids[0]) + '&right=' + encodeURIComponent(ids[1]);
+    location.href = '/history/compare?left=' + encodeURIComponent(ids[0]) + '&right=' + encodeURIComponent(ids[1]);
   }
 
   function metricCard(name, value, unit, lowerIsBetter = false) {
@@ -41,8 +41,14 @@
       metricCard('p99', report.p99ChangePercent, '%', true),
       metricCard('Ошибки', report.errorDifference, '', true)
     ].join('');
-    byId('trend-warning').textContent = report.grouping.homogeneous ? '' :
-      'Выбраны запуски с разными endpoint, bucket или операциями. Сравнение отображается, но интерпретировать тренд следует с осторожностью.';
+
+    const warnings = [];
+    if (!report.grouping.homogeneous) warnings.push('Выбраны запуски с разными endpoint, bucket или операциями. Сравнение отображается, но интерпретировать тренд следует с осторожностью.');
+    const first = report.points?.[0];
+    if (first && (Number(first.throughputMiBps) === 0 || Number(first.operationsPerSecond) === 0)) {
+      warnings.push('Для метрики с нулевым исходным значением переход к ненулевому значению отображается как ±100%, поскольку обычное процентное изменение от нуля не определено.');
+    }
+    byId('trend-warning').textContent = warnings.join(' ');
 
     const common = {height:320,xTitle:'Запуски',xLabel:p=>new Date(p.createdAt).toLocaleString()};
     chart('throughput-chart',{...common,yUnit:'MiB/s'}).setData(report.points,[{name:'Throughput',unit:'MiB/s',value:p=>p.throughputMiBps}]);
