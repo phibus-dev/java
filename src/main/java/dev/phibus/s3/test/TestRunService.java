@@ -1,5 +1,6 @@
 package dev.phibus.s3.test;
 
+import dev.phibus.s3.distributed.ApplicationMode;
 import dev.phibus.s3.history.HistoryRequestMetadataUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.settings.S3ProfileService;
@@ -10,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,22 +22,27 @@ public class TestRunService {
     private final TestHistoryStore historyStore;
     private final HistoryRequestMetadataUpdater metadataUpdater;
     private final S3ProfileService profileService;
+    private final ApplicationMode applicationMode;
 
     public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor,
                           TestHistoryStore historyStore, HistoryRequestMetadataUpdater metadataUpdater,
-                          S3ProfileService profileService) {
+                          S3ProfileService profileService,
+                          @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
         this.engine = engine;
         this.testExecutor = testExecutor;
         this.historyStore = historyStore;
         this.metadataUpdater = metadataUpdater;
         this.profileService = profileService;
+        this.applicationMode = ApplicationMode.from(applicationMode);
     }
 
     public TestRun create(TestRequest request) {
-        TestRequest effectiveRequest = resolveProfile(request);
+        // Distributed assignments already contain the effective S3 connection settings.
+        // An AGENT must not resolve profiles from, or persist results to, PostgreSQL.
+        TestRequest effectiveRequest = applicationMode == ApplicationMode.AGENT ? request : resolveProfile(request);
         TestRun run = new TestRun(effectiveRequest);
         runs.put(run.id(), run);
-        testExecutor.execute(() -> executeAndPersist(run));
+        testExecutor.execute(() -> execute(run));
         return run;
     }
 
@@ -56,12 +63,14 @@ public class TestRunService {
         return profiled.withConnection(profile.endpoint(), bucket, profile.region(), profile.pathStyleAccess());
     }
 
-    private void executeAndPersist(TestRun run) {
+    private void execute(TestRun run) {
         try {
             engine.execute(run);
         } finally {
-            historyStore.save(run.snapshot());
-            metadataUpdater.update(run.id(), run.request());
+            if (applicationMode != ApplicationMode.AGENT) {
+                historyStore.save(run.snapshot());
+                metadataUpdater.update(run.id(), run.request());
+            }
         }
     }
 
@@ -77,7 +86,10 @@ public class TestRunService {
     }
 
     public void cancel(UUID id) { get(id).cancel(); }
-    public List<String> listBuckets(TestRequest request) { return engine.listBuckets(resolveProfile(request)); }
+    public List<String> listBuckets(TestRequest request) {
+        TestRequest effectiveRequest = applicationMode == ApplicationMode.AGENT ? request : resolveProfile(request);
+        return engine.listBuckets(effectiveRequest);
+    }
 
     public static final class TestNotFoundException extends RuntimeException {
         public TestNotFoundException(UUID id) { super("Test not found: " + id); }
