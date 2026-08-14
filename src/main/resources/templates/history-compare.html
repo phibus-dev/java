@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ЭВО.СНТ — сравнение запусков</title>
+  <link rel="stylesheet" href="/app.css">
+  <style>
+    .compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .delta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+    .delta-grid article{padding:14px;background:#f4f7fa;border-top:4px solid #64748b}
+    .delta-grid span,.delta-grid strong{display:block}.delta-grid strong{margin-top:5px;font-size:1.15rem}
+    @media(max-width:760px){.compare-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body><main class="container">
+<header><div><h1>Сравнение запусков</h1><p>Сопоставление сохранённых результатов тестирования.</p></div><nav><a href="/history">← История</a></nav></header>
+<section class="panel">
+  <div class="delta-grid">
+    <article><span>Throughput</span><strong th:text="${#numbers.formatDecimal(comparison.speedChangePercent,1,1) + '%'}"></strong></article>
+    <article><span>p95</span><strong th:text="${#numbers.formatDecimal(comparison.p95ChangePercent,1,1) + '%'}"></strong></article>
+    <article><span>p99</span><strong th:text="${#numbers.formatDecimal(comparison.p99ChangePercent,1,1) + '%'}"></strong></article>
+    <article><span>Разница ошибок</span><strong th:text="${comparison.errorDifference}"></strong></article>
+    <article><span>Длительность</span><strong th:text="${#numbers.formatDecimal(comparison.durationChangePercent,1,1) + '%'}"></strong></article>
+  </div>
+</section>
+<section class="compare-grid">
+  <article class="panel"><h2>Левый запуск</h2>
+    <p><b>ID:</b> <a th:href="@{/history/{id}(id=${comparison.left.id})}" th:text="${comparison.left.id}"></a></p>
+    <p><b>Создан:</b> <span th:text="${comparison.left.createdAt}"></span></p>
+    <p><b>Операция:</b> <span th:text="${comparison.left.operation}"></span></p>
+    <p><b>Статус:</b> <span th:text="${comparison.left.status}"></span></p>
+    <p><b>Endpoint / Bucket:</b> <span th:text="${comparison.left.endpoint + ' / ' + comparison.left.bucket}"></span></p>
+    <p><b>Throughput:</b> <span th:text="${#numbers.formatDecimal(comparison.left.averageSpeedMiBps,1,2) + ' MiB/s'}"></span></p>
+    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.left.p50LatencyMs + ' / ' + comparison.left.p95LatencyMs + ' / ' + comparison.left.p99LatencyMs + ' ms'}"></span></p>
+    <p><b>Ошибки:</b> <span th:text="${comparison.left.failedParts}"></span></p>
+  </article>
+  <article class="panel"><h2>Правый запуск</h2>
+    <p><b>ID:</b> <a th:href="@{/history/{id}(id=${comparison.right.id})}" th:text="${comparison.right.id}"></a></p>
+    <p><b>Создан:</b> <span th:text="${comparison.right.createdAt}"></span></p>
+    <p><b>Операция:</b> <span th:text="${comparison.right.operation}"></span></p>
+    <p><b>Статус:</b> <span th:text="${comparison.right.status}"></span></p>
+    <p><b>Endpoint / Bucket:</b> <span th:text="${comparison.right.endpoint + ' / ' + comparison.right.bucket}"></span></p>
+    <p><b>Throughput:</b> <span th:text="${#numbers.formatDecimal(comparison.right.averageSpeedMiBps,1,2) + ' MiB/s'}"></span></p>
+    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.right.p50LatencyMs + ' / ' + comparison.right.p95LatencyMs + ' / ' + comparison.right.p99LatencyMs + ' ms'}"></span></p>
+    <p><b>Ошибки:</b> <span th:text="${comparison.right.failedParts}"></span></p>
+  </article>
+</section>
+</main></body></html>

@@ -159,7 +159,13 @@ public class AdvancedHistoryStore {
         BootstrapSettings.PostgreSqlSettings settings = settingsService.load().postgresql();
         return DriverManager.getConnection(settings.jdbcUrl(), settings.username(), codec.decrypt(settings.encryptedPassword()));
     }
-    private static double change(double current, double previous) { return previous == 0 ? 0 : (current - previous) * 100.0 / previous; }
+    private static double change(double current, double previous) {
+        if (previous == 0) {
+            if (current == 0) return 0;
+            return current > 0 ? 100.0 : -100.0;
+        }
+        return (current - previous) * 100.0 / previous;
+    }
     private static long duration(RunRow row) { return row.startedAt() == null || row.finishedAt() == null ? 0 : java.time.Duration.between(row.startedAt(), row.finishedAt()).toMillis(); }
 
     public record Filter(String status, String operation, String endpoint, String bucket, String query,
