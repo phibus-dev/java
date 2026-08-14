@@ -8,6 +8,13 @@ updates:
     labels:
       - dependencies
       - java
+    ignore:
+      - dependency-name: org.springframework.boot:spring-boot-starter-parent
+        update-types:
+          - version-update:semver-major
+      - dependency-name: org.testcontainers:testcontainers-bom
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
