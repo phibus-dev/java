@@ -49,6 +49,13 @@ public class HistoryController {
         return "history";
     }
 
+    @GetMapping("/history/compare")
+    public String comparePage(@RequestParam UUID left, @RequestParam UUID right, Model model) {
+        AdvancedHistoryStore.Comparison comparison = requireComparison(left, right);
+        model.addAttribute("comparison", comparison);
+        return "history-compare";
+    }
+
     @GetMapping("/history/{id}")
     public String detail(@PathVariable UUID id, Model model) {
         AdvancedHistoryStore.Detail detail = requireDetail(id);
@@ -78,9 +85,7 @@ public class HistoryController {
     @GetMapping("/api/history/compare")
     @ResponseBody
     public AdvancedHistoryStore.Comparison compare(@RequestParam UUID left, @RequestParam UUID right) {
-        AdvancedHistoryStore.Comparison comparison = historyStore.compare(left, right);
-        if (comparison == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "History item not found");
-        return comparison;
+        return requireComparison(left, right);
     }
 
     @GetMapping("/api/history/trends")
@@ -104,5 +109,11 @@ public class HistoryController {
         AdvancedHistoryStore.Detail detail = historyStore.get(id);
         if (detail == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "History item not found");
         return detail;
+    }
+
+    private AdvancedHistoryStore.Comparison requireComparison(UUID left, UUID right) {
+        AdvancedHistoryStore.Comparison comparison = historyStore.compare(left, right);
+        if (comparison == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "History item not found");
+        return comparison;
     }
 }
