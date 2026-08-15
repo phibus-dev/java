@@ -17,18 +17,21 @@ import org.springframework.stereotype.Service;
 @Service
 public class TestRunService {
     private final Map<UUID, TestRun> runs = new ConcurrentHashMap<>();
-    private final UploadTestEngine engine;
+    private final LoadTestEngineRegistry engineRegistry;
+    private final S3LoadTestEngine s3Engine;
     private final Executor testExecutor;
     private final TestHistoryStore historyStore;
     private final HistoryRequestMetadataUpdater metadataUpdater;
     private final S3ProfileService profileService;
     private final ApplicationMode applicationMode;
 
-    public TestRunService(UploadTestEngine engine, @Qualifier("testExecutor") Executor testExecutor,
+    public TestRunService(LoadTestEngineRegistry engineRegistry, S3LoadTestEngine s3Engine,
+                          @Qualifier("testExecutor") Executor testExecutor,
                           TestHistoryStore historyStore, HistoryRequestMetadataUpdater metadataUpdater,
                           S3ProfileService profileService,
                           @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
-        this.engine = engine;
+        this.engineRegistry = engineRegistry;
+        this.s3Engine = s3Engine;
         this.testExecutor = testExecutor;
         this.historyStore = historyStore;
         this.metadataUpdater = metadataUpdater;
@@ -36,13 +39,23 @@ public class TestRunService {
         this.applicationMode = ApplicationMode.from(applicationMode);
     }
 
+    /**
+     * Backwards-compatible S3 entry point. New workload types will select their
+     * own TestType while existing API/UI calls remain unchanged.
+     */
     public TestRun create(TestRequest request) {
-        // Distributed assignments already contain the effective S3 connection settings.
-        // An AGENT must not resolve profiles from, or persist results to, PostgreSQL.
-        TestRequest effectiveRequest = applicationMode == ApplicationMode.AGENT ? request : resolveProfile(request);
+        return create(TestType.S3, request);
+    }
+
+    public TestRun create(TestType testType, TestRequest request) {
+        if (testType == null) throw new IllegalArgumentException("Test type is required");
+        // S3 profiles remain an S3-specific concern. Distributed assignments already contain
+        // effective connection settings, so AGENT mode never resolves profiles from PostgreSQL.
+        TestRequest effectiveRequest = testType == TestType.S3 && applicationMode != ApplicationMode.AGENT
+                ? resolveProfile(request) : request;
         TestRun run = new TestRun(effectiveRequest);
         runs.put(run.id(), run);
-        testExecutor.execute(() -> execute(run));
+        testExecutor.execute(() -> execute(testType, run));
         return run;
     }
 
@@ -63,9 +76,9 @@ public class TestRunService {
         return profiled.withConnection(profile.endpoint(), bucket, profile.region(), profile.pathStyleAccess());
     }
 
-    private void execute(TestRun run) {
+    private void execute(TestType testType, TestRun run) {
         try {
-            engine.execute(run);
+            engineRegistry.require(testType).execute(run);
         } finally {
             if (applicationMode != ApplicationMode.AGENT) {
                 historyStore.save(run.snapshot());
@@ -86,9 +99,14 @@ public class TestRunService {
     }
 
     public void cancel(UUID id) { get(id).cancel(); }
+
     public List<String> listBuckets(TestRequest request) {
         TestRequest effectiveRequest = applicationMode == ApplicationMode.AGENT ? request : resolveProfile(request);
-        return engine.listBuckets(effectiveRequest);
+        return s3Engine.listBuckets(effectiveRequest);
+    }
+
+    public List<TestType> supportedTestTypes() {
+        return engineRegistry.supportedTypes();
     }
 
     public static final class TestNotFoundException extends RuntimeException {
