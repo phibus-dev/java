@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение ClickHouse — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<body><main class="container">
+<header class="brand-header"><div class="brand-title"><h1>Сравнение ClickHouse</h1><p>Сопоставление двух сохранённых запусков.</p></div></header>
+<nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/settings">Настройки</a></nav>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Метрика</th><th>Левый запуск</th><th>Правый запуск</th><th>Изменение</th></tr></thead><tbody>
+<tr><td>Rows/s</td><td th:text="${#numbers.formatDecimal(comparison.left.rowsPerSecond,1,2)}"></td><td th:text="${#numbers.formatDecimal(comparison.right.rowsPerSecond,1,2)}"></td><td th:text="${comparison.rowsPerSecondChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.rowsPerSecondChangePercent,1,2) + '%'}"></td></tr>
+<tr><td>MiB/s</td><td th:text="${#numbers.formatDecimal(comparison.left.mibPerSecond,1,2)}"></td><td th:text="${#numbers.formatDecimal(comparison.right.mibPerSecond,1,2)}"></td><td th:text="${comparison.mibPerSecondChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.mibPerSecondChangePercent,1,2) + '%'}"></td></tr>
+<tr><td>Queries/s</td><td th:text="${#numbers.formatDecimal(comparison.left.queriesPerSecond,1,2)}"></td><td th:text="${#numbers.formatDecimal(comparison.right.queriesPerSecond,1,2)}"></td><td th:text="${comparison.queriesPerSecondChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.queriesPerSecondChangePercent,1,2) + '%'}"></td></tr>
+<tr><td>P95 latency</td><td th:text="${#numbers.formatDecimal(comparison.left.p95LatencyMs,1,1) + ' ms'}"></td><td th:text="${#numbers.formatDecimal(comparison.right.p95LatencyMs,1,1) + ' ms'}"></td><td th:text="${comparison.p95LatencyChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.p95LatencyChangePercent,1,2) + '%'}"></td></tr>
+<tr><td>P99 latency</td><td th:text="${#numbers.formatDecimal(comparison.left.p99LatencyMs,1,1) + ' ms'}"></td><td th:text="${#numbers.formatDecimal(comparison.right.p99LatencyMs,1,1) + ' ms'}"></td><td th:text="${comparison.p99LatencyChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.p99LatencyChangePercent,1,2) + '%'}"></td></tr>
+<tr><td>Errors</td><td th:text="${comparison.left.errors}"></td><td th:text="${comparison.right.errors}"></td><td>—</td></tr>
+</tbody></table></div></section>
+<section class="panel"><div class="grid two"><div><h3>Левый</h3><p th:text="${comparison.left.id}"></p><p th:text="${comparison.left.operation + ' · ' + comparison.left.table}"></p></div><div><h3>Правый</h3><p th:text="${comparison.right.id}"></p><p th:text="${comparison.right.operation + ' · ' + comparison.right.table}"></p></div></div></section>
+</main></body></html>
