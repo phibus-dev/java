@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>Профили ClickHouse — ЭВО.СНТ</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body><main class="container">
+<header><div><h1>Профили ClickHouse</h1><p>Подключения к ClickHouse для локальных и распределённых нагрузочных тестов.</p></div><nav><a href="/settings">← Настройки</a></nav></header>
+<section class="panel">
+  <h2>Новый профиль</h2>
+  <div class="grid two">
+    <label>Название<input id="ch-name" value="default"></label>
+    <label>База данных<input id="ch-database" value="default"></label>
+    <label>Endpoints<textarea id="ch-endpoints" rows="4" placeholder="http://ch01:8123&#10;http://ch02:8123"></textarea></label>
+    <label>Пользователь<input id="ch-username" value="default"></label>
+    <label>Пароль<input id="ch-password" type="password" autocomplete="new-password"></label>
+    <label>Connection timeout, ms<input id="ch-connection-timeout" type="number" min="100" max="120000" value="5000"></label>
+    <label>Query timeout, sec<input id="ch-query-timeout" type="number" min="1" max="3600" value="30"></label>
+    <label class="check"><input id="ch-default" type="checkbox"> Профиль по умолчанию</label>
+  </div>
+  <div class="actions"><button type="button" id="ch-test" class="secondary">Проверить подключение</button><button type="button" id="ch-save">Создать профиль</button></div>
+  <pre id="ch-test-result" class="diagnostic-output" aria-live="polite"></pre>
+</section>
+<section class="panel">
+  <h2>Сохранённые профили</h2>
+  <div id="ch-profiles">
+    <article class="panel" th:each="profile : ${profiles}" th:attr="data-profile-id=${profile.id}">
+      <div class="title-row"><div><h3 th:text="${profile.name}"></h3><p th:text="${profile.database + ' · ' + profile.username}"></p></div><span class="badge" th:if="${profile.defaultProfile}">По умолчанию</span></div>
+      <p><b>Endpoints:</b> <span th:text="${#strings.listJoin(profile.endpoints, ', ')}"></span></p>
+      <p><b>Timeout:</b> <span th:text="${profile.connectionTimeoutMs + ' ms / ' + profile.queryTimeoutSeconds + ' s'}"></span></p>
+      <div class="actions"><button type="button" class="secondary ch-discover">Discovery</button><button type="button" class="secondary ch-make-default" th:unless="${profile.defaultProfile}">Сделать основным</button><button type="button" class="danger ch-delete" th:unless="${profile.defaultProfile}">Удалить</button></div>
+      <pre class="diagnostic-output ch-discovery-result"></pre>
+    </article>
+  </div>
+</section>
+</main><script src="/clickhouse-profiles.js"></script></body>
+</html>
