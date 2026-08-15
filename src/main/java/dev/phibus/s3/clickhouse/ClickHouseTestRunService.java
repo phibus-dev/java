@@ -6,11 +6,15 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ClickHouseTestRunService {
+    private static final Logger LOG = LoggerFactory.getLogger(ClickHouseTestRunService.class);
+
     private final Map<UUID, ClickHouseTestRun> runs = new ConcurrentHashMap<>();
     private final ClickHouseLoadTestEngine engine;
     private final ClickHouseConnectionProvider connections;
@@ -37,8 +41,7 @@ public class ClickHouseTestRunService {
             try {
                 history.save(run.snapshot(), request);
             } catch (RuntimeException persistenceError) {
-                // Execution result remains available in runtime even if history persistence fails.
-                // The next test is not blocked by a history storage problem.
+                LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), persistenceError);
             }
         });
         return run;
