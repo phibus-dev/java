@@ -69,7 +69,11 @@ public class HistoryTrendService {
     }
 
     private static double change(double current, double previous) {
-        return previous == 0 ? 0 : (current - previous) * 100.0 / previous;
+        if (previous == 0) {
+            if (current == 0) return 0;
+            return current > 0 ? 100.0 : -100.0;
+        }
+        return (current - previous) * 100.0 / previous;
     }
 
     public record TrendReport(List<TrendPoint> points, Grouping grouping,
