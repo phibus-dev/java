@@ -2,12 +2,15 @@
 
 Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ и ClickHouse.
 
-> **Текущая версия:** `2.2.3-rc3`<br>
+> **Текущая версия:** `2.2.3-rc4`<br>
 > **Статус:** Release Candidate<br>
-> **Ветка релиза:** `release/2.2.3-rc3`<br>
+> **Ветка релиза:** `release/2.2.3-rc4`<br>
 > **Последний стабильный релиз:** `2.2.2`
 
-## Что нового в 2.2.3-rc3
+## Что нового в 2.2.3-rc4
+
+- Keeper path для ReplicatedMergeTree по умолчанию включает макрос `{shard}`.
+- Интерфейс подготовки таблицы явно поддерживает макросы `{shard}` и `{replica}`.
 
 - исправлены удаление и редактирование ClickHouse-профилей;
 - исправлена JDBC-типизация временных полей истории и workflow;
@@ -92,7 +95,7 @@ PostgreSQL, Vault, Keycloak, S3 и ClickHouse являются внешними 
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.2.3-rc3.jar
+java -jar evo-snt-s3-2.2.3-rc4.jar
 ```
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
@@ -142,10 +145,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.2.3-rc3
+  ghcr.io/phibus-dev/s3-performance-test-web:2.2.3-rc4
 ```
 
-Для проверки RC используйте фиксированный тег `2.2.3-rc3`. Для production без RC-функций используйте последний стабильный тег `2.2.2`.
+Для проверки RC используйте фиксированный тег `2.2.3-rc4`. Для production без RC-функций используйте последний стабильный тег `2.2.2`.
 
 ## ClickHouse
 
@@ -204,20 +207,20 @@ deploy/prometheus/s3-performance-alerts.yml
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.2.3-rc3.jar
+java -jar target/s3-multipart-uploader-2.2.3-rc4.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.
 
 ## Обновление с 2.2.2
 
-См. `UPGRADE_2.2.3-rc3.md`. При старте Coordinator Flyway применяет миграции V9–V13 для профилей, истории, репликации, сценариев и failover ClickHouse. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL.
+См. `UPGRADE_2.2.3-rc4.md`. При старте Coordinator Flyway применяет миграции V9–V13 для профилей, истории, репликации, сценариев и failover ClickHouse. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL.
 
 ## Релиз
 
 ```bash
-git tag -a v2.2.3-rc3 -m "ЭВО.СНТ 2.2.3-rc3"
-git push origin v2.2.3-rc3
+git tag -a v2.2.3-rc4 -m "ЭВО.СНТ 2.2.3-rc4"
+git push origin v2.2.3-rc4
 ```
 
 Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker image.
