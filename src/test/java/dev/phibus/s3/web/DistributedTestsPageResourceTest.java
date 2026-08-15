@@ -17,7 +17,7 @@ class DistributedTestsPageResourceTest {
                 .contains("<script src=\"/csrf-fetch.js\"></script>")
                 .contains("<script src=\"/distributed-tests.js\"></script>")
                 .contains("Получение списка агентов…")
-                .contains("Получение истории распределённых запусков…")
+                .contains("Получение распределённых запусков…")
                 .doesNotContain("<script>")
                 .doesNotContain("onclick=");
     }
@@ -30,7 +30,7 @@ class DistributedTestsPageResourceTest {
                 .contains("Нет доступных агентов")
                 .contains("Распределённые запуски отсутствуют")
                 .contains("Не удалось получить список агентов")
-                .contains("Не удалось получить историю распределённых запусков")
+                .contains("Не удалось получить распределённые запуски")
                 .contains("REQUEST_TIMEOUT_MS")
                 .contains("AbortController")
                 .contains("/api/agents")
@@ -44,8 +44,8 @@ class DistributedTestsPageResourceTest {
         assertThat(script)
                 .contains("startButton.addEventListener('click', startDistributedTest)")
                 .contains("refreshButton.addEventListener('click'")
-                .contains("method: 'POST'")
-                .contains("JSON.parse(document.getElementById('request').value)");
+                .contains("method:'POST'")
+                .contains("JSON.parse(requestEditor.value)");
     }
 
     private static String read(String path) throws IOException {
