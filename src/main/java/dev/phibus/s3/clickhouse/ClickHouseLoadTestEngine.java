@@ -25,14 +25,23 @@ public class ClickHouseLoadTestEngine {
     }
 
     public void execute(ClickHouseTestRun run) {
+        execute(run, () -> connections.open(run.request().profileId(), run.request().endpoint()),
+                connections.queryTimeoutSeconds(run.request().profileId()));
+    }
+
+    public void execute(ClickHouseTestRun run, ClickHouseConnectionSpec spec) {
+        execute(run, () -> connections.open(spec), spec.queryTimeoutSeconds());
+    }
+
+    private void execute(ClickHouseTestRun run, ConnectionFactory connectionFactory, int queryTimeoutSeconds) {
         ClickHouseTestRequest request = run.request();
         try {
             run.start();
-            if (request.autoCreateTable()) createTable(run);
+            if (request.autoCreateTable()) createTable(run, connectionFactory, queryTimeoutSeconds);
             switch (request.normalizedOperation()) {
-                case "INSERT" -> executeInsert(run);
-                case "SELECT" -> executeSelect(run);
-                case "INSERT_SELECT" -> executeInsertSelect(run);
+                case "INSERT" -> executeInsert(run, connectionFactory, queryTimeoutSeconds);
+                case "SELECT" -> executeSelect(run, connectionFactory, queryTimeoutSeconds);
+                case "INSERT_SELECT" -> executeInsertSelect(run, connectionFactory, queryTimeoutSeconds);
                 default -> throw new IllegalArgumentException("Unsupported ClickHouse operation: " + request.operation());
             }
             run.complete();
@@ -41,39 +50,39 @@ public class ClickHouseLoadTestEngine {
         }
     }
 
-    private void createTable(ClickHouseTestRun run) throws Exception {
+    private void createTable(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
         String table = run.request().normalizedTable();
-        try (Connection connection = connections.open(run.request().profileId(), run.request().endpoint());
-             Statement statement = connection.createStatement()) {
-            statement.setQueryTimeout(profileTimeout(run));
-            statement.execute("CREATE TABLE IF NOT EXISTS " + table + " (event_time DateTime64(3), sequence UInt64, payload String) ENGINE = MergeTree ORDER BY sequence");
+        try (Connection connection = connectionFactory.open(); Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(timeout);
+            statement.execute("CREATE TABLE IF NOT EXISTS " + table
+                    + " (event_time DateTime64(3), sequence UInt64, payload String) ENGINE = MergeTree ORDER BY sequence");
         }
     }
 
-    private void executeInsert(ClickHouseTestRun run) throws Exception {
+    private void executeInsert(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
         int workers = run.request().concurrency();
         ExecutorService pool = Executors.newFixedThreadPool(workers);
         AtomicLong sequence = new AtomicLong();
         try {
             List<Callable<Void>> tasks = new ArrayList<>();
-            for (int worker = 0; worker < workers; worker++) {
-                tasks.add(() -> { insertWorker(run, sequence); return null; });
-            }
+            for (int worker = 0; worker < workers; worker++)
+                tasks.add(() -> { insertWorker(run, sequence, connectionFactory, timeout); return null; });
             for (Future<Void> future : pool.invokeAll(tasks)) future.get();
         } finally {
             pool.shutdownNow();
         }
     }
 
-    private void insertWorker(ClickHouseTestRun run, AtomicLong sequence) throws Exception {
+    private void insertWorker(ClickHouseTestRun run, AtomicLong sequence,
+                              ConnectionFactory connectionFactory, int timeout) throws Exception {
         ClickHouseTestRequest request = run.request();
-        String sql = "INSERT INTO " + request.normalizedTable() + " (event_time, sequence, payload) VALUES (now64(3), ?, ?)";
+        String sql = "INSERT INTO " + request.normalizedTable()
+                + " (event_time, sequence, payload) VALUES (now64(3), ?, ?)";
         byte[] payloadBytes = new byte[request.payloadBytes()];
         java.util.Arrays.fill(payloadBytes, (byte) 'x');
         String payload = new String(payloadBytes, StandardCharsets.US_ASCII);
-        try (Connection connection = connections.open(request.profileId(), request.endpoint());
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setQueryTimeout(profileTimeout(run));
+        try (Connection connection = connectionFactory.open(); PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(timeout);
             while (!run.isCancelled() && !run.durationExpired()) {
                 long first = sequence.getAndAdd(request.batchSize());
                 if (!request.durationMode() && first >= request.rowCount()) break;
@@ -97,15 +106,16 @@ public class ClickHouseLoadTestEngine {
         }
     }
 
-    private void executeSelect(ClickHouseTestRun run) throws Exception {
+    private void executeSelect(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
         ClickHouseTestRequest request = run.request();
         long completed = 0;
-        try (Connection connection = connections.open(request.profileId(), request.endpoint());
-             Statement statement = connection.createStatement()) {
-            statement.setQueryTimeout(profileTimeout(run));
-            while (!run.isCancelled() && !run.durationExpired() && (request.durationMode() || completed < request.rowCount())) {
+        try (Connection connection = connectionFactory.open(); Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(timeout);
+            while (!run.isCancelled() && !run.durationExpired()
+                    && (request.durationMode() || completed < request.rowCount())) {
                 Instant started = Instant.now();
-                try (ResultSet rs = statement.executeQuery("SELECT count(), sum(length(payload)) FROM " + request.normalizedTable())) {
+                try (ResultSet rs = statement.executeQuery(
+                        "SELECT count(), sum(length(payload)) FROM " + request.normalizedTable())) {
                     long rows = 0;
                     long bytes = 0;
                     if (rs.next()) {
@@ -123,13 +133,14 @@ public class ClickHouseLoadTestEngine {
         }
     }
 
-    private void executeInsertSelect(ClickHouseTestRun run) throws Exception {
-        executeInsert(run);
-        if (!run.isCancelled()) executeSelect(run);
+    private void executeInsertSelect(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
+        executeInsert(run, connectionFactory, timeout);
+        if (!run.isCancelled()) executeSelect(run, connectionFactory, timeout);
     }
 
-    private int profileTimeout(ClickHouseTestRun run) {
-        return connections.queryTimeoutSeconds(run.request().profileId());
+    @FunctionalInterface
+    private interface ConnectionFactory {
+        Connection open() throws Exception;
     }
 
     private static String rootMessage(Throwable error) {
