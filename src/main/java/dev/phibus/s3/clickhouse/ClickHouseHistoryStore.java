@@ -6,10 +6,12 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
+@ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseHistoryStore {
     private final JdbcTemplate jdbc;
 
@@ -42,13 +44,28 @@ public class ClickHouseHistoryStore {
                 snapshot.p95LatencyMs(), snapshot.p99LatencyMs(), snapshot.message());
     }
 
+    public void saveDistributed(UUID id, ClickHouseTestRequest request, String endpoint, String status,
+                                Instant startedAt, Instant finishedAt, long rows, long bytes, long queries,
+                                long errors, double rowsPerSecond, double mibPerSecond, double queriesPerSecond,
+                                double p50LatencyMs, double p95LatencyMs, double p99LatencyMs, String message) {
+        jdbc.update("""
+                INSERT INTO clickhouse_test_run(
+                    id, profile_id, endpoint, table_name, operation, status, created_at, started_at, finished_at,
+                    concurrency, batch_size, requested_rows, duration_seconds, warmup_seconds, payload_bytes,
+                    auto_create_table, rows_processed, bytes_processed, queries, errors, rows_per_second,
+                    mib_per_second, queries_per_second, p50_latency_ms, p95_latency_ms, p99_latency_ms, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """, id, request.profileId(), endpoint, request.normalizedTable(), request.normalizedOperation(), status,
+                startedAt, startedAt, finishedAt, request.concurrency(), request.batchSize(), request.rowCount(),
+                request.durationSeconds(), request.warmupSeconds(), request.payloadBytes(), request.autoCreateTable(),
+                rows, bytes, queries, errors, rowsPerSecond, mibPerSecond, queriesPerSecond,
+                p50LatencyMs, p95LatencyMs, p99LatencyMs, message);
+    }
+
     public List<HistoryRow> list(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
-        return jdbc.query("""
-                SELECT * FROM clickhouse_test_run
-                ORDER BY created_at DESC
-                LIMIT ?
-                """, this::map, safeLimit);
+        return jdbc.query("SELECT * FROM clickhouse_test_run ORDER BY created_at DESC LIMIT ?", this::map, safeLimit);
     }
 
     public HistoryRow get(UUID id) {
@@ -106,12 +123,10 @@ public class ClickHouseHistoryStore {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
         return value == null ? null : value.toInstant();
     }
-
     private static Double percentChange(double current, double previous) {
         if (previous == 0) return current == 0 ? 0.0 : null;
         return (current - previous) * 100.0 / previous;
     }
-
     private static String normalize(String value) {
         return value == null || value.isBlank() ? null : value.trim().toUpperCase();
     }
@@ -122,11 +137,9 @@ public class ClickHouseHistoryStore {
                              boolean autoCreateTable, long rows, long bytes, long queries, long errors,
                              double rowsPerSecond, double mibPerSecond, double queriesPerSecond,
                              double p50LatencyMs, double p95LatencyMs, double p99LatencyMs, String message) { }
-
     public record Comparison(HistoryRow left, HistoryRow right, Double rowsPerSecondChangePercent,
                              Double mibPerSecondChangePercent, Double queriesPerSecondChangePercent,
                              Double p95LatencyChangePercent, Double p99LatencyChangePercent) { }
-
     public record TrendPoint(UUID id, Instant createdAt, double rowsPerSecond, double mibPerSecond,
                              double queriesPerSecond, double p95LatencyMs, double p99LatencyMs, long errors) { }
 }
