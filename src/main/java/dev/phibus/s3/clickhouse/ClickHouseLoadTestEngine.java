@@ -129,7 +129,7 @@ public class ClickHouseLoadTestEngine {
     }
 
     private int profileTimeout(ClickHouseTestRun run) {
-        return 3600;
+        return connections.queryTimeoutSeconds(run.request().profileId());
     }
 
     private static String rootMessage(Throwable error) {
