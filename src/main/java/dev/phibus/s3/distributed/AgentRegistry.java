@@ -2,6 +2,7 @@ package dev.phibus.s3.distributed;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -35,15 +36,16 @@ public class AgentRegistry {
 
     public AgentRecord heartbeat(UUID id, String token, HeartbeatRequest request) {
         AgentRecord current = authenticate(id, token);
+        Map<String, String> tags = request.tags() == null || request.tags().isEmpty() ? current.tags() : Map.copyOf(request.tags());
         AgentRecord updated = new AgentRecord(current.id(), current.name(), current.hostname(), current.address(),
-                request.version() == null ? current.version() : request.version(), request.cpuCount() <= 0 ? current.cpuCount() : request.cpuCount(),
-                request.memoryBytes() <= 0 ? current.memoryBytes() : request.memoryBytes(), current.tags(), current.registeredAt(),
+                request.version() == null ? current.version() : request.version(),
+                request.cpuCount() <= 0 ? current.cpuCount() : request.cpuCount(),
+                request.memoryBytes() <= 0 ? current.memoryBytes() : request.memoryBytes(), tags, current.registeredAt(),
                 Instant.now(), current.status() == AgentStatus.BUSY ? AgentStatus.BUSY : AgentStatus.ONLINE, current.agentToken());
         agents.put(id, updated);
         AgentManagement state = management.getOrDefault(id, AgentManagement.defaults());
-        if (state.updateRequested() && state.desiredVersion() != null && state.desiredVersion().equals(updated.version())) {
+        if (state.updateRequested() && state.desiredVersion() != null && state.desiredVersion().equals(updated.version()))
             management.put(id, new AgentManagement(state.enabled(), state.desiredVersion(), false, Instant.now(), state.changedAt()));
-        }
         return updated;
     }
 
@@ -56,8 +58,7 @@ public class AgentRegistry {
             return new AgentView(agent.id(), agent.name(), agent.hostname(), agent.address(), agent.version(), agent.cpuCount(),
                     agent.memoryBytes(), agent.tags(), agent.registeredAt(), agent.lastSeenAt(), status, state.enabled(),
                     state.desiredVersion(), state.updateRequested(), state.updateCompletedAt(), state.changedAt());
-        }).sorted(Comparator.comparing(AgentView::name,
-                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))).toList();
+        }).sorted(Comparator.comparing(AgentView::name, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))).toList();
     }
 
     public AgentRecord authenticate(UUID id, String token) {
@@ -100,6 +101,15 @@ public class AgentRegistry {
             throw new IllegalStateException("Agent is offline: " + id);
     }
 
+    public void requireCapability(UUID id, String capability) {
+        requireOnline(id);
+        AgentRecord agent = agents.get(id);
+        String capabilities = agent.tags().getOrDefault("capabilities", "S3");
+        boolean supported = Arrays.stream(capabilities.split(","))
+                .map(String::trim).anyMatch(value -> value.equalsIgnoreCase(capability));
+        if (!supported) throw new IllegalStateException("Agent " + id + " does not support " + capability);
+    }
+
     public void markBusy(UUID id, boolean busy) {
         AgentRecord current = agents.get(id);
         if (current == null) throw new IllegalArgumentException("Agent not found");
@@ -108,18 +118,13 @@ public class AgentRegistry {
                 busy ? AgentStatus.BUSY : AgentStatus.ONLINE, current.agentToken()));
     }
 
-    private AgentView view(UUID id) {
-        return list().stream().filter(agent -> agent.id().equals(id)).findFirst().orElseThrow();
-    }
-
-    private void requirePresent(UUID id) {
-        if (!agents.containsKey(id)) throw new IllegalArgumentException("Agent not found: " + id);
-    }
+    private AgentView view(UUID id) { return list().stream().filter(agent -> agent.id().equals(id)).findFirst().orElseThrow(); }
+    private void requirePresent(UUID id) { if (!agents.containsKey(id)) throw new IllegalArgumentException("Agent not found: " + id); }
 
     public enum AgentStatus { ONLINE, OFFLINE, BUSY, DISABLED }
     public record RegistrationRequest(String name, String hostname, String address, String version,
                                       int cpuCount, long memoryBytes, Map<String, String> tags) { }
-    public record HeartbeatRequest(String version, int cpuCount, long memoryBytes) { }
+    public record HeartbeatRequest(String version, int cpuCount, long memoryBytes, Map<String, String> tags) { }
     public record RegistrationResult(UUID agentId, String agentToken, Instant registeredAt) { }
     public record AgentRecord(UUID id, String name, String hostname, String address, String version,
                               int cpuCount, long memoryBytes, Map<String, String> tags, Instant registeredAt,

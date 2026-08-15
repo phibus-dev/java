@@ -40,9 +40,11 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(8);
+        assertThat(applied).isGreaterThanOrEqualTo(13);
 
-        for (String table : new String[]{"test_run", "test_schedule", "security_audit_event", "s3_profile"}) {
+        for (String table : new String[]{"test_run", "test_schedule", "security_audit_event", "s3_profile",
+                "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
+                "clickhouse_replicated_scenario_run", "clickhouse_failover_run"}) {
             Boolean exists = jdbc.queryForObject(
                     "SELECT to_regclass('public.' || ?) IS NOT NULL", Boolean.class, table);
             assertThat(exists).as("table %s", table).isTrue();

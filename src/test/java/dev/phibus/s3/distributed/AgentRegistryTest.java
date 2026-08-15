@@ -17,9 +17,12 @@ class AgentRegistryTest {
 
         assertEquals(1, registry.list().size());
         registry.heartbeat(registration.agentId(), registration.agentToken(),
-                new AgentRegistry.HeartbeatRequest("1.3.1", 12, 32L * 1024 * 1024 * 1024));
+                new AgentRegistry.HeartbeatRequest("1.3.1", 12, 32L * 1024 * 1024 * 1024,
+                        Map.of("capabilities", "S3,CLICKHOUSE")));
         assertEquals("1.3.1", registry.list().getFirst().version());
         assertEquals(12, registry.list().getFirst().cpuCount());
+        assertEquals("S3,CLICKHOUSE", registry.list().getFirst().tags().get("capabilities"));
+        registry.requireCapability(registration.agentId(), "CLICKHOUSE");
     }
 
     @Test
@@ -36,7 +39,7 @@ class AgentRegistryTest {
         assertNull(registry.list().get(1).name());
 
         registry.heartbeat(unnamed.agentId(), unnamed.agentToken(),
-                new AgentRegistry.HeartbeatRequest("2.2.2-rc3", 8, 16L * 1024 * 1024 * 1024));
+                new AgentRegistry.HeartbeatRequest("2.2.2-rc3", 8, 16L * 1024 * 1024 * 1024, Map.of()));
 
         assertEquals(2, registry.list().size());
         assertEquals(8, registry.list().get(1).cpuCount());

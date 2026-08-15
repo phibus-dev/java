@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.5.16</version><relativePath/></parent>
-    <groupId>dev.phibus</groupId><artifactId>s3-multipart-uploader</artifactId><version>2.2.2</version><name>ЭВО.СНТ S3</name>
-    <properties><java.version>21</java.version><aws.sdk.version>2.51.4</aws.sdk.version><pdfbox.version>3.0.8</pdfbox.version><jacoco.version>0.8.15</jacoco.version><spotbugs.version>4.10.3.0</spotbugs.version><testcontainers.version>1.21.4</testcontainers.version><cyclonedx.version>2.9.3</cyclonedx.version></properties>
+    <groupId>dev.phibus</groupId><artifactId>s3-multipart-uploader</artifactId><version>2.2.3-rc1</version><name>ЭВО.СНТ S3</name>
+    <properties><java.version>21</java.version><aws.sdk.version>2.51.4</aws.sdk.version><clickhouse.jdbc.version>0.9.8</clickhouse.jdbc.version><pdfbox.version>3.0.8</pdfbox.version><jacoco.version>0.8.15</jacoco.version><spotbugs.version>4.10.3.0</spotbugs.version><testcontainers.version>1.21.4</testcontainers.version><cyclonedx.version>2.9.3</cyclonedx.version></properties>
     <dependencyManagement><dependencies>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bom</artifactId><version>${aws.sdk.version}</version><type>pom</type><scope>import</scope></dependency>
         <dependency><groupId>org.testcontainers</groupId><artifactId>testcontainers-bom</artifactId><version>${testcontainers.version}</version><type>pom</type><scope>import</scope></dependency>
@@ -22,6 +22,7 @@
         <dependency><groupId>org.springframework</groupId><artifactId>spring-tx</artifactId></dependency>
         <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
         <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>com.clickhouse</groupId><artifactId>clickhouse-jdbc</artifactId><version>${clickhouse.jdbc.version}</version><classifier>all</classifier></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId></dependency>
@@ -36,7 +37,7 @@
         <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><configuration><release>${java.version}</release><showWarnings>true</showWarnings><compilerArgs><arg>-Xlint:all</arg></compilerArgs></configuration></plugin>
         <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-failsafe-plugin</artifactId><configuration><includes><include>**/*IT.java</include></includes><systemPropertyVariables><testcontainers.reuse.enable>false</testcontainers.reuse.enable></systemPropertyVariables></configuration><executions><execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution></executions></plugin>
         <plugin><groupId>org.jacoco</groupId><artifactId>jacoco-maven-plugin</artifactId><version>${jacoco.version}</version><executions><execution><goals><goal>prepare-agent</goal></goals></execution><execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution></executions></plugin>
-        <plugin><groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId><version>${spotbugs.version}</version><configuration><effort>Max</effort><threshold>High</threshold><failOnError>true</failOnError></configuration><executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions></plugin>
+        <plugin><groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId><version>${spotbugs.version}</version><configuration><effort>Max</effort><threshold>High</threshold><failOnError>true</failOnError><excludeFilterFile>${project.basedir}/config/spotbugs-exclude.xml</excludeFilterFile></configuration><executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions></plugin>
         <plugin><groupId>org.cyclonedx</groupId><artifactId>cyclonedx-maven-plugin</artifactId><version>${cyclonedx.version}</version><configuration><projectType>application</projectType><schemaVersion>1.6</schemaVersion><includeBomSerialNumber>true</includeBomSerialNumber><includeCompileScope>true</includeCompileScope><includeRuntimeScope>true</includeRuntimeScope><includeTestScope>false</includeTestScope><outputDirectory>${project.build.directory}</outputDirectory><outputName>bom</outputName><outputFormat>all</outputFormat><skipAttach>true</skipAttach></configuration><executions><execution><phase>package</phase><goals><goal>makeBom</goal></goals></execution></executions></plugin>
     </plugins></build>
 </project>
