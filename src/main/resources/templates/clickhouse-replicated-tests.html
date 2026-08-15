@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}"><title>ClickHouse Replicated tests — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
 <body><main class="container"><header class="brand-header"><div class="brand-title"><h1>ClickHouse Replicated*</h1><p>Нагрузочные сценарии, catch-up и проверка согласованности реплик.</p></div></header>
-<nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/clickhouse/replication">Replication</a><a href="/clickhouse/replicated-tests" aria-current="page">Replicated tests</a><a href="/agents">Агенты</a><a href="/settings">Настройки</a></nav>
-<section class="panel"><h2>Новый сценарий</h2><form id="scenario-form"><div class="grid two">
+<nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/clickhouse/replication">Replication</a><a href="/clickhouse/replicated-tests" aria-current="page">Replicated tests</a><a href="/clickhouse/failover-tests">Failover</a><a href="/agents">Агенты</a><a href="/settings">Настройки</a></nav>
+<section class="panel"><div class="title-row"><div><h2>Новый сценарий</h2><p class="muted">Для управляемого отказа/возврата реплики используйте отдельный Failover workflow.</p></div><a class="button secondary" href="/clickhouse/failover-tests">Открыть Failover</a></div><form id="scenario-form"><div class="grid two">
 <label>Профиль<select id="profileId" required><option value="">Выберите профиль</option><option th:each="p:${profiles}" th:value="${p.id}" th:text="${p.name}"></option></select></label>
 <label>Сценарий<select id="scenario"><option value="REPLICATED_INSERT">REPLICATED_INSERT</option><option value="REPLICATION_CATCHUP">REPLICATION_CATCHUP</option><option value="REPLICA_CONSISTENCY">REPLICA_CONSISTENCY</option></select></label>
 <label>Таблица<input id="table" value="evo_snt_perf_load" required></label><label>Source endpoint<input id="sourceEndpoint" placeholder="Пусто = первый endpoint профиля"></label>
