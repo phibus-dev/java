@@ -11,7 +11,7 @@
 <body><main class="container">
 <header><div><h1>Профили ClickHouse</h1><p>Подключения к ClickHouse для локальных и распределённых нагрузочных тестов.</p></div><nav><a href="/settings">← Настройки</a></nav></header>
 <section class="panel">
-  <h2>Новый профиль</h2>
+  <h2 id="ch-form-title">Новый профиль</h2>
   <div class="grid two">
     <label>Название<input id="ch-name" value="default"></label>
     <label>База данных<input id="ch-database" value="default"></label>
@@ -22,7 +22,7 @@
     <label>Query timeout, sec<input id="ch-query-timeout" type="number" min="1" max="3600" value="30"></label>
     <label class="check"><input id="ch-default" type="checkbox"> Профиль по умолчанию</label>
   </div>
-  <div class="actions"><button type="button" id="ch-test" class="secondary">Проверить подключение</button><button type="button" id="ch-save">Создать профиль</button></div>
+  <div class="actions"><button type="button" id="ch-test" class="secondary">Проверить подключение</button><button type="button" id="ch-save">Создать профиль</button><button type="button" id="ch-cancel-edit" class="secondary" hidden>Отменить редактирование</button></div>
   <pre id="ch-test-result" class="diagnostic-output" aria-live="polite"></pre>
 </section>
 <section class="panel">
@@ -32,7 +32,7 @@
       <div class="title-row"><div><h3 th:text="${profile.name}"></h3><p th:text="${profile.database + ' · ' + profile.username}"></p></div><span class="badge" th:if="${profile.defaultProfile}">По умолчанию</span></div>
       <p><b>Endpoints:</b> <span th:text="${#strings.listJoin(profile.endpoints, ', ')}"></span></p>
       <p><b>Timeout:</b> <span th:text="${profile.connectionTimeoutMs + ' ms / ' + profile.queryTimeoutSeconds + ' s'}"></span></p>
-      <div class="actions"><button type="button" class="secondary ch-discover">Discovery</button><button type="button" class="secondary ch-make-default" th:unless="${profile.defaultProfile}">Сделать основным</button><button type="button" class="danger ch-delete" th:unless="${profile.defaultProfile}">Удалить</button></div>
+      <div class="actions"><button type="button" class="secondary ch-edit">Редактировать</button><button type="button" class="secondary ch-discover">Discovery</button><button type="button" class="secondary ch-make-default" th:unless="${profile.defaultProfile}">Сделать основным</button><button type="button" class="danger ch-delete" th:unless="${profile.defaultProfile}">Удалить</button></div>
       <pre class="diagnostic-output ch-discovery-result"></pre>
     </article>
   </div>

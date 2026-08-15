@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 @Controller
@@ -25,9 +26,11 @@ public class ClickHouseProfileController {
     public ClickHouseProfileController(ClickHouseProfileService profiles) { this.profiles = profiles; }
     @GetMapping public String page(Model model) { model.addAttribute("profiles", profiles.list()); return "clickhouse-profiles"; }
     @GetMapping("/api") @ResponseBody public List<ClickHouseProfileService.Profile> list() { return profiles.list(); }
+    @GetMapping("/api/{id}") @ResponseBody public ClickHouseProfileService.Profile get(@PathVariable UUID id) { return profiles.get(id); }
     @PostMapping("/api") @ResponseBody public ClickHouseProfileService.Profile create(@RequestBody ClickHouseProfileService.ProfileRequest request) { return profiles.create(request); }
     @PutMapping("/api/{id}") @ResponseBody public ClickHouseProfileService.Profile update(@PathVariable UUID id, @RequestBody ClickHouseProfileService.ProfileRequest request) { return profiles.update(id, request); }
-    @DeleteMapping("/api/{id}") @ResponseBody public void delete(@PathVariable UUID id) { profiles.delete(id); }
+    @DeleteMapping("/api/{id}") @ResponseBody @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID id) { profiles.delete(id); }
     @PostMapping("/api/{id}/default") @ResponseBody public ClickHouseProfileService.Profile makeDefault(@PathVariable UUID id) { return profiles.makeDefault(id); }
     @PostMapping("/api/test") @ResponseBody public ClickHouseProfileService.NodeDiscovery test(@RequestBody ClickHouseProfileService.ProfileRequest request) { return profiles.test(request); }
     @PostMapping("/api/{id}/discover") @ResponseBody public ClickHouseProfileService.DiscoveryResult discover(@PathVariable UUID id) { return profiles.discover(id); }

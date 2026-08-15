@@ -30,7 +30,7 @@ public class ClickHouseReplicatedTableAdminService {
             try (Connection connection = profiles.open(request.profileId(), endpoint);
                  Statement statement = connection.createStatement()) {
                 if (request.dropExisting()) {
-                    statement.execute("DROP TABLE IF EXISTS " + table);
+                    statement.execute("DROP TABLE IF EXISTS " + table + " SYNC");
                 }
                 String engine = "ReplicatedMergeTree('" + keeperPath + "', '" + replicaMacro + "')";
                 statement.execute("CREATE TABLE IF NOT EXISTS " + table
