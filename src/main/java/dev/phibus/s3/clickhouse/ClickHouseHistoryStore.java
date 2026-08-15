@@ -36,7 +36,8 @@ public class ClickHouseHistoryStore {
                     p99_latency_ms = EXCLUDED.p99_latency_ms, message = EXCLUDED.message
                 """,
                 snapshot.id(), request.profileId(), snapshot.endpoint(), snapshot.table(), snapshot.operation(),
-                snapshot.status().name(), snapshot.createdAt(), snapshot.startedAt(), snapshot.finishedAt(),
+                snapshot.status().name(), ClickHouseJdbcTime.timestamptz(snapshot.createdAt()),
+                ClickHouseJdbcTime.timestamptz(snapshot.startedAt()), ClickHouseJdbcTime.timestamptz(snapshot.finishedAt()),
                 request.concurrency(), request.batchSize(), request.rowCount(), request.durationSeconds(),
                 request.warmupSeconds(), request.payloadBytes(), request.autoCreateTable(), snapshot.rows(),
                 snapshot.bytes(), snapshot.queries(), snapshot.errors(), snapshot.rowsPerSecond(),
@@ -57,7 +58,8 @@ public class ClickHouseHistoryStore {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """, id, request.profileId(), endpoint, request.normalizedTable(), request.normalizedOperation(), status,
-                startedAt, startedAt, finishedAt, request.concurrency(), request.batchSize(), request.rowCount(),
+                ClickHouseJdbcTime.timestamptz(startedAt), ClickHouseJdbcTime.timestamptz(startedAt),
+                ClickHouseJdbcTime.timestamptz(finishedAt), request.concurrency(), request.batchSize(), request.rowCount(),
                 request.durationSeconds(), request.warmupSeconds(), request.payloadBytes(), request.autoCreateTable(),
                 rows, bytes, queries, errors, rowsPerSecond, mibPerSecond, queriesPerSecond,
                 p50LatencyMs, p95LatencyMs, p99LatencyMs, message);

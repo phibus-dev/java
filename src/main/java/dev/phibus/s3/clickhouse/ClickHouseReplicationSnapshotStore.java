@@ -33,7 +33,8 @@ public class ClickHouseReplicationSnapshotStore {
                         bytes_on_disk, active_merges, failed_mutations, error)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    UUID.randomUUID(), snapshot.profileId(), snapshot.collectedAt(), node.endpoint(), snapshot.database(),
+                    UUID.randomUUID(), snapshot.profileId(), ClickHouseJdbcTime.timestamptz(snapshot.collectedAt()),
+                    node.endpoint(), snapshot.database(),
                     h.status(), node.reachable(), h.readonlyReplicas(), h.expiredSessions(), h.inactiveReplicas(),
                     h.queueSize(), h.maxAbsoluteDelaySeconds(), h.maxLogLag(), activeParts, rows, bytes,
                     node.merges().size(), failedMutations, node.error());

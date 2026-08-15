@@ -178,7 +178,9 @@ public class ClickHouseReplicatedScenarioService {
               replication_catchup_ms=EXCLUDED.replication_catchup_ms,max_replication_delay_seconds=EXCLUDED.max_replication_delay_seconds,
               max_replication_queue=EXCLUDED.max_replication_queue,max_log_lag=EXCLUDED.max_log_lag,consistency_passed=EXCLUDED.consistency_passed,
               replica_count=EXCLUDED.replica_count,message=EXCLUDED.message
-            """, s.id(), s.profileId(), s.scenario(), s.table(), s.sourceEndpoint(), s.status(), s.createdAt(), s.startedAt(), s.finishedAt(),
+            """, s.id(), s.profileId(), s.scenario(), s.table(), s.sourceEndpoint(), s.status(),
+                ClickHouseJdbcTime.timestamptz(s.createdAt()), ClickHouseJdbcTime.timestamptz(s.startedAt()),
+                ClickHouseJdbcTime.timestamptz(s.finishedAt()),
                 s.rowsWritten(), s.insertRowsPerSecond(), s.insertLatencyMs(), s.replicationCatchupMs(), s.maxReplicationDelaySeconds(),
                 s.maxReplicationQueue(), s.maxLogLag(), s.consistencyPassed(), s.replicaCount(), s.message());
     }
