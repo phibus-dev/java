@@ -22,24 +22,27 @@ public class ClickHouseReplicatedTableAdminService {
     public ProvisionResult provision(ProvisionRequest request) {
         validate(request);
         ClickHouseProfileService.Profile profile = profiles.get(request.profileId());
+        String table = table(request.table());
+        String keeperPath = keeperPath(request.keeperPath());
+        String replicaMacro = replicaMacro(request.replicaMacro());
         List<NodeResult> nodes = new ArrayList<>();
         for (String endpoint : profile.endpoints()) {
             try (Connection connection = profiles.open(request.profileId(), endpoint);
                  Statement statement = connection.createStatement()) {
                 if (request.dropExisting()) {
-                    statement.execute("DROP TABLE IF EXISTS " + table(request.table()));
+                    statement.execute("DROP TABLE IF EXISTS " + table);
                 }
-                String engine = "ReplicatedMergeTree('" + keeperPath(request.keeperPath()) + "', '" + replicaMacro(request.replicaMacro()) + "')";
-                statement.execute("CREATE TABLE IF NOT EXISTS " + table(request.table())
+                String engine = "ReplicatedMergeTree('" + keeperPath + "', '" + replicaMacro + "')";
+                statement.execute("CREATE TABLE IF NOT EXISTS " + table
                         + " (event_time DateTime64(3), sequence UInt64, payload String) ENGINE = " + engine
                         + " ORDER BY sequence");
-                nodes.add(inspect(connection, endpoint, profile.database(), request.table()));
+                nodes.add(inspect(connection, endpoint, profile.database(), table));
             } catch (Exception e) {
                 nodes.add(new NodeResult(endpoint, false, null, null, rootMessage(e)));
             }
         }
         boolean success = !nodes.isEmpty() && nodes.stream().allMatch(NodeResult::success);
-        return new ProvisionResult(request.profileId(), request.table(), request.keeperPath(), request.replicaMacro(), success, List.copyOf(nodes));
+        return new ProvisionResult(request.profileId(), table, keeperPath, replicaMacro, success, List.copyOf(nodes));
     }
 
     private static NodeResult inspect(Connection connection, String endpoint, String database, String table) throws Exception {
@@ -69,18 +72,26 @@ public class ClickHouseReplicatedTableAdminService {
         if (!v.matches("[A-Za-z_][A-Za-z0-9_]*")) throw new IllegalArgumentException("Invalid ClickHouse table name");
         return v;
     }
+
     private static String keeperPath(String value) {
         String v = value == null ? "" : value.trim();
-        if (!v.startsWith("/") || v.contains("'") || v.length() > 512) throw new IllegalArgumentException("Invalid Keeper path");
+        if (v.length() > 512 || !v.matches("/[A-Za-z0-9_./{}\\-]+")) {
+            throw new IllegalArgumentException("Invalid Keeper path");
+        }
         return v;
     }
+
     private static String replicaMacro(String value) {
         String v = value == null || value.isBlank() ? "{replica}" : value.trim();
-        if (v.contains("'") || v.length() > 128) throw new IllegalArgumentException("Invalid replica macro");
+        if (v.length() > 128 || !v.matches("[A-Za-z0-9_.{}\\-]+")) {
+            throw new IllegalArgumentException("Invalid replica macro");
+        }
         return v;
     }
+
     private static String rootMessage(Throwable error) {
-        Throwable current = error; while (current.getCause() != null) current = current.getCause();
+        Throwable current = error;
+        while (current.getCause() != null) current = current.getCause();
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
