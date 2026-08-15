@@ -1,5 +1,6 @@
 package dev.phibus.s3.settings;
 
+import dev.phibus.s3.distributed.ApplicationMode;
 import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -8,6 +9,7 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +21,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 public class BootstrapJdbcConfiguration {
 
     @Bean
-    DataSource bootstrapDataSource(SettingsService settingsService, BootstrapSecretCodec codec) {
+    DataSource bootstrapDataSource(SettingsService settingsService, BootstrapSecretCodec codec,
+                                   @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
+        if (ApplicationMode.from(applicationMode) == ApplicationMode.AGENT) {
+            return new AgentDisabledDataSource();
+        }
         return new BootstrapDataSource(settingsService, codec);
     }
 
@@ -36,8 +42,12 @@ public class BootstrapJdbcConfiguration {
     @Bean
     ApplicationRunner migrateConfiguredPostgreSql(SettingsService settingsService,
                                                    BootstrapSecretCodec codec,
-                                                   DataSource bootstrapDataSource) {
+                                                   DataSource bootstrapDataSource,
+                                                   @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
         return arguments -> {
+            if (ApplicationMode.from(applicationMode) == ApplicationMode.AGENT) {
+                return;
+            }
             BootstrapSettings.PostgreSqlSettings postgresql = settingsService.load().postgresql();
             if (!postgresql.configured()) {
                 return;
@@ -48,6 +58,24 @@ public class BootstrapJdbcConfiguration {
                     .load()
                     .migrate();
         };
+    }
+
+    private static final class AgentDisabledDataSource implements DataSource {
+        private SQLException disabled() {
+            return new SQLException("PostgreSQL persistence is disabled in AGENT mode");
+        }
+        @Override public Connection getConnection() throws SQLException { throw disabled(); }
+        @Override public Connection getConnection(String username, String password) throws SQLException { throw disabled(); }
+        @Override public PrintWriter getLogWriter() { return DriverManager.getLogWriter(); }
+        @Override public void setLogWriter(PrintWriter out) { DriverManager.setLogWriter(out); }
+        @Override public void setLoginTimeout(int seconds) { DriverManager.setLoginTimeout(seconds); }
+        @Override public int getLoginTimeout() { return DriverManager.getLoginTimeout(); }
+        @Override public Logger getParentLogger() { return Logger.getLogger("dev.phibus.s3.jdbc.agent-disabled"); }
+        @Override public <T> T unwrap(Class<T> iface) throws SQLException {
+            if (iface.isInstance(this)) return iface.cast(this);
+            throw new SQLException("Not a wrapper for " + iface.getName());
+        }
+        @Override public boolean isWrapperFor(Class<?> iface) { return iface.isInstance(this); }
     }
 
     private static final class BootstrapDataSource implements DataSource {
@@ -80,42 +108,15 @@ public class BootstrapJdbcConfiguration {
             return postgresql;
         }
 
-        @Override
-        public PrintWriter getLogWriter() {
-            return DriverManager.getLogWriter();
-        }
-
-        @Override
-        public void setLogWriter(PrintWriter out) {
-            DriverManager.setLogWriter(out);
-        }
-
-        @Override
-        public void setLoginTimeout(int seconds) {
-            DriverManager.setLoginTimeout(seconds);
-        }
-
-        @Override
-        public int getLoginTimeout() {
-            return DriverManager.getLoginTimeout();
-        }
-
-        @Override
-        public Logger getParentLogger() throws SQLFeatureNotSupportedException {
-            return Logger.getLogger("dev.phibus.s3.jdbc");
-        }
-
-        @Override
-        public <T> T unwrap(Class<T> iface) throws SQLException {
-            if (iface.isInstance(this)) {
-                return iface.cast(this);
-            }
+        @Override public PrintWriter getLogWriter() { return DriverManager.getLogWriter(); }
+        @Override public void setLogWriter(PrintWriter out) { DriverManager.setLogWriter(out); }
+        @Override public void setLoginTimeout(int seconds) { DriverManager.setLoginTimeout(seconds); }
+        @Override public int getLoginTimeout() { return DriverManager.getLoginTimeout(); }
+        @Override public Logger getParentLogger() throws SQLFeatureNotSupportedException { return Logger.getLogger("dev.phibus.s3.jdbc"); }
+        @Override public <T> T unwrap(Class<T> iface) throws SQLException {
+            if (iface.isInstance(this)) return iface.cast(this);
             throw new SQLException("Not a wrapper for " + iface.getName());
         }
-
-        @Override
-        public boolean isWrapperFor(Class<?> iface) {
-            return iface.isInstance(this);
-        }
+        @Override public boolean isWrapperFor(Class<?> iface) { return iface.isInstance(this); }
     }
 }
