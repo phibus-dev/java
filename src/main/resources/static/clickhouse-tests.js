@@ -4,7 +4,9 @@
   const headers = {'Content-Type': 'application/json'};
   if (csrfToken && csrfHeader) headers[csrfHeader] = csrfToken;
   let activeId = null;
+  let activeProfileId = null;
   let pollTimer = null;
+  let replicationTimer = null;
 
   const n = id => Number(document.getElementById(id).value || 0);
   const text = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
@@ -26,10 +28,14 @@
       if (!response.ok) throw new Error(await response.text());
       const run = await response.json();
       activeId = run.id;
+      activeProfileId = request.profileId;
       document.getElementById('active-test').hidden = false;
       renderRun(run);
       clearInterval(pollTimer);
+      clearInterval(replicationTimer);
       pollTimer = setInterval(pollRun, 1000);
+      replicationTimer = setInterval(pollReplication, 3000);
+      pollReplication();
       text('run-message', 'Тест запущен');
     } catch (e) { text('run-message', e.message); }
   });
@@ -47,9 +53,40 @@
     const run = await response.json();
     renderRun(run);
     if (['COMPLETED','FAILED','CANCELLED'].includes(run.status)) {
-      clearInterval(pollTimer); pollTimer = null; activeId = null;
+      clearInterval(pollTimer); pollTimer = null;
+      clearInterval(replicationTimer); replicationTimer = null;
+      await pollReplication();
+      activeId = null; activeProfileId = null;
       setTimeout(() => location.reload(), 800);
     }
+  }
+
+  async function pollReplication() {
+    if (!activeProfileId) return;
+    try {
+      const response = await fetch(`/api/clickhouse/replication?profileId=${encodeURIComponent(activeProfileId)}`);
+      if (!response.ok) throw new Error(await response.text());
+      const snapshot = await response.json();
+      renderReplication(snapshot);
+    } catch (e) {
+      text('rep-detail', `Replication snapshot error: ${e.message}`);
+    }
+  }
+
+  function renderReplication(snapshot) {
+    const nodes = snapshot.nodes || [];
+    const rank = {OK: 0, WARNING: 1, CRITICAL: 2};
+    const worst = nodes.reduce((value, node) => rank[node.health?.status] > rank[value] ? node.health.status : value, 'OK');
+    const max = (field) => Math.max(0, ...nodes.map(node => Number(node.health?.[field] || 0)));
+    const sum = (field) => nodes.reduce((total, node) => total + Number(node.health?.[field] || 0), 0);
+    text('rep-health', worst);
+    text('rep-delay', `${max('maxAbsoluteDelaySeconds')} s`);
+    text('rep-log-lag', max('maxLogLag'));
+    text('rep-queue', sum('queueSize'));
+    text('rep-readonly', sum('readonlyReplicas'));
+    text('rep-inactive', sum('inactiveReplicas'));
+    const reachable = nodes.filter(node => node.reachable).length;
+    text('rep-detail', `${snapshot.database} · nodes ${reachable}/${nodes.length} · snapshot ${new Date(snapshot.collectedAt).toLocaleTimeString()}`);
   }
 
   function renderRun(run) {
