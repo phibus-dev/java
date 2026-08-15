@@ -3,6 +3,7 @@ package dev.phibus.s3.clickhouse;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
@@ -52,12 +53,14 @@ public class ClickHouseKeeperHealthService {
                 if (rs.next()) children = rs.getLong(1);
                 connected = true;
             }
-            try (Statement statement = connection.createStatement();
-                 ResultSet rs = statement.executeQuery("SELECT countIf(is_leader), countIf(is_session_expired OR zookeeper_exception!='') FROM system.replicas WHERE database='"
-                         + safeDatabase(profile.database()) + "'")) {
-                if (rs.next()) {
-                    leaderReplicas = rs.getLong(1);
-                    sessionErrors = rs.getLong(2);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT countIf(is_leader), countIf(is_session_expired OR zookeeper_exception!='') FROM system.replicas WHERE database=?")) {
+                statement.setString(1, safeDatabase(profile.database()));
+                try (ResultSet rs = statement.executeQuery()) {
+                    if (rs.next()) {
+                        leaderReplicas = rs.getLong(1);
+                        sessionErrors = rs.getLong(2);
+                    }
                 }
             }
         } catch (Exception e) {
