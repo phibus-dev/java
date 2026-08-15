@@ -1,4 +1,6 @@
-# Мониторинг ЭВО.СНТ S3
+# Мониторинг ЭВО.СНТ
+
+Документ актуален для версии `2.2.3-rc1`. Поставляемые dashboards покрывают S3, распределённые агенты, HTTP и JVM. Состояние ClickHouse replication/Keeper в этой версии доступно в Web UI `/clickhouse/replication` и `/clickhouse/ha`; отдельный Grafana dashboard для ClickHouse пока не поставляется.
 
 ## Dashboards
 
@@ -53,3 +55,7 @@ curl -X POST http://localhost:9090/-/reload
 Также используются стандартные метрики Spring Boot Actuator/Micrometer: `http_server_requests_seconds_*`, `jvm_*`, `process_*` и `executor_*`.
 
 Некоторые панели показывают `No data`, если конкретная версия Micrometer/JVM не публикует соответствующую метрику. Это не влияет на остальные панели.
+
+## Проверка после обновления
+
+После перехода на 2.2.3-rc1 убедитесь, что Prometheus продолжает собирать `/actuator/prometheus`, а переменные `job` и `instance` соответствуют scrape-конфигурации. Обновление не переименовывает существующие `s3_*` метрики и dashboards можно импортировать поверх прежних копий.
