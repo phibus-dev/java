@@ -3,6 +3,7 @@ package dev.phibus.s3.web;
 import dev.phibus.s3.distributed.DistributedTestService;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/distributed-tests")
+@ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class DistributedTestController {
     private final DistributedTestService service;
 
@@ -26,6 +28,13 @@ public class DistributedTestController {
     public DistributedTestService.DistributedRunView create(
             @RequestBody DistributedTestService.CreateDistributedTestRequest request) {
         return service.create(request);
+    }
+
+    @PostMapping("/clickhouse")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DistributedTestService.DistributedRunView createClickHouse(
+            @RequestBody DistributedTestService.CreateDistributedClickHouseTestRequest request) {
+        return service.createClickHouse(request);
     }
 
     @GetMapping

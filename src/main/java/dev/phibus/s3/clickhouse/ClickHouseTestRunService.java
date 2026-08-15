@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -18,12 +19,12 @@ public class ClickHouseTestRunService {
     private final Map<UUID, ClickHouseTestRun> runs = new ConcurrentHashMap<>();
     private final ClickHouseLoadTestEngine engine;
     private final ClickHouseConnectionProvider connections;
-    private final ClickHouseHistoryStore history;
+    private final ObjectProvider<ClickHouseHistoryStore> history;
     private final Executor testExecutor;
 
     public ClickHouseTestRunService(ClickHouseLoadTestEngine engine,
                                     ClickHouseConnectionProvider connections,
-                                    ClickHouseHistoryStore history,
+                                    ObjectProvider<ClickHouseHistoryStore> history,
                                     @Qualifier("testExecutor") Executor testExecutor) {
         this.engine = engine;
         this.connections = connections;
@@ -38,12 +39,21 @@ public class ClickHouseTestRunService {
         runs.put(run.id(), run);
         testExecutor.execute(() -> {
             engine.execute(run);
-            try {
-                history.save(run.snapshot(), request);
-            } catch (RuntimeException persistenceError) {
-                LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), persistenceError);
+            ClickHouseHistoryStore store = history.getIfAvailable();
+            if (store != null) {
+                try { store.save(run.snapshot(), request); }
+                catch (RuntimeException e) { LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), e); }
             }
         });
+        return run;
+    }
+
+    public ClickHouseTestRun createDistributed(ClickHouseTestRequest request, ClickHouseConnectionSpec connectionSpec) {
+        validate(request);
+        if (connectionSpec == null) throw new IllegalArgumentException("ClickHouse connection spec is required");
+        ClickHouseTestRun run = new ClickHouseTestRun(request, connectionSpec.endpoint());
+        runs.put(run.id(), run);
+        testExecutor.execute(() -> engine.execute(run, connectionSpec));
         return run;
     }
 
@@ -58,9 +68,7 @@ public class ClickHouseTestRunService {
                 .sorted(Comparator.comparing(ClickHouseTestRun.Snapshot::createdAt).reversed()).toList();
     }
 
-    public void cancel(UUID id) {
-        get(id).cancel();
-    }
+    public void cancel(UUID id) { get(id).cancel(); }
 
     static void validate(ClickHouseTestRequest request) {
         if (request == null) throw new IllegalArgumentException("ClickHouse test request is required");

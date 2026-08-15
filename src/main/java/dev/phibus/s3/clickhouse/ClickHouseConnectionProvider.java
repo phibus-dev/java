@@ -1,56 +1,46 @@
 package dev.phibus.s3.clickhouse;
 
-import dev.phibus.s3.settings.BootstrapSecretCodec;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ClickHouseConnectionProvider {
-    private final ClickHouseProfileService profiles;
-    private final JdbcTemplate jdbc;
-    private final BootstrapSecretCodec codec;
+    private final ObjectProvider<ClickHouseProfileService> profiles;
 
-    public ClickHouseConnectionProvider(ClickHouseProfileService profiles, JdbcTemplate jdbc, BootstrapSecretCodec codec) {
+    public ClickHouseConnectionProvider(ObjectProvider<ClickHouseProfileService> profiles) {
         this.profiles = profiles;
-        this.jdbc = jdbc;
-        this.codec = codec;
     }
 
     public Connection open(UUID profileId, String requestedEndpoint) throws SQLException {
-        ClickHouseProfileService.Profile profile = profiles.get(profileId);
-        String endpoint = selectEndpoint(profile, requestedEndpoint);
-        String encrypted = jdbc.queryForObject(
-                "SELECT encrypted_password FROM clickhouse_profile WHERE id = ?", String.class, profileId);
-        String password = encrypted == null || encrypted.isBlank() ? "" : codec.decrypt(encrypted);
+        return open(profileService().connectionSpec(profileId, requestedEndpoint));
+    }
 
+    public Connection open(ClickHouseConnectionSpec spec) throws SQLException {
         Properties properties = new Properties();
-        properties.setProperty("user", profile.username());
-        properties.setProperty("password", password);
-        properties.setProperty("connection_timeout", Integer.toString(profile.connectionTimeoutMs()));
-        properties.setProperty("socket_timeout", Integer.toString(Math.multiplyExact(profile.queryTimeoutSeconds(), 1000)));
-        return DriverManager.getConnection(jdbcUrl(endpoint, profile.database()), properties);
+        properties.setProperty("user", spec.username() == null ? "default" : spec.username());
+        properties.setProperty("password", spec.password() == null ? "" : spec.password());
+        properties.setProperty("connection_timeout", Integer.toString(spec.connectionTimeoutMs()));
+        properties.setProperty("socket_timeout", Integer.toString(Math.multiplyExact(spec.queryTimeoutSeconds(), 1000)));
+        return DriverManager.getConnection(jdbcUrl(spec.endpoint(), spec.database()), properties);
     }
 
     public String endpoint(UUID profileId, String requestedEndpoint) {
-        return selectEndpoint(profiles.get(profileId), requestedEndpoint);
+        return profileService().connectionSpec(profileId, requestedEndpoint).endpoint();
     }
 
     public int queryTimeoutSeconds(UUID profileId) {
-        return profiles.get(profileId).queryTimeoutSeconds();
+        return profileService().get(profileId).queryTimeoutSeconds();
     }
 
-    private static String selectEndpoint(ClickHouseProfileService.Profile profile, String requestedEndpoint) {
-        if (requestedEndpoint == null || requestedEndpoint.isBlank()) return profile.endpoints().getFirst();
-        String normalized = requestedEndpoint.trim();
-        if (!profile.endpoints().contains(normalized)) {
-            throw new IllegalArgumentException("Endpoint is not part of ClickHouse profile: " + normalized);
-        }
-        return normalized;
+    private ClickHouseProfileService profileService() {
+        ClickHouseProfileService service = profiles.getIfAvailable();
+        if (service == null) throw new IllegalStateException("ClickHouse profiles are available only on coordinator");
+        return service;
     }
 
     private static String jdbcUrl(String endpoint, String database) {
