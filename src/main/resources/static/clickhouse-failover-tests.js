@@ -6,6 +6,7 @@
   const v=id=>document.getElementById(id)?.value;
   const n=id=>Number(v(id)||0);
   const t=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value;};
+  const errorMessage=async response=>{try{const body=await response.json();return body.message||body.error||`HTTP ${response.status}`}catch(_){return `HTTP ${response.status}`}};
 
   document.getElementById('provision-form')?.addEventListener('submit',async e=>{
     e.preventDefault();
@@ -16,7 +17,7 @@
   document.getElementById('failover-form')?.addEventListener('submit',async e=>{
     e.preventDefault();
     const body={profileId:v('profileId'),table:v('table'),sourceEndpoint:v('sourceEndpoint')||null,batchSize:n('batchSize'),payloadBytes:n('payloadBytes'),baselineSeconds:n('baselineSeconds'),faultConfirmationTimeoutSeconds:n('faultConfirmationTimeoutSeconds'),faultObservationSeconds:n('faultObservationSeconds'),recoveryConfirmationTimeoutSeconds:n('recoveryConfirmationTimeoutSeconds'),recoveryTimeoutSeconds:n('recoveryTimeoutSeconds'),pollIntervalMs:n('pollIntervalMs')};
-    try{const r=await fetch('/api/clickhouse/failover-tests',{method:'POST',headers,body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());const x=await r.json();activeId=x.id;document.getElementById('active').hidden=false;render(x);clearInterval(timer);timer=setInterval(poll,1000);}catch(err){t('message',err.message);}
+    try{const r=await fetch('/api/clickhouse/failover-tests',{method:'POST',headers,body:JSON.stringify(body)});if(!r.ok)throw new Error(await errorMessage(r));const x=await r.json();activeId=x.id;document.getElementById('active').hidden=false;render(x);clearInterval(timer);timer=setInterval(poll,1000);}catch(err){t('message',err.message);}
   });
 
   document.getElementById('fault-applied')?.addEventListener('click',()=>signal('fault-applied'));

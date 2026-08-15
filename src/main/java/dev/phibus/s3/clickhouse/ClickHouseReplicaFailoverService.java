@@ -32,7 +32,7 @@ public class ClickHouseReplicaFailoverService {
     public ClickHouseReplicaFailoverService(ClickHouseProfileService profiles,
                                             ClickHouseReplicationObservabilityService observability,
                                             JdbcTemplate jdbc,
-                                            @Qualifier("testExecutor") Executor executor) {
+                                            @Qualifier("clickHouseWorkflowExecutor") Executor executor) {
         this.profiles = profiles;
         this.observability = observability;
         this.jdbc = jdbc;
@@ -46,9 +46,18 @@ public class ClickHouseReplicaFailoverService {
                 ? profile.endpoints().getFirst() : request.sourceEndpoint().trim();
         if (!profile.endpoints().contains(source)) throw new IllegalArgumentException("Source endpoint is not part of profile");
         Run run = new Run(UUID.randomUUID(), request, source, Instant.now());
-        active.put(run.id, run);
         persist(run.snapshot());
-        executor.execute(() -> execute(run));
+        active.put(run.id, run);
+        try {
+            executor.execute(() -> execute(run));
+        } catch (RuntimeException e) {
+            active.remove(run.id);
+            run.status = "FAILED";
+            run.finishedAt = Instant.now();
+            run.message = "Cannot schedule failover scenario: " + rootMessage(e);
+            persist(run.snapshot());
+            throw e;
+        }
         return run.snapshot();
     }
 

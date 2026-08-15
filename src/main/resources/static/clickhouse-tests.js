@@ -56,9 +56,25 @@
       clearInterval(pollTimer); pollTimer = null;
       clearInterval(replicationTimer); replicationTimer = null;
       await pollReplication();
+      const persisted = await waitForPersistedRun(run.id, run.status);
+      if (!persisted) {
+        text('run-message', 'Тест завершён, но итоговый результат пока не сохранён. Проверьте журнал сервиса.');
+        return;
+      }
       activeId = null; activeProfileId = null;
-      setTimeout(() => location.reload(), 800);
+      location.reload();
     }
+  }
+
+  async function waitForPersistedRun(id, terminalStatus) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const response = await fetch(`/api/clickhouse/history/${encodeURIComponent(id)}`);
+        if (response.ok && (await response.json()).status === terminalStatus) return true;
+      } catch (_) { /* retry while the final PostgreSQL update is in flight */ }
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    return false;
   }
 
   async function pollReplication() {

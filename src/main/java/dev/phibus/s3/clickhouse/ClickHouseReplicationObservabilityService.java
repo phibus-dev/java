@@ -8,12 +8,16 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 @Service
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseReplicationObservabilityService {
+    private static final Logger LOG = LoggerFactory.getLogger(ClickHouseReplicationObservabilityService.class);
+
     private final ClickHouseProfileService profiles;
     private final ClickHouseReplicationSnapshotStore history;
     private final ClickHouseReplicationMetrics metrics;
@@ -31,8 +35,16 @@ public class ClickHouseReplicationObservabilityService {
         List<NodeSnapshot> nodes = new ArrayList<>();
         for (String endpoint : profile.endpoints()) nodes.add(snapshotNode(profileId, endpoint, profile.database()));
         Snapshot snapshot = new Snapshot(profileId, profile.name(), profile.database(), Instant.now(), List.copyOf(nodes));
-        history.save(snapshot);
-        metrics.update(snapshot);
+        try {
+            history.save(snapshot);
+        } catch (RuntimeException e) {
+            LOG.error("Cannot persist ClickHouse replication snapshot for profile {}", profileId, e);
+        }
+        try {
+            metrics.update(snapshot);
+        } catch (RuntimeException e) {
+            LOG.error("Cannot update ClickHouse replication metrics for profile {}", profileId, e);
+        }
         return snapshot;
     }
 
