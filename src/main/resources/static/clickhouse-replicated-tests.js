@@ -6,13 +6,14 @@
   const v = id => document.getElementById(id).value;
   const n = id => Number(v(id) || 0);
   const text = (id, value) => { const e=document.getElementById(id); if(e)e.textContent=value; };
+  const errorMessage = async response => { try { const body=await response.json(); return body.message||body.error||`HTTP ${response.status}`; } catch (_) { return `HTTP ${response.status}`; } };
   document.getElementById('scenario-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const body = {profileId:v('profileId'),scenario:v('scenario'),table:v('table'),sourceEndpoint:v('sourceEndpoint')||null,
       rows:n('rows'),batchSize:n('batchSize'),payloadBytes:n('payloadBytes'),catchupTimeoutSeconds:n('catchupTimeoutSeconds'),pollIntervalMs:n('pollIntervalMs')};
     try {
       const r=await fetch('/api/clickhouse/replicated-tests',{method:'POST',headers,body:JSON.stringify(body)});
-      if(!r.ok) throw new Error(await r.text());
+      if(!r.ok) throw new Error(await errorMessage(r));
       const run=await r.json(); activeId=run.id; document.getElementById('active').hidden=false; render(run);
       clearInterval(timer); timer=setInterval(poll,1000); text('message','Сценарий запущен');
     } catch(err){text('message',err.message);}

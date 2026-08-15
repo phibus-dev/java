@@ -36,10 +36,18 @@ public class ClickHouseTestRunService {
         validate(request);
         String endpoint = connections.endpoint(request.profileId(), request.endpoint());
         ClickHouseTestRun run = new ClickHouseTestRun(request, endpoint);
+        ClickHouseHistoryStore store = history.getIfAvailable();
+        if (store != null) {
+            try {
+                store.save(run.snapshot(), request);
+            } catch (RuntimeException e) {
+                LOG.error("Cannot create ClickHouse test history for run {}", run.id(), e);
+                throw new IllegalStateException("Cannot create ClickHouse test history; test was not started", e);
+            }
+        }
         runs.put(run.id(), run);
         testExecutor.execute(() -> {
             engine.execute(run);
-            ClickHouseHistoryStore store = history.getIfAvailable();
             if (store != null) {
                 try { store.save(run.snapshot(), request); }
                 catch (RuntimeException e) { LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), e); }
