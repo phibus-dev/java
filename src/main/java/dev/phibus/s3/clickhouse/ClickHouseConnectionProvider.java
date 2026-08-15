@@ -40,6 +40,10 @@ public class ClickHouseConnectionProvider {
         return selectEndpoint(profiles.get(profileId), requestedEndpoint);
     }
 
+    public int queryTimeoutSeconds(UUID profileId) {
+        return profiles.get(profileId).queryTimeoutSeconds();
+    }
+
     private static String selectEndpoint(ClickHouseProfileService.Profile profile, String requestedEndpoint) {
         if (requestedEndpoint == null || requestedEndpoint.isBlank()) return profile.endpoints().getFirst();
         String normalized = requestedEndpoint.trim();
