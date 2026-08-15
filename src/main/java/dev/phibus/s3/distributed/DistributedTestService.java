@@ -38,9 +38,8 @@ public class DistributedTestService {
         UUID runId = UUID.randomUUID();
         Instant now = Instant.now();
         Map<UUID, AgentProgress> agents = prepareAgents(request.agentIds(), TestType.S3);
-        for (UUID agentId : request.agentIds()) {
+        for (UUID agentId : request.agentIds())
             assignments.put(agentId, new Assignment(runId, agentId, TestType.S3, request.testRequest(), null, null, now));
-        }
         DistributedRun run = new DistributedRun(runId, request.name(), TestType.S3, request.testRequest(), null,
                 now, null, "RUNNING", new ConcurrentHashMap<>(agents), null);
         runs.put(runId, run);
@@ -75,9 +74,8 @@ public class DistributedTestService {
         Map<UUID, AgentProgress> agents = new LinkedHashMap<>();
         Instant now = Instant.now();
         for (UUID agentId : agentIds) {
-            if (type == TestType.CLICKHOUSE) registry.requireCapability(agentId, "CLICKHOUSE");
-            else registry.requireOnline(agentId);
-            agents.put(agentId, new AgentProgress(agentId, "ASSIGNED", 0, 0, 0, 0, 0, 0, 0, 0, null, now));
+            if (type == TestType.CLICKHOUSE) registry.requireCapability(agentId, "CLICKHOUSE"); else registry.requireOnline(agentId);
+            agents.put(agentId, new AgentProgress(agentId, "ASSIGNED", 0, 0, 0, 0, 0, 0, 0, 0, 0, null, now));
             registry.markBusy(agentId, true);
         }
         return agents;
@@ -91,12 +89,11 @@ public class DistributedTestService {
     public DistributedRunView report(UUID agentId, String token, AgentStatistics stats) {
         registry.authenticate(agentId, token);
         Assignment assignment = assignments.get(agentId);
-        if (assignment == null || !assignment.runId().equals(stats.runId()))
-            throw new IllegalArgumentException("No matching assignment");
+        if (assignment == null || !assignment.runId().equals(stats.runId())) throw new IllegalArgumentException("No matching assignment");
         DistributedRun run = require(stats.runId());
-        AgentProgress progress = new AgentProgress(agentId, stats.status(), stats.completedOperations(), stats.bytesTransferred(),
-                stats.operationsPerSecond(), stats.throughputMiBps(), stats.p50LatencyMs(), stats.p95LatencyMs(),
-                stats.p99LatencyMs(), stats.errors(), stats.message(), Instant.now());
+        AgentProgress progress = new AgentProgress(agentId, stats.status(), stats.completedOperations(), stats.rowsProcessed(),
+                stats.bytesTransferred(), stats.operationsPerSecond(), stats.throughputMiBps(), stats.p50LatencyMs(),
+                stats.p95LatencyMs(), stats.p99LatencyMs(), stats.errors(), stats.message(), Instant.now());
         run.agents().put(agentId, progress);
         if (isTerminal(stats.status())) {
             assignments.remove(agentId);
@@ -114,20 +111,17 @@ public class DistributedTestService {
     }
 
     private void persistClickHouse(DistributedRun run) {
-        DistributedRunView aggregate = view(run);
-        ClickHouseTestRequest request = run.clickHouseRequest();
-        clickHouseHistory.saveDistributed(run.id(), request, run.primaryEndpoint(), run.status(), run.startedAt(), run.finishedAt(),
-                aggregate.completedOperations(), aggregate.bytesTransferred(), aggregate.completedQueries(), aggregate.errors(),
-                aggregate.operationsPerSecond(), aggregate.throughputMiBps(), aggregate.queriesPerSecond(),
-                aggregate.p50LatencyMs(), aggregate.p95LatencyMs(), aggregate.p99LatencyMs(),
-                "Distributed ClickHouse test: " + run.agents().size() + " agents");
+        DistributedRunView a = view(run);
+        clickHouseHistory.saveDistributed(run.id(), run.clickHouseRequest(), run.primaryEndpoint(), run.status(),
+                run.startedAt(), run.finishedAt(), a.rowsProcessed(), a.bytesTransferred(), a.completedOperations(), a.errors(),
+                a.rowsPerSecond(), a.throughputMiBps(), a.operationsPerSecond(), a.p50LatencyMs(), a.p95LatencyMs(),
+                a.p99LatencyMs(), "Distributed ClickHouse test: " + run.agents().size() + " agents");
     }
 
     public List<DistributedRunView> list() {
         return runs.values().stream().sorted(Comparator.comparing(DistributedRun::startedAt).reversed()).map(this::view).toList();
     }
     public DistributedRunView get(UUID id) { return view(require(id)); }
-
     private DistributedRun require(UUID id) {
         DistributedRun run = runs.get(id);
         if (run == null) throw new IllegalArgumentException("Distributed test not found");
@@ -137,6 +131,7 @@ public class DistributedTestService {
     private DistributedRunView view(DistributedRun run) {
         List<AgentProgress> agents = new ArrayList<>(run.agents().values());
         long operations = agents.stream().mapToLong(AgentProgress::completedOperations).sum();
+        long rows = agents.stream().mapToLong(AgentProgress::rowsProcessed).sum();
         long bytes = agents.stream().mapToLong(AgentProgress::bytesTransferred).sum();
         double ops = agents.stream().mapToDouble(AgentProgress::operationsPerSecond).sum();
         double throughput = agents.stream().mapToDouble(AgentProgress::throughputMiBps).sum();
@@ -144,10 +139,11 @@ public class DistributedTestService {
         double p50 = weightedLatency(agents, operations, 50);
         double p95 = weightedLatency(agents, operations, 95);
         double p99 = weightedLatency(agents, operations, 99);
-        long queries = run.testType() == TestType.CLICKHOUSE ? operations : 0;
-        double qps = run.testType() == TestType.CLICKHOUSE ? ops : 0;
+        double rowsPerSecond = run.testType() == TestType.CLICKHOUSE
+                ? agents.stream().mapToDouble(a -> a.operationsPerSecond() > 0 && a.completedOperations() > 0
+                    ? a.rowsProcessed() * a.operationsPerSecond() / a.completedOperations() : 0).sum() : 0;
         return new DistributedRunView(run.id(), run.name(), run.testType(), run.status(), run.startedAt(), run.finishedAt(),
-                run.s3Request(), run.clickHouseRequest(), operations, bytes, queries, ops, throughput, qps,
+                run.s3Request(), run.clickHouseRequest(), operations, rows, bytes, ops, rowsPerSecond, throughput,
                 p50, p95, p99, errors, agents.stream().sorted(Comparator.comparing(AgentProgress::agentId)).toList());
     }
 
@@ -168,24 +164,25 @@ public class DistributedTestService {
 
     public record CreateDistributedTestRequest(String name, List<UUID> agentIds, TestRequest testRequest) { }
     public record CreateDistributedClickHouseTestRequest(String name, List<UUID> agentIds,
-                                                         ClickHouseTestRequest testRequest,
-                                                         Map<UUID, String> endpointByAgent) { }
+                                                         ClickHouseTestRequest testRequest, Map<UUID, String> endpointByAgent) { }
     public record Assignment(UUID runId, UUID agentId, TestType testType, TestRequest testRequest,
                              ClickHouseTestRequest clickHouseRequest, ClickHouseConnectionSpec clickHouseConnection,
                              Instant assignedAt) { }
-    public record AgentStatistics(UUID runId, String status, long completedOperations, long bytesTransferred,
-                                  double operationsPerSecond, double throughputMiBps, double p50LatencyMs,
-                                  double p95LatencyMs, double p99LatencyMs, long errors, String message) { }
-    public record AgentProgress(UUID agentId, String status, long completedOperations, long bytesTransferred,
-                                double operationsPerSecond, double throughputMiBps, double p50LatencyMs,
-                                double p95LatencyMs, double p99LatencyMs, long errors, String message, Instant updatedAt) { }
+    public record AgentStatistics(UUID runId, String status, long completedOperations, long rowsProcessed,
+                                  long bytesTransferred, double operationsPerSecond, double throughputMiBps,
+                                  double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
+                                  long errors, String message) { }
+    public record AgentProgress(UUID agentId, String status, long completedOperations, long rowsProcessed,
+                                long bytesTransferred, double operationsPerSecond, double throughputMiBps,
+                                double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
+                                long errors, String message, Instant updatedAt) { }
     private record DistributedRun(UUID id, String name, TestType testType, TestRequest s3Request,
                                   ClickHouseTestRequest clickHouseRequest, Instant startedAt, Instant finishedAt,
                                   String status, Map<UUID, AgentProgress> agents, String primaryEndpoint) { }
     public record DistributedRunView(UUID id, String name, TestType testType, String status, Instant startedAt,
                                      Instant finishedAt, TestRequest testRequest, ClickHouseTestRequest clickHouseRequest,
-                                     long completedOperations, long bytesTransferred, long completedQueries,
-                                     double operationsPerSecond, double throughputMiBps, double queriesPerSecond,
+                                     long completedOperations, long rowsProcessed, long bytesTransferred,
+                                     double operationsPerSecond, double rowsPerSecond, double throughputMiBps,
                                      double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
                                      long errors, List<AgentProgress> agents) { }
 }
