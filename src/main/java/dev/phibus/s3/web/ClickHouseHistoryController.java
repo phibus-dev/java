@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Controller
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseHistoryController {
-    private static final String DEVELOPMENT_VERSION = "2.2.3-rc2";
+    private static final String DEVELOPMENT_VERSION = "2.2.3-rc3";
     private final ClickHouseHistoryStore history;
     private final ClickHouseProfileService profiles;
 
