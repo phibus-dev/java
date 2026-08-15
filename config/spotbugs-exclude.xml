@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <Match>
+        <Class name="dev.phibus.s3.clickhouse.ClickHouseReplicatedTableAdminService"/>
+        <Method name="provision"/>
+        <Bug pattern="SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE"/>
+    </Match>
+</FindBugsFilter>
