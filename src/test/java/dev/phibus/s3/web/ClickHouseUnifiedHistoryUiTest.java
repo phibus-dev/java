@@ -30,8 +30,9 @@ class ClickHouseUnifiedHistoryUiTest {
                 .contains("/clickhouse/replicated-tests/history/");
         assertThat(replicatedDetail)
                 .contains("Результат Replicated test")
-                .contains("Replication catch-up")
-                .contains("Consistency passed")
+                .contains("Время сходимости реплик")
+                .contains("Консистентность")
+                .contains("Проверка консистентности по shard")
                 .contains("Ошибки и сообщения выполнения");
     }
 }
