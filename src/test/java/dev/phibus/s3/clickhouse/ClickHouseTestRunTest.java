@@ -26,6 +26,39 @@ class ClickHouseTestRunTest {
         assertThat(snapshot.p95LatencyMs()).isEqualTo(20);
         assertThat(snapshot.percent()).isEqualTo(100.0);
         assertThat(snapshot.rowsPerSecond()).isPositive();
+        assertThat(snapshot.elapsedMillis()).isPositive();
+        assertThat(snapshot.startedAt()).isNotNull();
+        assertThat(snapshot.finishedAt()).isNotNull();
+    }
+
+    @Test
+    void failedRunKeepsDistinctErrorsAndExecutionTime() throws Exception {
+        ClickHouseTestRun run = new ClickHouseTestRun(request("INSERT", 100, 0), "http://clickhouse:8123");
+        run.start();
+        Thread.sleep(2);
+        run.operationFailed("first failure");
+        run.operationFailed("second failure");
+        run.fail("second failure");
+
+        ClickHouseTestRun.Snapshot snapshot = run.snapshot();
+        assertThat(snapshot.status()).isEqualTo(ClickHouseTestRun.Status.FAILED);
+        assertThat(snapshot.errors()).isEqualTo(2);
+        assertThat(snapshot.message()).contains("first failure").contains("second failure");
+        assertThat(snapshot.elapsedMillis()).isPositive();
+        assertThat(snapshot.startedAt()).isNotNull();
+        assertThat(snapshot.finishedAt()).isNotNull();
+    }
+
+    @Test
+    void startupFailureCountsAsError() {
+        ClickHouseTestRun run = new ClickHouseTestRun(request("INSERT", 100, 0), "http://clickhouse:8123");
+        run.start();
+        run.fail("connection refused");
+
+        ClickHouseTestRun.Snapshot snapshot = run.snapshot();
+        assertThat(snapshot.status()).isEqualTo(ClickHouseTestRun.Status.FAILED);
+        assertThat(snapshot.errors()).isEqualTo(1);
+        assertThat(snapshot.message()).contains("connection refused");
     }
 
     @Test
