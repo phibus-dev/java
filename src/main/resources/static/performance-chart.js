@@ -25,28 +25,47 @@
   class PerformanceChart {
     constructor(canvas, options = {}) {
       this.canvas = canvas;
+      this.host = canvas.parentElement || canvas;
       this.ctx = canvas.getContext('2d');
       this.options = options;
       this.series = [];
       this.points = [];
       this.hoverIndex = -1;
-      this.resizeObserver = new ResizeObserver(() => this.draw());
-      this.resizeObserver.observe(canvas);
+      this.lastSize = {width: 320, height: Number(options.height) || 320};
+      this.handleResize = () => window.requestAnimationFrame(() => this.draw());
+      this.resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(this.handleResize) : null;
+      if (this.resizeObserver) this.resizeObserver.observe(this.host);
+      else window.addEventListener('resize', this.handleResize);
       canvas.addEventListener('mousemove', e => this.onMove(e));
       canvas.addEventListener('mouseleave', () => { this.hoverIndex = -1; this.draw(); });
     }
     setData(points, series) { this.points = points || []; this.series = series || []; this.draw(); }
-    destroy() { this.resizeObserver.disconnect(); }
+    destroy() {
+      if (this.resizeObserver) this.resizeObserver.disconnect();
+      else window.removeEventListener('resize', this.handleResize);
+    }
     dimensions() {
-      const rect = this.canvas.getBoundingClientRect();
-      const width = Math.max(320, Math.round(rect.width || 900));
-      const height = Math.max(260, Math.round(this.options.height || rect.height || 320));
-      const dpr = window.devicePixelRatio || 1;
-      if (this.canvas.width !== width*dpr || this.canvas.height !== height*dpr) {
-        this.canvas.width = width*dpr; this.canvas.height = height*dpr;
+      const hostRect = this.host.getBoundingClientRect();
+      const style = window.getComputedStyle ? window.getComputedStyle(this.host) : null;
+      const paddingLeft = style ? parseFloat(style.paddingLeft) || 0 : 0;
+      const paddingRight = style ? parseFloat(style.paddingRight) || 0 : 0;
+      const availableWidth = Math.floor((hostRect.width || this.host.clientWidth || 900) - paddingLeft - paddingRight);
+      const width = Math.max(280, availableWidth);
+      const height = Math.max(240, Number(this.options.height) || 320);
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      this.canvas.style.display = 'block';
+      this.canvas.style.width = '100%';
+      this.canvas.style.maxWidth = '100%';
+      this.canvas.style.height = `${height}px`;
+      const pixelWidth = Math.round(width * dpr);
+      const pixelHeight = Math.round(height * dpr);
+      if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) {
+        this.canvas.width = pixelWidth;
+        this.canvas.height = pixelHeight;
       }
       this.ctx.setTransform(dpr,0,0,dpr,0,0);
-      return {width,height};
+      this.lastSize = {width,height};
+      return this.lastSize;
     }
     bounds() {
       const values = this.series.flatMap(s => this.points.map(p => Number(s.value(p))).filter(Number.isFinite));
@@ -63,8 +82,13 @@
     }
     xValue(p, i) { return this.options.xValue ? Number(this.options.xValue(p,i)) : i; }
     xLabel(p, i) { return this.options.xLabel ? this.options.xLabel(p,i) : String(i + 1); }
-    layout(width,height) { return {left:72,right:22,top:36,bottom:52,width:width-94,height:height-88}; }
+    layout(width,height) {
+      const left = width < 420 ? 54 : 72;
+      const right = 18, top = 36, bottom = 52;
+      return {left,right,top,bottom,width:Math.max(40,width-left-right),height:Math.max(80,height-top-bottom)};
+    }
     draw() {
+      if (!this.ctx) return;
       const {width,height} = this.dimensions(), ctx = this.ctx, box = this.layout(width,height), b = this.bounds();
       ctx.clearRect(0,0,width,height);
       ctx.font = '12px Arial, sans-serif'; ctx.textBaseline = 'middle';
@@ -87,7 +111,8 @@
       const y=v=>box.top+box.height-((v-b.min)/(b.max-b.min))*box.height;
       this.series.forEach((s,si)=>{
         const color=s.color||palette[si%palette.length];ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.beginPath();
-        this.points.forEach((p,i)=>{const v=Number(s.value(p));if(!Number.isFinite(v))return;const x=n<=1?box.left:box.left+(i/(n-1))*box.width,yy=y(v);i?ctx.lineTo(x,yy):ctx.moveTo(x,yy);});ctx.stroke();
+        let started=false;
+        this.points.forEach((p,i)=>{const v=Number(s.value(p));if(!Number.isFinite(v))return;const x=n<=1?box.left:box.left+(i/(n-1))*box.width,yy=y(v);if(started)ctx.lineTo(x,yy);else{ctx.moveTo(x,yy);started=true;}});ctx.stroke();
         ctx.fillStyle=color;this.points.forEach((p,i)=>{const v=Number(s.value(p));if(!Number.isFinite(v))return;const x=n<=1?box.left:box.left+(i/(n-1))*box.width,yy=y(v);ctx.beginPath();ctx.arc(x,yy,3,0,Math.PI*2);ctx.fill();});
       });
       this.drawLegend(width);
@@ -97,7 +122,7 @@
     drawTooltip(index,box,b,width,height){const ctx=this.ctx,p=this.points[index],n=this.points.length,x=n<=1?box.left:box.left+(index/(n-1))*box.width;ctx.strokeStyle='#64748b';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(x,box.top);ctx.lineTo(x,box.top+box.height);ctx.stroke();ctx.setLineDash([]);
       const rows=[this.xLabel(p,index),...this.series.map(s=>`${s.name}: ${fmt(Number(s.value(p)))} ${s.unit||this.options.yUnit||''}`)];ctx.font='12px Arial, sans-serif';const w=Math.max(...rows.map(r=>ctx.measureText(r).width))+24,h=rows.length*20+16;const tx=clamp(x+12,8,width-w-8),ty=clamp(box.top+10,8,height-h-8);ctx.fillStyle='rgba(15,35,55,.94)';ctx.fillRect(tx,ty,w,h);ctx.fillStyle='#fff';ctx.textAlign='left';rows.forEach((r,i)=>ctx.fillText(r,tx+12,ty+16+i*20));
     }
-    onMove(event){const rect=this.canvas.getBoundingClientRect(),box=this.layout(rect.width,rect.height||this.options.height||320),n=this.points.length;if(!n)return;const x=event.clientX-rect.left;this.hoverIndex=n===1?0:clamp(Math.round(((x-box.left)/box.width)*(n-1)),0,n-1);this.draw();}
+    onMove(event){const rect=this.canvas.getBoundingClientRect(),{width,height}=this.lastSize,box=this.layout(width,height),n=this.points.length;if(!n||rect.width<=0)return;const scaleX=width/rect.width;const x=(event.clientX-rect.left)*scaleX;this.hoverIndex=n===1?0:clamp(Math.round(((x-box.left)/box.width)*(n-1)),0,n-1);this.draw();}
   }
   window.EvoPerformanceChart = PerformanceChart;
   window.EvoChartTimeLabel = timeLabel;

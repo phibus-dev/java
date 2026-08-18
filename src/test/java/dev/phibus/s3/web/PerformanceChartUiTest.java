@@ -35,4 +35,36 @@ class PerformanceChartUiTest {
         assertThat(trends).contains("p50LatencyMs").contains("p95LatencyMs").contains("p99LatencyMs")
                 .contains("MiB/s").contains("Operations/sec");
     }
+
+    @Test
+    void trendChartsWaitForVisibleLayoutAndSupportResizeObserverFallback() throws IOException {
+        String trends = Files.readString(Path.of("src/main/resources/static/history-trends.js"));
+        String renderer = Files.readString(Path.of("src/main/resources/static/performance-chart.js"));
+
+        assertThat(trends)
+                .contains("await nextPaint()")
+                .contains("requestAnimationFrame(() => Object.values(trendCharts)")
+                .contains("trend-panel').hidden = false");
+        assertThat(renderer)
+                .contains("typeof ResizeObserver === 'function'")
+                .contains("window.addEventListener('resize', this.handleResize)")
+                .contains("window.removeEventListener('resize', this.handleResize)");
+    }
+
+    @Test
+    void trendChartsAreBoundedByParentCardInsteadOfObservingCanvasItself() throws IOException {
+        String html = Files.readString(Path.of("src/main/resources/templates/history.html"));
+        String renderer = Files.readString(Path.of("src/main/resources/static/performance-chart.js"));
+
+        assertThat(html)
+                .contains("grid-template-columns:repeat(2,minmax(0,1fr))")
+                .contains(".trend-chart-card{min-width:0;max-width:100%;overflow:hidden")
+                .contains(".trend-grid canvas{display:block;width:100%;max-width:100%");
+        assertThat(renderer)
+                .contains("this.host = canvas.parentElement || canvas")
+                .contains("this.resizeObserver.observe(this.host)")
+                .doesNotContain("this.resizeObserver.observe(canvas)")
+                .contains("const availableWidth")
+                .contains("this.canvas.style.maxWidth = '100%'");
+    }
 }
