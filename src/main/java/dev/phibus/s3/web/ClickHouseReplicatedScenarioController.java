@@ -2,6 +2,7 @@ package dev.phibus.s3.web;
 
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
 import dev.phibus.s3.clickhouse.ClickHouseReplicatedScenarioService;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,6 +36,14 @@ public class ClickHouseReplicatedScenarioController {
         return "clickhouse-replicated-tests";
     }
 
+    @GetMapping("/clickhouse/replicated-tests/history/{id}")
+    public String detail(@PathVariable UUID id, Model model) {
+        ClickHouseReplicatedScenarioService.Snapshot run = scenarios.get(id);
+        model.addAttribute("run", run);
+        model.addAttribute("actualDurationMillis", actualDurationMillis(run));
+        return "clickhouse-replicated-history-detail";
+    }
+
     @PostMapping("/api/clickhouse/replicated-tests")
     @ResponseBody
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -55,5 +64,10 @@ public class ClickHouseReplicatedScenarioController {
             @RequestParam(required = false) UUID profileId,
             @RequestParam(defaultValue = "100") int limit) {
         return scenarios.list(profileId, limit);
+    }
+
+    static long actualDurationMillis(ClickHouseReplicatedScenarioService.Snapshot run) {
+        if (run.startedAt() == null || run.finishedAt() == null) return 0;
+        return Math.max(0, Duration.between(run.startedAt(), run.finishedAt()).toMillis());
     }
 }
