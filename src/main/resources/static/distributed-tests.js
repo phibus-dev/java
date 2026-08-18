@@ -56,8 +56,9 @@
     }
 
     function capabilities(agent) {
-        if (Array.isArray(agent.capabilities)) return agent.capabilities.map(String);
-        return String(agent.capabilities || '').split(',').map(v => v.trim()).filter(Boolean);
+        const value = agent.capabilities ?? agent.tags?.capabilities ?? '';
+        if (Array.isArray(value)) return value.map(v => String(v).trim().toUpperCase()).filter(Boolean);
+        return String(value).split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
     }
 
     function renderAgents() {
