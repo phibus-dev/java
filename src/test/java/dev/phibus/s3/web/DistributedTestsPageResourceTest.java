@@ -38,6 +38,16 @@ class DistributedTestsPageResourceTest {
     }
 
     @Test
+    void distributedTestsScriptReadsCapabilitiesFromAgentTags() throws IOException {
+        String script = read("static/distributed-tests.js");
+
+        assertThat(script)
+                .contains("agent.capabilities ?? agent.tags?.capabilities")
+                .contains("toUpperCase()")
+                .contains("capabilities(agent).includes(required)");
+    }
+
+    @Test
     void distributedTestsScriptKeepsCreateAndRefreshActions() throws IOException {
         String script = read("static/distributed-tests.js");
 
