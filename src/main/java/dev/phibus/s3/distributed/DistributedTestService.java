@@ -4,8 +4,10 @@ import dev.phibus.s3.clickhouse.ClickHouseConnectionSpec;
 import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
 import dev.phibus.s3.clickhouse.ClickHouseTestRequest;
+import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.test.TestRequest;
 import dev.phibus.s3.test.TestType;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,14 +25,16 @@ public class DistributedTestService {
     private final AgentRegistry registry;
     private final ClickHouseProfileService clickHouseProfiles;
     private final ClickHouseHistoryStore clickHouseHistory;
+    private final TestHistoryStore testHistory;
     private final Map<UUID, DistributedRun> runs = new ConcurrentHashMap<>();
     private final Map<UUID, Assignment> assignments = new ConcurrentHashMap<>();
 
     public DistributedTestService(AgentRegistry registry, ClickHouseProfileService clickHouseProfiles,
-                                  ClickHouseHistoryStore clickHouseHistory) {
+                                  ClickHouseHistoryStore clickHouseHistory, TestHistoryStore testHistory) {
         this.registry = registry;
         this.clickHouseProfiles = clickHouseProfiles;
         this.clickHouseHistory = clickHouseHistory;
+        this.testHistory = testHistory;
     }
 
     public DistributedRunView create(CreateDistributedTestRequest request) {
@@ -87,7 +91,7 @@ public class DistributedTestService {
     }
 
     public DistributedRunView report(UUID agentId, String token, AgentStatistics stats) {
-        registry.authenticate(agentId, token);
+        AgentRegistry.AgentRecord agent = registry.authenticate(agentId, token);
         Assignment assignment = assignments.get(agentId);
         if (assignment == null || !assignment.runId().equals(stats.runId())) throw new IllegalArgumentException("No matching assignment");
         DistributedRun run = require(stats.runId());
@@ -96,6 +100,7 @@ public class DistributedTestService {
                 stats.p95LatencyMs(), stats.p99LatencyMs(), stats.errors(), stats.message(), Instant.now());
         run.agents().put(agentId, progress);
         if (isTerminal(stats.status())) {
+            if (run.testType() == TestType.S3) persistS3Agent(run, agent, stats);
             assignments.remove(agentId);
             registry.markBusy(agentId, false);
         }
@@ -108,6 +113,14 @@ public class DistributedTestService {
             if (run.testType() == TestType.CLICKHOUSE) persistClickHouse(completed);
         }
         return get(run.id());
+    }
+
+    private void persistS3Agent(DistributedRun run, AgentRegistry.AgentRecord agent, AgentStatistics stats) {
+        UUID historyId = UUID.nameUUIDFromBytes((run.id() + ":" + agent.id()).getBytes(StandardCharsets.UTF_8));
+        testHistory.saveDistributed(new TestHistoryStore.DistributedHistoryResult(historyId, run.s3Request(),
+                agent.name(), stats.status(), run.startedAt(), Instant.now(), stats.completedOperations(),
+                stats.bytesTransferred(), stats.throughputMiBps(), stats.p50LatencyMs(), stats.p95LatencyMs(),
+                stats.p99LatencyMs(), stats.errors(), stats.message()));
     }
 
     private void persistClickHouse(DistributedRun run) {
