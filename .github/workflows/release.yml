@@ -8,6 +8,8 @@ on:
         required: true
         default: 'v2.2.3-rc6'
   push:
+    branches:
+      - 'release/2.2.3-rc6'
     tags:
       - 'v*'
 
