@@ -2,6 +2,7 @@ package dev.phibus.s3.web;
 
 import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Controller
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseHistoryController {
-    private static final String DEVELOPMENT_VERSION = "2.2.3-rc4";
+    private static final String DEVELOPMENT_VERSION = "2.2.3-rc7";
     private final ClickHouseHistoryStore history;
     private final ClickHouseProfileService profiles;
 
@@ -34,7 +35,9 @@ public class ClickHouseHistoryController {
 
     @GetMapping("/clickhouse/history/{id}")
     public String detail(@PathVariable UUID id, Model model) {
-        model.addAttribute("run", history.get(id));
+        ClickHouseHistoryStore.HistoryRow run = history.get(id);
+        model.addAttribute("run", run);
+        model.addAttribute("actualDurationMillis", actualDurationMillis(run));
         model.addAttribute("applicationVersion", applicationVersion());
         return "clickhouse-history-detail";
     }
@@ -70,6 +73,11 @@ public class ClickHouseHistoryController {
                                                           @RequestParam(required = false) String table,
                                                           @RequestParam(defaultValue = "50") int limit) {
         return history.trends(operation, table, limit);
+    }
+
+    static long actualDurationMillis(ClickHouseHistoryStore.HistoryRow run) {
+        if (run.startedAt() == null || run.finishedAt() == null) return 0;
+        return Math.max(0, Duration.between(run.startedAt(), run.finishedAt()).toMillis());
     }
 
     private static String applicationVersion() {
