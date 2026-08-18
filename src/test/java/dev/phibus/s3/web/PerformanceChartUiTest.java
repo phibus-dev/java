@@ -26,6 +26,8 @@ class PerformanceChartUiTest {
         String trends = Files.readString(Path.of("src/main/resources/static/history-trends.js"));
 
         assertThat(html).contains("/performance-chart.js")
+                .contains("Инициатор теста")
+                .contains("run.initiator")
                 .contains("throughput-chart")
                 .contains("ops-chart")
                 .contains("latency-chart")
