@@ -70,6 +70,28 @@ public class ClickHouseHistoryStore {
         return jdbc.query("SELECT * FROM clickhouse_test_run ORDER BY created_at DESC LIMIT ?", this::map, safeLimit);
     }
 
+    public List<UnifiedHistoryRow> unifiedList(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        return jdbc.query("""
+                SELECT id, 'LOAD_TEST' AS test_type, created_at, operation AS test_name, table_name, status,
+                       rows_per_second AS throughput, p95_latency_ms AS latency_ms, errors,
+                       '/clickhouse/history/' || id::text AS detail_url, TRUE AS comparable
+                  FROM clickhouse_test_run
+                UNION ALL
+                SELECT id, 'REPLICATED_TEST' AS test_type, created_at, scenario AS test_name, table_name, status,
+                       insert_rows_per_second AS throughput, insert_latency_ms AS latency_ms,
+                       CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END AS errors,
+                       '/clickhouse/replicated-tests/history/' || id::text AS detail_url, FALSE AS comparable
+                  FROM clickhouse_replicated_scenario_run
+                 ORDER BY created_at DESC
+                 LIMIT ?
+                """, (rs, row) -> new UnifiedHistoryRow(
+                rs.getObject("id", UUID.class), rs.getString("test_type"), instant(rs, "created_at"),
+                rs.getString("test_name"), rs.getString("table_name"), rs.getString("status"),
+                rs.getDouble("throughput"), rs.getDouble("latency_ms"), rs.getLong("errors"),
+                rs.getString("detail_url"), rs.getBoolean("comparable")), safeLimit);
+    }
+
     public HistoryRow get(UUID id) {
         List<HistoryRow> result = jdbc.query("SELECT * FROM clickhouse_test_run WHERE id = ?", this::map, id);
         if (result.isEmpty()) throw new IllegalArgumentException("ClickHouse history entry not found: " + id);
@@ -133,6 +155,9 @@ public class ClickHouseHistoryStore {
         return value == null || value.isBlank() ? null : value.trim().toUpperCase();
     }
 
+    public record UnifiedHistoryRow(UUID id, String testType, Instant createdAt, String testName, String table,
+                                    String status, double throughput, double latencyMs, long errors,
+                                    String detailUrl, boolean comparable) { }
     public record HistoryRow(UUID id, UUID profileId, String endpoint, String table, String operation, String status,
                              Instant createdAt, Instant startedAt, Instant finishedAt, int concurrency, int batchSize,
                              long requestedRows, long durationSeconds, long warmupSeconds, int payloadBytes,
