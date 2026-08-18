@@ -41,6 +41,7 @@ public class ClickHouseReplicatedScenarioController {
         ClickHouseReplicatedScenarioService.Snapshot run = scenarios.get(id);
         model.addAttribute("run", run);
         model.addAttribute("actualDurationMillis", actualDurationMillis(run));
+        model.addAttribute("consistencyDetails", scenarios.consistencyDetails(id));
         return "clickhouse-replicated-history-detail";
     }
 
@@ -56,6 +57,13 @@ public class ClickHouseReplicatedScenarioController {
     @ResponseBody
     public ClickHouseReplicatedScenarioService.Snapshot get(@PathVariable UUID id) {
         return scenarios.get(id);
+    }
+
+    @GetMapping("/api/clickhouse/replicated-tests/{id}/consistency")
+    @ResponseBody
+    public List<ClickHouseReplicatedScenarioService.ConsistencyDetail> consistency(@PathVariable UUID id) {
+        scenarios.get(id);
+        return scenarios.consistencyDetails(id);
     }
 
     @GetMapping("/api/clickhouse/replicated-tests")
