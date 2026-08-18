@@ -28,7 +28,7 @@ public class ClickHouseHistoryController {
     @GetMapping("/clickhouse")
     public String tests(Model model) {
         model.addAttribute("profiles", profiles.list());
-        model.addAttribute("history", history.list(100));
+        model.addAttribute("history", history.unifiedList(100));
         model.addAttribute("applicationVersion", applicationVersion());
         return "clickhouse-tests";
     }
@@ -53,6 +53,12 @@ public class ClickHouseHistoryController {
     @ResponseBody
     public List<ClickHouseHistoryStore.HistoryRow> history(@RequestParam(defaultValue = "100") int limit) {
         return history.list(limit);
+    }
+
+    @GetMapping("/api/clickhouse/history/all")
+    @ResponseBody
+    public List<ClickHouseHistoryStore.UnifiedHistoryRow> unifiedHistory(@RequestParam(defaultValue = "100") int limit) {
+        return history.unifiedList(limit);
     }
 
     @GetMapping("/api/clickhouse/history/{id}")
