@@ -99,7 +99,7 @@ public class ClickHouseLoadTestEngine {
                     long latencyMs = Math.max(1, Duration.between(started, Instant.now()).toMillis());
                     run.operationCompleted(batch, (long) batch * request.payloadBytes(), latencyMs);
                 } catch (Exception e) {
-                    run.operationFailed();
+                    run.operationFailed(rootMessage(e));
                     throw e;
                 }
             }
@@ -126,7 +126,7 @@ public class ClickHouseLoadTestEngine {
                     run.operationCompleted(rows, bytes, latencyMs);
                     completed++;
                 } catch (Exception e) {
-                    run.operationFailed();
+                    run.operationFailed(rootMessage(e));
                     throw e;
                 }
             }
