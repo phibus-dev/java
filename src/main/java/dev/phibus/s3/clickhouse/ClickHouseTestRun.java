@@ -20,6 +20,7 @@ public final class ClickHouseTestRun {
     private final AtomicLong queries = new AtomicLong();
     private final AtomicLong errors = new AtomicLong();
     private final List<Long> latenciesMs = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final List<String> errorMessages = java.util.Collections.synchronizedList(new ArrayList<>());
     private volatile Status status = Status.QUEUED;
     private volatile Instant startedAt;
     private volatile Instant measurementStartedAt;
@@ -62,9 +63,30 @@ public final class ClickHouseTestRun {
         message = "Operations completed: " + queries.get();
     }
 
-    public void operationFailed() { errors.incrementAndGet(); }
-    public void complete() { if (!cancelled.get()) { status = Status.COMPLETED; finishedAt = Instant.now(); message = "Test completed"; } }
-    public void fail(String error) { if (!cancelled.get()) { status = Status.FAILED; finishedAt = Instant.now(); message = error; } }
+    public void operationFailed() { operationFailed("ClickHouse operation failed"); }
+
+    public void operationFailed(String error) {
+        errors.incrementAndGet();
+        rememberError(error);
+    }
+
+    public void complete() {
+        if (!cancelled.get()) {
+            status = Status.COMPLETED;
+            finishedAt = Instant.now();
+            message = "Test completed";
+        }
+    }
+
+    public void fail(String error) {
+        if (!cancelled.get()) {
+            if (errors.get() == 0) errors.incrementAndGet();
+            rememberError(error);
+            status = Status.FAILED;
+            finishedAt = Instant.now();
+            message = joinedErrors();
+        }
+    }
 
     public Snapshot snapshot() {
         Instant now = finishedAt == null ? Instant.now() : finishedAt;
@@ -87,6 +109,19 @@ public final class ClickHouseTestRun {
                 request.normalizedOperation(), elapsedMs, progress, rowCount, byteCount, queryCount, errors.get(),
                 rowsPerSecond, mibPerSecond, queriesPerSecond, percentile(copy, 50), percentile(copy, 95),
                 percentile(copy, 99), message);
+    }
+
+    private void rememberError(String error) {
+        String normalized = error == null || error.isBlank() ? "Unknown ClickHouse error" : error.trim();
+        synchronized (errorMessages) {
+            if (!errorMessages.contains(normalized)) errorMessages.add(normalized);
+        }
+    }
+
+    private String joinedErrors() {
+        synchronized (errorMessages) {
+            return errorMessages.isEmpty() ? "ClickHouse test failed" : String.join("\n", errorMessages);
+        }
     }
 
     private static double percentile(List<Long> values, int percentile) {
