@@ -30,13 +30,18 @@
       this.series = [];
       this.points = [];
       this.hoverIndex = -1;
-      this.resizeObserver = new ResizeObserver(() => this.draw());
-      this.resizeObserver.observe(canvas);
+      this.handleResize = () => this.draw();
+      this.resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(this.handleResize) : null;
+      if (this.resizeObserver) this.resizeObserver.observe(canvas);
+      else window.addEventListener('resize', this.handleResize);
       canvas.addEventListener('mousemove', e => this.onMove(e));
       canvas.addEventListener('mouseleave', () => { this.hoverIndex = -1; this.draw(); });
     }
     setData(points, series) { this.points = points || []; this.series = series || []; this.draw(); }
-    destroy() { this.resizeObserver.disconnect(); }
+    destroy() {
+      if (this.resizeObserver) this.resizeObserver.disconnect();
+      else window.removeEventListener('resize', this.handleResize);
+    }
     dimensions() {
       const rect = this.canvas.getBoundingClientRect();
       const width = Math.max(320, Math.round(rect.width || 900));
