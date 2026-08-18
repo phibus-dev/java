@@ -1,8 +1,9 @@
 (() => {
   const selected = () => [...document.querySelectorAll('.compare-id:checked')].map(x => x.value);
   const byId = id => document.getElementById(id);
-  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const trendCharts = {};
+  const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
   function compareSelected() {
     const ids = selected();
@@ -50,6 +51,7 @@
     }
     byId('trend-warning').textContent = warnings.join(' ');
 
+    await nextPaint();
     const common = {height:320,xTitle:'Запуски',xLabel:p=>new Date(p.createdAt).toLocaleString()};
     chart('throughput-chart',{...common,yUnit:'MiB/s'}).setData(report.points,[{name:'Throughput',unit:'MiB/s',value:p=>p.throughputMiBps}]);
     chart('ops-chart',{...common,yUnit:'OPS'}).setData(report.points,[{name:'Operations/sec',unit:'OPS',value:p=>p.operationsPerSecond}]);
@@ -59,6 +61,7 @@
       {name:'p99',unit:'ms',value:p=>p.p99LatencyMs}
     ]);
     chart('errors-chart',{...common,yUnit:'ошибок'}).setData(report.points,[{name:'Ошибки',unit:'',value:p=>p.errors}]);
+    requestAnimationFrame(() => Object.values(trendCharts).forEach(item => item.draw()));
 
     byId('trend-table').innerHTML = report.points.map(p => `<tr><td>${new Date(p.createdAt).toLocaleString()}</td><td>${escapeHtml(p.operation)}</td><td>${Number(p.throughputMiBps).toFixed(2)}</td><td>${Number(p.operationsPerSecond).toFixed(2)}</td><td>${Number(p.p50LatencyMs).toFixed(1)}</td><td>${Number(p.p95LatencyMs).toFixed(1)}</td><td>${Number(p.p99LatencyMs).toFixed(1)}</td><td>${p.errors}</td></tr>`).join('');
     byId('trend-panel').scrollIntoView({behavior:'smooth',block:'start'});
