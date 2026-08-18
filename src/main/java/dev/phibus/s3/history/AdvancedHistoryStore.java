@@ -37,7 +37,7 @@ public class AdvancedHistoryStore {
                        operation,total_bytes,bytes_transferred,average_speed_mibps,p50_latency_ms,
                        p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,cleanup_successful,
                        message,baseline,baseline_name,path_style_access,object_size_mib,part_size_mib,
-                       parallelism,object_count,delete_after_test
+                       parallelism,object_count,delete_after_test,initiator
                   from test_run
                 """ + where + " order by created_at desc limit ? offset ?";
         String count = "select count(*) from test_run " + where;
@@ -68,7 +68,7 @@ public class AdvancedHistoryStore {
                        operation,total_bytes,bytes_transferred,average_speed_mibps,p50_latency_ms,
                        p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,cleanup_successful,
                        message,baseline,baseline_name,path_style_access,object_size_mib,part_size_mib,
-                       parallelism,object_count,delete_after_test
+                       parallelism,object_count,delete_after_test,initiator
                   from test_run where id=?
                 """;
         try (Connection connection = connection(); PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -150,10 +150,13 @@ public class AdvancedHistoryStore {
                 rs.getBoolean("cleanup_successful"), rs.getString("message"), rs.getBoolean("baseline"),
                 rs.getString("baseline_name"), rs.getBoolean("path_style_access"), rs.getLong("object_size_mib"),
                 rs.getLong("part_size_mib"), rs.getInt("parallelism"), rs.getInt("object_count"),
-                rs.getBoolean("delete_after_test"));
+                rs.getBoolean("delete_after_test"), normalizeInitiator(rs.getString("initiator")));
     }
     private static Instant instant(ResultSet rs, String name) throws SQLException {
         Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toInstant();
+    }
+    private static String normalizeInitiator(String value) {
+        return value == null || value.isBlank() ? "local" : value;
     }
     private Connection connection() throws SQLException {
         BootstrapSettings.PostgreSqlSettings settings = settingsService.load().postgresql();
@@ -180,5 +183,5 @@ public class AdvancedHistoryStore {
                          double p95LatencyMs, double p99LatencyMs, int successfulParts, int failedParts,
                          boolean cleanupSuccessful, String message, boolean baseline, String baselineName,
                          boolean pathStyleAccess, long objectSizeMiB, long partSizeMiB, int parallelism,
-                         int objectCount, boolean deleteAfterTest) { }
+                         int objectCount, boolean deleteAfterTest, String initiator) { }
 }

@@ -40,7 +40,7 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(13);
+        assertThat(applied).isGreaterThanOrEqualTo(14);
 
         for (String table : new String[]{"test_run", "test_schedule", "security_audit_event", "s3_profile",
                 "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
@@ -53,6 +53,20 @@ class PostgreSqlMigrationIT {
         DataSource dataSource = jdbc.getDataSource();
         assertThat(dataSource).isNotNull();
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+    }
+
+    @Test
+    void existingAndNewHistoryRowsDefaultToLocalInitiator() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                insert into test_run(id,status,created_at,total_bytes,bytes_transferred,completed_parts,total_parts,
+                    average_speed_mibps,p50_latency_ms,p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,
+                    delete_after_test,cleanup_successful)
+                values (?, 'COMPLETED', current_timestamp, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false)
+                """, id);
+
+        assertThat(jdbc.queryForObject("select initiator from test_run where id=?", String.class, id))
+                .isEqualTo("local");
     }
 
     @Test
