@@ -12,11 +12,17 @@
 <div><span>Завершён</span><strong th:text="${run.finishedAt ?: '—'}"></strong></div><div><span>Фактическая длительность</span><strong th:text="${actualDurationMillis + ' ms'}"></strong></div>
 </div></section>
 <section class="panel"><h2>Метрики Replicated test</h2><div class="system-grid">
-<div><span>Rows written</span><strong th:text="${run.rowsWritten}"></strong></div><div><span>Insert throughput</span><strong th:text="${#numbers.formatDecimal(run.insertRowsPerSecond,1,2) + ' rows/s'}"></strong></div>
-<div><span>Insert latency</span><strong th:text="${#numbers.formatDecimal(run.insertLatencyMs,1,1) + ' ms'}"></strong></div><div><span>Replication catch-up</span><strong th:text="${run.replicationCatchupMs + ' ms'}"></strong></div>
-<div><span>Max replication delay</span><strong th:text="${run.maxReplicationDelaySeconds + ' s'}"></strong></div><div><span>Max replication queue</span><strong th:text="${run.maxReplicationQueue}"></strong></div>
-<div><span>Max log lag</span><strong th:text="${run.maxLogLag}"></strong></div><div><span>Replica count</span><strong th:text="${run.replicaCount}"></strong></div>
-<div><span>Consistency passed</span><strong th:text="${run.consistencyPassed == null ? '—' : run.consistencyPassed}"></strong></div>
+<div><span>Записано строк</span><strong th:text="${run.rowsWritten}"></strong></div><div><span>Строк в секунду</span><strong th:text="${#numbers.formatDecimal(run.insertRowsPerSecond,1,2) + ' строк/с'}"></strong></div>
+<div><span>Задержка INSERT</span><strong th:text="${#numbers.formatDecimal(run.insertLatencyMs,1,1) + ' ms'}"></strong></div><div><span>Время сходимости реплик</span><strong th:text="${run.replicationCatchupMs + ' ms'}"></strong></div>
+<div><span>Максимальная задержка</span><strong th:text="${run.maxReplicationDelaySeconds + ' s'}"></strong></div><div><span>Максимальная очередь репликации</span><strong th:text="${run.maxReplicationQueue}"></strong></div>
+<div><span>Отставание журнала репликации</span><strong th:text="${run.maxLogLag}"></strong></div><div><span>Количество реплик</span><strong th:text="${run.replicaCount}"></strong></div>
+<div><span>Консистентность</span><strong th:text="${run.consistencyPassed == null ? '—' : (run.consistencyPassed ? 'PASS' : 'FAIL')}"></strong></div>
 </div></section>
+<section class="panel"><h2>Проверка консистентности по shard</h2>
+<p class="muted">Реплики группируются по zookeeper_path из system.replicas. Сравнение выполняется только между репликами одного shard.</p>
+<div class="table-wrap"><table><thead><tr><th>Shard / replication path</th><th>Replica</th><th>Endpoint</th><th>Строк</th><th>Σ sequence</th><th>Payload bytes</th><th>Результат</th><th>Диагностика</th></tr></thead>
+<tbody><tr th:each="d:${consistencyDetails}"><td th:text="${d.shardKey}"></td><td th:text="${d.replicaName ?: '—'}"></td><td th:text="${d.endpoint}"></td><td th:text="${d.rowsCount}"></td><td th:text="${d.sequenceSum ?: '—'}"></td><td th:text="${d.payloadBytes ?: '—'}"></td><td><strong th:text="${d.consistent == null ? 'НЕ ПРОВЕРЕНО' : (d.consistent ? 'PASS' : 'FAIL')}"></strong></td><td th:text="${d.note ?: '—'}"></td></tr>
+<tr th:if="${#lists.isEmpty(consistencyDetails)}"><td colspan="8">Для этого запуска детальная диагностика не сохранена. Она будет доступна для новых запусков после обновления.</td></tr></tbody></table></div>
+</section>
 <section class="panel"><h2>Ошибки и сообщения выполнения</h2><pre style="white-space:pre-wrap;overflow-wrap:anywhere" th:text="${run.message ?: 'Нет сообщений'}"></pre></section>
 </main></body></html>
