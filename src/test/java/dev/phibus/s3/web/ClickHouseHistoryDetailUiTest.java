@@ -17,8 +17,9 @@ class ClickHouseHistoryDetailUiTest {
         assertThat(html)
                 .contains("Фактическое время выполнения")
                 .contains("actualDurationMillis")
-                .contains("run.startedAt")
-                .contains("run.finishedAt")
+                .contains("createdAtFormatted")
+                .contains("startedAtFormatted")
+                .contains("finishedAtFormatted")
                 .contains("run.bytes")
                 .contains("run.queries")
                 .contains("run.message")
@@ -27,6 +28,8 @@ class ClickHouseHistoryDetailUiTest {
                 .contains("Auto create table");
         assertThat(controller)
                 .contains("Duration.between(run.startedAt(), run.finishedAt())")
+                .contains("DateTimeFormatter.ofPattern(\"yyyy-MM-dd HH:mm:ss\")")
+                .contains("ZoneId.of(\"Europe/Moscow\")")
                 .contains("actualDurationMillis");
     }
 }
