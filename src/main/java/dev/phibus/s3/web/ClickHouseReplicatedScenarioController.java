@@ -3,6 +3,9 @@ package dev.phibus.s3.web;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
 import dev.phibus.s3.clickhouse.ClickHouseReplicatedScenarioService;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +23,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @Controller
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseReplicatedScenarioController {
+    private static final ZoneId UI_ZONE = ZoneId.of("Europe/Moscow");
+    private static final DateTimeFormatter UI_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(UI_ZONE);
+
     private final ClickHouseReplicatedScenarioService scenarios;
     private final ClickHouseProfileService profiles;
 
@@ -40,6 +46,9 @@ public class ClickHouseReplicatedScenarioController {
     public String detail(@PathVariable UUID id, Model model) {
         ClickHouseReplicatedScenarioService.Snapshot run = scenarios.get(id);
         model.addAttribute("run", run);
+        model.addAttribute("createdAtFormatted", formatUiTime(run.createdAt()));
+        model.addAttribute("startedAtFormatted", formatUiTime(run.startedAt()));
+        model.addAttribute("finishedAtFormatted", formatUiTime(run.finishedAt()));
         model.addAttribute("actualDurationMillis", actualDurationMillis(run));
         model.addAttribute("consistencyDetails", scenarios.consistencyDetails(id));
         return "clickhouse-replicated-history-detail";
@@ -77,5 +86,9 @@ public class ClickHouseReplicatedScenarioController {
     static long actualDurationMillis(ClickHouseReplicatedScenarioService.Snapshot run) {
         if (run.startedAt() == null || run.finishedAt() == null) return 0;
         return Math.max(0, Duration.between(run.startedAt(), run.finishedAt()).toMillis());
+    }
+
+    static String formatUiTime(Instant value) {
+        return value == null ? "—" : UI_DATE_TIME.format(value);
     }
 }
