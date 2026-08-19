@@ -8,8 +8,8 @@
 <div><span>Тип теста</span><strong>Replicated test</strong></div><div><span>Сценарий</span><strong th:text="${run.scenario}"></strong></div>
 <div><span>Статус</span><strong th:text="${run.status}"></strong></div><div><span>Таблица</span><strong th:text="${run.table}"></strong></div>
 <div><span>Source endpoint</span><strong th:text="${run.sourceEndpoint}"></strong></div><div><span>Profile ID</span><strong th:text="${run.profileId}"></strong></div>
-<div><span>Создан</span><strong th:text="${run.createdAt}"></strong></div><div><span>Запущен</span><strong th:text="${run.startedAt ?: '—'}"></strong></div>
-<div><span>Завершён</span><strong th:text="${run.finishedAt ?: '—'}"></strong></div><div><span>Фактическая длительность</span><strong th:text="${actualDurationMillis + ' ms'}"></strong></div>
+<div><span>Создан</span><strong th:text="${createdAtFormatted}"></strong></div><div><span>Запущен</span><strong th:text="${startedAtFormatted}"></strong></div>
+<div><span>Завершён</span><strong th:text="${finishedAtFormatted}"></strong></div><div><span>Фактическая длительность</span><strong th:text="${actualDurationMillis + ' ms'}"></strong></div>
 </div></section>
 <section class="panel"><h2>Метрики Replicated test</h2><div class="system-grid">
 <div><span>Записано строк</span><strong th:text="${run.rowsWritten}"></strong></div><div><span>Строк в секунду</span><strong th:text="${#numbers.formatDecimal(run.insertRowsPerSecond,1,2) + ' строк/с'}"></strong></div>
