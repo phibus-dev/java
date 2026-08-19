@@ -10,9 +10,9 @@
 <div><span>Операция</span><strong th:text="${run.operation}"></strong></div>
 <div><span>Endpoint</span><strong th:text="${run.endpoint}"></strong></div>
 <div><span>Таблица</span><strong th:text="${run.table}"></strong></div>
-<div><span>Создано</span><strong th:text="${run.createdAt}"></strong></div>
-<div><span>Начало выполнения</span><strong th:text="${run.startedAt != null ? run.startedAt : '—'}"></strong></div>
-<div><span>Окончание выполнения</span><strong th:text="${run.finishedAt != null ? run.finishedAt : '—'}"></strong></div>
+<div><span>Создано</span><strong th:text="${createdAtFormatted}"></strong></div>
+<div><span>Начало выполнения</span><strong th:text="${startedAtFormatted}"></strong></div>
+<div><span>Окончание выполнения</span><strong th:text="${finishedAtFormatted}"></strong></div>
 <div><span>Фактическое время выполнения</span><strong th:text="${#numbers.formatDecimal(actualDurationMillis / 1000.0,1,3) + ' s'}"></strong></div>
 </div></section>
 
