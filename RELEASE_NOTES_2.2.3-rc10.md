@@ -13,3 +13,4 @@ Release candidate 10 содержит исправления Web UI и наст�
 ## Проверки
 
 Перед выпуском изменения проходят Maven CI, CodeQL и Dependency Review.
+Release workflow повторно запущен отдельным push после исправления trigger-ветки на `release/2.2.3-rc10`.
