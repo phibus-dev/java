@@ -7,20 +7,12 @@
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Агенты — ЭВО.СНТ</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app-ui.css">
 </head>
 <body>
 <main class="container">
-    <header>
-        <div>
-            <h1>Агенты нагрузки</h1>
-            <p>Регистрация, состояние, блокировка identity и управление обновлением исполнителей.</p>
-        </div>
-        <nav>
-            <a href="/tasks">Задания</a> ·
-            <a href="/distributed-tests">Распределённые тесты</a> ·
-            <a href="/settings">Настройки</a>
-        </nav>
-    </header>
+    <header class="brand-header"><div class="brand-title"><h1>Агенты нагрузки</h1><p>Регистрация, состояние, блокировка identity и управление обновлением исполнителей.</p></div><div class="corporate-brand"><img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo"><div class="platform-name">ТПП ЭВОПЛАТФОРМА</div></div><span class="badge">Агенты</span></header>
+    <nav class="corporate-nav"><a href="/tasks">Задания</a><a href="/distributed-tests">Распределённые тесты</a><a href="/agents" aria-current="page">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
 
     <section class="panel">
         <div class="title-row">
@@ -49,6 +41,7 @@
         <pre id="result" aria-live="polite"></pre>
     </section>
 </main>
+<script src="/app-ui.js"></script>
 <script src="/csrf-fetch.js"></script>
 <script src="/agents.js"></script>
 </body>
