@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Controller
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseHistoryController {
-    private static final String DEVELOPMENT_VERSION = "2.2.3-rc7";
+    private static final String DEVELOPMENT_VERSION = "2.2.3-rc8";
     private static final ZoneId UI_ZONE = ZoneId.of("Europe/Moscow");
     private static final DateTimeFormatter UI_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(UI_ZONE);
 
