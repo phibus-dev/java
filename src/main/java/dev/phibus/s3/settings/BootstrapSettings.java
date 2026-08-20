@@ -65,7 +65,7 @@ public record BootstrapSettings(
             String operatorRole,
             String viewerRole) {
         public static KeycloakSettings empty() {
-            return new KeycloakSettings(false, "", "", "", "openid,profile,email", "REALM", "ADMIN", "OPERATOR", "VIEWER");
+            return new KeycloakSettings(false, "", "", "", "openid,profile,email", "CLIENT", "ADMIN", "OPERATOR", "VIEWER");
         }
         public boolean configured() {
             return !enabled || (issuerUri != null && !issuerUri.isBlank() && clientId != null && !clientId.isBlank());
