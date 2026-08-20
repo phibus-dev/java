@@ -47,6 +47,40 @@ class ClickHouseTestRunServiceTest {
     }
 
     @Test
+    void persistsEndpointResolutionFailureInHistory() {
+        ClickHouseTestRequest request = request();
+        when(history.getIfAvailable()).thenReturn(historyStore);
+        when(connections.endpoint(request.profileId(), request.endpoint()))
+                .thenThrow(new IllegalStateException("profile endpoint missing"));
+
+        ClickHouseTestRun run = service().create(request);
+
+        assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.FAILED);
+        assertThat(run.snapshot().errors()).isEqualTo(1);
+        assertThat(run.snapshot().message()).contains("profile endpoint missing");
+        verify(historyStore).save(org.mockito.ArgumentMatchers.argThat(snapshot ->
+                        snapshot.status() == ClickHouseTestRun.Status.FAILED
+                                && snapshot.message().contains("profile endpoint missing")),
+                org.mockito.Mockito.same(request));
+        verifyNoInteractions(engine);
+    }
+
+    @Test
+    void persistsExecutorSubmissionFailureInHistory() {
+        ClickHouseTestRequest request = request();
+        when(connections.endpoint(request.profileId(), request.endpoint())).thenReturn("http://clickhouse:8123");
+        when(history.getIfAvailable()).thenReturn(historyStore);
+        Executor rejectingExecutor = command -> { throw new IllegalStateException("executor rejected task"); };
+
+        ClickHouseTestRun run = new ClickHouseTestRunService(engine, connections, history, rejectingExecutor).create(request);
+
+        assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.FAILED);
+        assertThat(run.snapshot().message()).contains("executor rejected task");
+        verify(historyStore, org.mockito.Mockito.times(2)).save(any(), org.mockito.Mockito.same(request));
+        verifyNoInteractions(engine);
+    }
+
+    @Test
     void doesNotStartTestWhenInitialHistoryCannotBeCreated() {
         ClickHouseTestRequest request = request();
         when(connections.endpoint(request.profileId(), request.endpoint())).thenReturn("http://clickhouse:8123");

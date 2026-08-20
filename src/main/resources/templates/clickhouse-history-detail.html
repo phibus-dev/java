@@ -2,15 +2,46 @@
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClickHouse history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
 <body><main class="container">
-<header class="brand-header"><div class="brand-title"><h1>Результат ClickHouse</h1><p th:text="${run.id}"></p></div></header>
-<nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/settings">Настройки</a></nav>
-<section class="panel"><div class="system-grid">
-<div><span>Статус</span><strong th:text="${run.status}"></strong></div><div><span>Операция</span><strong th:text="${run.operation}"></strong></div>
-<div><span>Endpoint</span><strong th:text="${run.endpoint}"></strong></div><div><span>Таблица</span><strong th:text="${run.table}"></strong></div>
-<div><span>Rows/s</span><strong th:text="${#numbers.formatDecimal(run.rowsPerSecond,1,2)}"></strong></div><div><span>MiB/s</span><strong th:text="${#numbers.formatDecimal(run.mibPerSecond,1,2)}"></strong></div>
-<div><span>Queries/s</span><strong th:text="${#numbers.formatDecimal(run.queriesPerSecond,1,2)}"></strong></div><div><span>Rows</span><strong th:text="${run.rows}"></strong></div>
-<div><span>P50</span><strong th:text="${#numbers.formatDecimal(run.p50LatencyMs,1,1) + ' ms'}"></strong></div><div><span>P95</span><strong th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1) + ' ms'}"></strong></div>
-<div><span>P99</span><strong th:text="${#numbers.formatDecimal(run.p99LatencyMs,1,1) + ' ms'}"></strong></div><div><span>Ошибки</span><strong th:text="${run.errors}"></strong></div>
+<header class="brand-header"><div class="brand-title"><h1>Результат ClickHouse</h1><p th:text="${run.id}"></p></div><span class="badge" th:text="${'Версия '+applicationVersion}"></span></header>
+<nav class="corporate-nav"><a href="/clickhouse">← Тесты и история</a><a href="/settings">Настройки</a></nav>
+
+<section class="panel"><h2>Выполнение задания</h2><div class="system-grid">
+<div><span>Статус</span><strong th:text="${run.status}"></strong></div>
+<div><span>Операция</span><strong th:text="${run.operation}"></strong></div>
+<div><span>Endpoint</span><strong th:text="${run.endpoint}"></strong></div>
+<div><span>Таблица</span><strong th:text="${run.table}"></strong></div>
+<div><span>Создано</span><strong th:text="${createdAtFormatted}"></strong></div>
+<div><span>Начало выполнения</span><strong th:text="${startedAtFormatted}"></strong></div>
+<div><span>Окончание выполнения</span><strong th:text="${finishedAtFormatted}"></strong></div>
+<div><span>Фактическое время выполнения</span><strong th:text="${#numbers.formatDecimal(actualDurationMillis / 1000.0,1,3) + ' s'}"></strong></div>
 </div></section>
-<section class="panel"><h2>Параметры</h2><div class="system-grid"><div><span>Concurrency</span><strong th:text="${run.concurrency}"></strong></div><div><span>Batch</span><strong th:text="${run.batchSize}"></strong></div><div><span>Requested rows</span><strong th:text="${run.requestedRows}"></strong></div><div><span>Duration</span><strong th:text="${run.durationSeconds + ' s'}"></strong></div><div><span>Warm-up</span><strong th:text="${run.warmupSeconds + ' s'}"></strong></div><div><span>Payload</span><strong th:text="${run.payloadBytes + ' bytes'}"></strong></div></div></section>
+
+<section class="panel"><h2>Метрики результата</h2><div class="system-grid">
+<div><span>Rows</span><strong th:text="${run.rows}"></strong></div>
+<div><span>Bytes</span><strong th:text="${run.bytes}"></strong></div>
+<div><span>Queries</span><strong th:text="${run.queries}"></strong></div>
+<div><span>Ошибки</span><strong th:text="${run.errors}"></strong></div>
+<div><span>Rows/s</span><strong th:text="${#numbers.formatDecimal(run.rowsPerSecond,1,2)}"></strong></div>
+<div><span>MiB/s</span><strong th:text="${#numbers.formatDecimal(run.mibPerSecond,1,2)}"></strong></div>
+<div><span>Queries/s</span><strong th:text="${#numbers.formatDecimal(run.queriesPerSecond,1,2)}"></strong></div>
+<div><span>P50 latency</span><strong th:text="${#numbers.formatDecimal(run.p50LatencyMs,1,1) + ' ms'}"></strong></div>
+<div><span>P95 latency</span><strong th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1) + ' ms'}"></strong></div>
+<div><span>P99 latency</span><strong th:text="${#numbers.formatDecimal(run.p99LatencyMs,1,1) + ' ms'}"></strong></div>
+</div></section>
+
+<section class="panel" th:if="${run.message != null and !run.message.isBlank()}">
+<h2 th:text="${run.status == 'FAILED' or run.errors > 0 ? 'Ошибки и сообщения выполнения' : 'Сообщение выполнения'}"></h2>
+<pre class="diagnostic-output" th:text="${run.message}"></pre>
+</section>
+
+<section class="panel"><h2>Параметры задания</h2><div class="system-grid">
+<div><span>Profile ID</span><strong th:text="${run.profileId}"></strong></div>
+<div><span>Concurrency</span><strong th:text="${run.concurrency}"></strong></div>
+<div><span>Batch size</span><strong th:text="${run.batchSize}"></strong></div>
+<div><span>Requested rows</span><strong th:text="${run.requestedRows}"></strong></div>
+<div><span>Заданный Duration</span><strong th:text="${run.durationSeconds + ' s'}"></strong></div>
+<div><span>Warm-up</span><strong th:text="${run.warmupSeconds + ' s'}"></strong></div>
+<div><span>Payload</span><strong th:text="${run.payloadBytes + ' bytes'}"></strong></div>
+<div><span>Auto create table</span><strong th:text="${run.autoCreateTable ? 'Да' : 'Нет'}"></strong></div>
+</div></section>
 </main></body></html>

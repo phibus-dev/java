@@ -7,7 +7,7 @@ import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -73,6 +73,24 @@ public class ClickHouseReplicatedScenarioService {
         return jdbc.query("SELECT * FROM clickhouse_replicated_scenario_run WHERE profile_id=? ORDER BY created_at DESC LIMIT ?", (rs,n)->map(rs), profileId, safe);
     }
 
+    public List<ConsistencyDetail> consistencyDetails(UUID runId) {
+        return jdbc.query("""
+                SELECT run_id,endpoint,shard_key,replica_name,rows_count,sequence_sum,payload_bytes,consistent,note
+                FROM clickhouse_replicated_consistency_detail
+                WHERE run_id=?
+                ORDER BY shard_key, replica_name, endpoint
+                """, (rs, n) -> new ConsistencyDetail(
+                rs.getObject("run_id", UUID.class),
+                rs.getString("endpoint"),
+                rs.getString("shard_key"),
+                rs.getString("replica_name"),
+                rs.getLong("rows_count"),
+                rs.getString("sequence_sum"),
+                rs.getString("payload_bytes"),
+                (Boolean) rs.getObject("consistent"),
+                rs.getString("note")), runId);
+    }
+
     private void execute(Run run) {
         run.status = "RUNNING";
         run.startedAt = Instant.now();
@@ -85,7 +103,9 @@ public class ClickHouseReplicatedScenarioService {
                 default -> throw new IllegalArgumentException("Unsupported scenario: " + run.request.scenario());
             }
             run.status = "COMPLETED";
-            run.message = run.consistencyPassed == null || run.consistencyPassed ? "Scenario completed" : "Replica consistency check failed";
+            run.message = run.consistencyPassed == null || run.consistencyPassed
+                    ? "Scenario completed"
+                    : "Replica consistency check failed; see per-replica diagnostics";
         } catch (Exception e) {
             run.status = "FAILED";
             run.message = rootMessage(e);
@@ -153,18 +173,94 @@ public class ClickHouseReplicatedScenarioService {
         ClickHouseProfileService.Profile profile = profiles.get(run.request.profileId());
         List<ReplicaDigest> digests = new ArrayList<>();
         for (String endpoint : profile.endpoints()) {
-            try (Connection c = profiles.open(run.request.profileId(), endpoint);
-                 PreparedStatement ps = c.prepareStatement("SELECT count(), sum(sequence), sum(length(payload)) FROM " + table(run.request.table()));
-                 ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) digests.add(new ReplicaDigest(endpoint, rs.getLong(1), rs.getString(2), rs.getString(3)));
+            try (Connection c = profiles.open(run.request.profileId(), endpoint)) {
+                ReplicaIdentity identity = replicaIdentity(c, run.request.table());
+                if (identity == null) {
+                    digests.add(new ReplicaDigest(endpoint, "UNKNOWN:" + endpoint, null, 0, null, null,
+                            "Table is not registered in system.replicas on this endpoint"));
+                    continue;
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT count(), sum(sequence), sum(length(payload)) FROM " + table(run.request.table()));
+                     ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        digests.add(new ReplicaDigest(endpoint, identity.shardKey(), identity.replicaName(),
+                                rs.getLong(1), rs.getString(2), rs.getString(3), null));
+                    }
+                }
             }
         }
+
         run.replicaCount = digests.size();
         if (digests.isEmpty()) throw new IllegalStateException("No replicas available for consistency check");
-        ReplicaDigest first = digests.getFirst();
-        run.consistencyPassed = digests.stream().allMatch(d -> d.rows == first.rows
-                && java.util.Objects.equals(d.sequenceSum, first.sequenceSum)
-                && java.util.Objects.equals(d.payloadBytes, first.payloadBytes));
+
+        Map<String, List<ReplicaDigest>> byShard = new LinkedHashMap<>();
+        for (ReplicaDigest digest : digests) {
+            byShard.computeIfAbsent(digest.shardKey(), ignored -> new ArrayList<>()).add(digest);
+        }
+
+        List<ConsistencyDetail> details = new ArrayList<>();
+        boolean overall = true;
+        for (Map.Entry<String, List<ReplicaDigest>> entry : byShard.entrySet()) {
+            List<ReplicaDigest> shardReplicas = entry.getValue();
+            if (shardReplicas.size() < 2) {
+                overall = false;
+                for (ReplicaDigest digest : shardReplicas) {
+                    String note = digest.note() != null ? digest.note() : "Only one reachable replica in shard; consistency cannot be verified";
+                    details.add(detail(run.id, digest, null, note));
+                }
+                continue;
+            }
+
+            ReplicaDigest first = shardReplicas.getFirst();
+            boolean shardConsistent = shardReplicas.stream().allMatch(d -> sameDigest(first, d));
+            if (!shardConsistent) overall = false;
+            for (ReplicaDigest digest : shardReplicas) {
+                details.add(detail(run.id, digest, shardConsistent,
+                        shardConsistent ? "Replica data matches other replicas in shard" : "Replica values differ within shard"));
+            }
+        }
+
+        replaceConsistencyDetails(run.id, details);
+        run.consistencyPassed = overall;
+    }
+
+    private ReplicaIdentity replicaIdentity(Connection c, String table) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT zookeeper_path, replica_name
+                FROM system.replicas
+                WHERE database = currentDatabase() AND table = ?
+                LIMIT 1
+                """)) {
+            ps.setString(1, table(table));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return new ReplicaIdentity(rs.getString(1), rs.getString(2));
+            }
+        }
+    }
+
+    private static boolean sameDigest(ReplicaDigest left, ReplicaDigest right) {
+        return left.rows() == right.rows()
+                && java.util.Objects.equals(left.sequenceSum(), right.sequenceSum())
+                && java.util.Objects.equals(left.payloadBytes(), right.payloadBytes());
+    }
+
+    private static ConsistencyDetail detail(UUID runId, ReplicaDigest digest, Boolean consistent, String note) {
+        return new ConsistencyDetail(runId, digest.endpoint(), digest.shardKey(), digest.replicaName(), digest.rows(),
+                digest.sequenceSum(), digest.payloadBytes(), consistent, note);
+    }
+
+    private void replaceConsistencyDetails(UUID runId, List<ConsistencyDetail> details) {
+        jdbc.update("DELETE FROM clickhouse_replicated_consistency_detail WHERE run_id=?", runId);
+        for (ConsistencyDetail detail : details) {
+            jdbc.update("""
+                    INSERT INTO clickhouse_replicated_consistency_detail
+                    (run_id,endpoint,shard_key,replica_name,rows_count,sequence_sum,payload_bytes,consistent,note)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                    """, detail.runId(), detail.endpoint(), detail.shardKey(), detail.replicaName(), detail.rowsCount(),
+                    detail.sequenceSum(), detail.payloadBytes(), detail.consistent(), detail.note());
+        }
     }
 
     private void persist(Snapshot s) {
@@ -197,26 +293,39 @@ public class ClickHouseReplicatedScenarioService {
     private static Instant instant(ResultSet rs, String name) throws java.sql.SQLException {
         java.time.OffsetDateTime v = rs.getObject(name, java.time.OffsetDateTime.class); return v == null ? null : v.toInstant();
     }
+
     private static void validate(Request r) {
         if (r == null || r.profileId() == null) throw new IllegalArgumentException("profileId is required");
         if (!List.of("REPLICATED_INSERT","REPLICATION_CATCHUP","REPLICA_CONSISTENCY").contains(r.scenario().toUpperCase())) throw new IllegalArgumentException("Unsupported scenario");
         table(r.table());
         if (r.rows() < 1 || r.batchSize() < 1 || r.payloadBytes() < 1) throw new IllegalArgumentException("rows, batchSize and payloadBytes must be positive");
     }
+
     private static String table(String value) {
         String v = value == null ? "" : value.trim();
         if (!v.matches("[A-Za-z_][A-Za-z0-9_]*")) throw new IllegalArgumentException("Invalid ClickHouse table name");
         return v;
     }
-    private static String rootMessage(Throwable e) { Throwable c=e; while(c.getCause()!=null)c=c.getCause(); return c.getMessage()==null?c.getClass().getSimpleName():c.getMessage(); }
+
+    private static String rootMessage(Throwable e) {
+        Throwable c=e; while(c.getCause()!=null)c=c.getCause(); return c.getMessage()==null?c.getClass().getSimpleName():c.getMessage();
+    }
 
     public record Request(UUID profileId, String scenario, String table, String sourceEndpoint, long rows, int batchSize,
                           int payloadBytes, long catchupTimeoutSeconds, long pollIntervalMs) { }
+
     public record Snapshot(UUID id, UUID profileId, String scenario, String table, String sourceEndpoint, String status,
                            Instant createdAt, Instant startedAt, Instant finishedAt, long rowsWritten, double insertRowsPerSecond,
                            double insertLatencyMs, long replicationCatchupMs, long maxReplicationDelaySeconds,
                            long maxReplicationQueue, long maxLogLag, Boolean consistencyPassed, int replicaCount, String message) { }
-    private record ReplicaDigest(String endpoint, long rows, String sequenceSum, String payloadBytes) { }
+
+    public record ConsistencyDetail(UUID runId, String endpoint, String shardKey, String replicaName, long rowsCount,
+                                    String sequenceSum, String payloadBytes, Boolean consistent, String note) { }
+
+    private record ReplicaIdentity(String shardKey, String replicaName) { }
+    private record ReplicaDigest(String endpoint, String shardKey, String replicaName, long rows,
+                                 String sequenceSum, String payloadBytes, String note) { }
+
     private static final class Run {
         final UUID id; final Request request; final String sourceEndpoint; final Instant createdAt;
         volatile String status="QUEUED"; volatile Instant startedAt; volatile Instant finishedAt; volatile long rowsWritten;

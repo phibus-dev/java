@@ -36,7 +36,7 @@ public class HealthDashboardController {
                         "Хранилище секретов, auth: " + settings.vault().normalizedAuthMethod()),
                 component("S3", configured(settings.s3().endpoint()), settings.s3().endpoint(),
                         configured(settings.s3().bucket()) ? "Bucket: " + settings.s3().bucket() : "Bucket не закреплён"),
-                component("Keycloak", !settings.keycloak().enabled() || settings.keycloak().configured(),
+                component("Keycloak", settings.keycloak().enabled() && settings.keycloak().configured(),
                         settings.keycloak().issuerUri(), settings.keycloak().enabled() ? "Включён" : "Отключён"),
                 new ComponentHealth("Приложение", "UP", "local", "Spring Boot process", null));
         long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();

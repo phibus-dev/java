@@ -2,6 +2,10 @@ package dev.phibus.s3.web;
 
 import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,7 +19,10 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Controller
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class ClickHouseHistoryController {
-    private static final String DEVELOPMENT_VERSION = "2.2.3-rc4";
+    private static final String DEVELOPMENT_VERSION = "2.2.3-rc7";
+    private static final ZoneId UI_ZONE = ZoneId.of("Europe/Moscow");
+    private static final DateTimeFormatter UI_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(UI_ZONE);
+
     private final ClickHouseHistoryStore history;
     private final ClickHouseProfileService profiles;
 
@@ -27,14 +34,19 @@ public class ClickHouseHistoryController {
     @GetMapping("/clickhouse")
     public String tests(Model model) {
         model.addAttribute("profiles", profiles.list());
-        model.addAttribute("history", history.list(100));
+        model.addAttribute("history", history.unifiedList(100));
         model.addAttribute("applicationVersion", applicationVersion());
         return "clickhouse-tests";
     }
 
     @GetMapping("/clickhouse/history/{id}")
     public String detail(@PathVariable UUID id, Model model) {
-        model.addAttribute("run", history.get(id));
+        ClickHouseHistoryStore.HistoryRow run = history.get(id);
+        model.addAttribute("run", run);
+        model.addAttribute("createdAtFormatted", formatUiTime(run.createdAt()));
+        model.addAttribute("startedAtFormatted", formatUiTime(run.startedAt()));
+        model.addAttribute("finishedAtFormatted", formatUiTime(run.finishedAt()));
+        model.addAttribute("actualDurationMillis", actualDurationMillis(run));
         model.addAttribute("applicationVersion", applicationVersion());
         return "clickhouse-history-detail";
     }
@@ -50,6 +62,12 @@ public class ClickHouseHistoryController {
     @ResponseBody
     public List<ClickHouseHistoryStore.HistoryRow> history(@RequestParam(defaultValue = "100") int limit) {
         return history.list(limit);
+    }
+
+    @GetMapping("/api/clickhouse/history/all")
+    @ResponseBody
+    public List<ClickHouseHistoryStore.UnifiedHistoryRow> unifiedHistory(@RequestParam(defaultValue = "100") int limit) {
+        return history.unifiedList(limit);
     }
 
     @GetMapping("/api/clickhouse/history/{id}")
@@ -70,6 +88,15 @@ public class ClickHouseHistoryController {
                                                           @RequestParam(required = false) String table,
                                                           @RequestParam(defaultValue = "50") int limit) {
         return history.trends(operation, table, limit);
+    }
+
+    static long actualDurationMillis(ClickHouseHistoryStore.HistoryRow run) {
+        if (run.startedAt() == null || run.finishedAt() == null) return 0;
+        return Math.max(0, Duration.between(run.startedAt(), run.finishedAt()).toMillis());
+    }
+
+    static String formatUiTime(Instant value) {
+        return value == null ? "—" : UI_DATE_TIME.format(value);
     }
 
     private static String applicationVersion() {

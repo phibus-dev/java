@@ -34,9 +34,20 @@ public class ClickHouseTestRunService {
 
     public ClickHouseTestRun create(ClickHouseTestRequest request) {
         validate(request);
-        String endpoint = connections.endpoint(request.profileId(), request.endpoint());
-        ClickHouseTestRun run = new ClickHouseTestRun(request, endpoint);
         ClickHouseHistoryStore store = history.getIfAvailable();
+        String endpoint;
+        try {
+            endpoint = connections.endpoint(request.profileId(), request.endpoint());
+        } catch (RuntimeException e) {
+            ClickHouseTestRun failed = new ClickHouseTestRun(request, fallbackEndpoint(request));
+            failed.start();
+            failed.fail(rootMessage(e));
+            runs.put(failed.id(), failed);
+            persistFinal(store, failed, request);
+            return failed;
+        }
+
+        ClickHouseTestRun run = new ClickHouseTestRun(request, endpoint);
         if (store != null) {
             try {
                 store.save(run.snapshot(), request);
@@ -46,13 +57,16 @@ public class ClickHouseTestRunService {
             }
         }
         runs.put(run.id(), run);
-        testExecutor.execute(() -> {
-            engine.execute(run);
-            if (store != null) {
-                try { store.save(run.snapshot(), request); }
-                catch (RuntimeException e) { LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), e); }
-            }
-        });
+        try {
+            testExecutor.execute(() -> {
+                engine.execute(run);
+                persistFinal(store, run, request);
+            });
+        } catch (RuntimeException e) {
+            run.start();
+            run.fail(rootMessage(e));
+            persistFinal(store, run, request);
+        }
         return run;
     }
 
@@ -61,7 +75,12 @@ public class ClickHouseTestRunService {
         if (connectionSpec == null) throw new IllegalArgumentException("ClickHouse connection spec is required");
         ClickHouseTestRun run = new ClickHouseTestRun(request, connectionSpec.endpoint());
         runs.put(run.id(), run);
-        testExecutor.execute(() -> engine.execute(run, connectionSpec));
+        try {
+            testExecutor.execute(() -> engine.execute(run, connectionSpec));
+        } catch (RuntimeException e) {
+            run.start();
+            run.fail(rootMessage(e));
+        }
         return run;
     }
 
@@ -77,6 +96,25 @@ public class ClickHouseTestRunService {
     }
 
     public void cancel(UUID id) { get(id).cancel(); }
+
+    private void persistFinal(ClickHouseHistoryStore store, ClickHouseTestRun run, ClickHouseTestRequest request) {
+        if (store == null) return;
+        try {
+            store.save(run.snapshot(), request);
+        } catch (RuntimeException e) {
+            LOG.error("Cannot persist ClickHouse test history for run {}", run.id(), e);
+        }
+    }
+
+    private static String fallbackEndpoint(ClickHouseTestRequest request) {
+        return request.endpoint() == null || request.endpoint().isBlank() ? "—" : request.endpoint().trim();
+    }
+
+    private static String rootMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
 
     static void validate(ClickHouseTestRequest request) {
         if (request == null) throw new IllegalArgumentException("ClickHouse test request is required");

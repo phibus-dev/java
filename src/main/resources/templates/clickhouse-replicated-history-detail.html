@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Replicated test history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<body><main class="container">
+<header class="brand-header"><div class="brand-title"><h1>Результат Replicated test</h1><p th:text="${run.id}"></p></div><span class="badge">Replicated test</span></header>
+<nav class="corporate-nav"><a href="/clickhouse">Общая история</a><a href="/clickhouse/replicated-tests">Replicated tests</a><a href="/settings">Настройки</a></nav>
+<section class="panel"><h2>Выполнение</h2><div class="system-grid">
+<div><span>Тип теста</span><strong>Replicated test</strong></div><div><span>Сценарий</span><strong th:text="${run.scenario}"></strong></div>
+<div><span>Статус</span><strong th:text="${run.status}"></strong></div><div><span>Таблица</span><strong th:text="${run.table}"></strong></div>
+<div><span>Source endpoint</span><strong th:text="${run.sourceEndpoint}"></strong></div><div><span>Profile ID</span><strong th:text="${run.profileId}"></strong></div>
+<div><span>Создан</span><strong th:text="${createdAtFormatted}"></strong></div><div><span>Запущен</span><strong th:text="${startedAtFormatted}"></strong></div>
+<div><span>Завершён</span><strong th:text="${finishedAtFormatted}"></strong></div><div><span>Фактическая длительность</span><strong th:text="${actualDurationMillis + ' ms'}"></strong></div>
+</div></section>
+<section class="panel"><h2>Метрики Replicated test</h2><div class="system-grid">
+<div><span>Записано строк</span><strong th:text="${run.rowsWritten}"></strong></div><div><span>Строк в секунду</span><strong th:text="${#numbers.formatDecimal(run.insertRowsPerSecond,1,2) + ' строк/с'}"></strong></div>
+<div><span>Задержка INSERT</span><strong th:text="${#numbers.formatDecimal(run.insertLatencyMs,1,1) + ' ms'}"></strong></div><div><span>Время сходимости реплик</span><strong th:text="${run.replicationCatchupMs + ' ms'}"></strong></div>
+<div><span>Максимальная задержка</span><strong th:text="${run.maxReplicationDelaySeconds + ' s'}"></strong></div><div><span>Максимальная очередь репликации</span><strong th:text="${run.maxReplicationQueue}"></strong></div>
+<div><span>Отставание журнала репликации</span><strong th:text="${run.maxLogLag}"></strong></div><div><span>Количество реплик</span><strong th:text="${run.replicaCount}"></strong></div>
+<div><span>Консистентность</span><strong th:text="${run.consistencyPassed == null ? '—' : (run.consistencyPassed ? 'PASS' : 'FAIL')}"></strong></div>
+</div></section>
+<section class="panel"><h2>Проверка консистентности по shard</h2>
+<p class="muted">Реплики группируются по zookeeper_path из system.replicas. Сравнение выполняется только между репликами одного shard.</p>
+<div class="table-wrap"><table><thead><tr><th>Shard / replication path</th><th>Replica</th><th>Endpoint</th><th>Строк</th><th>Σ sequence</th><th>Payload bytes</th><th>Результат</th><th>Диагностика</th></tr></thead>
+<tbody><tr th:each="d:${consistencyDetails}"><td th:text="${d.shardKey}"></td><td th:text="${d.replicaName ?: '—'}"></td><td th:text="${d.endpoint}"></td><td th:text="${d.rowsCount}"></td><td th:text="${d.sequenceSum ?: '—'}"></td><td th:text="${d.payloadBytes ?: '—'}"></td><td><strong th:text="${d.consistent == null ? 'НЕ ПРОВЕРЕНО' : (d.consistent ? 'PASS' : 'FAIL')}"></strong></td><td th:text="${d.note ?: '—'}"></td></tr>
+<tr th:if="${#lists.isEmpty(consistencyDetails)}"><td colspan="8">Для этого запуска детальная диагностика не сохранена. Она будет доступна для новых запусков после обновления.</td></tr></tbody></table></div>
+</section>
+<section class="panel"><h2>Ошибки и сообщения выполнения</h2><pre style="white-space:pre-wrap;overflow-wrap:anywhere" th:text="${run.message ?: 'Нет сообщений'}"></pre></section>
+</main></body></html>
