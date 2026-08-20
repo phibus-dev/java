@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClickHouse history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClickHouse history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css"></head>
 <body><main class="container">
 <header class="brand-header"><div class="brand-title"><h1>Результат ClickHouse</h1><p th:text="${run.id}"></p></div><span class="badge" th:text="${'Версия '+applicationVersion}"></span></header>
 <nav class="corporate-nav"><a href="/clickhouse">← Тесты и история</a><a href="/settings">Настройки</a></nav>
@@ -44,4 +44,4 @@
 <div><span>Payload</span><strong th:text="${run.payloadBytes + ' bytes'}"></strong></div>
 <div><span>Auto create table</span><strong th:text="${run.autoCreateTable ? 'Да' : 'Нет'}"></strong></div>
 </div></section>
-</main></body></html>
+</main><script src="/app-ui.js"></script></body></html>
