@@ -7,11 +7,13 @@
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Распределённые тесты — ЭВО.СНТ</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app-ui.css">
 </head>
 <body>
 <main class="container">
     <header class="brand-header">
         <div class="brand-title"><h1>Распределённые тесты</h1><p>Запуск S3 и ClickHouse заданий на выбранных агентах.</p></div>
+        <div class="corporate-brand"><img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo"><div class="platform-name">ТПП ЭВОПЛАТФОРМА</div></div><span class="badge">Distributed</span>
     </header>
     <nav class="corporate-nav" aria-label="Основная навигация"><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/distributed-tests" aria-current="page">Распределённые тесты</a><a href="/agents">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
 
@@ -34,6 +36,7 @@
         <div id="runs" aria-live="polite">Получение распределённых запусков…</div>
     </section>
 </main>
+<script src="/app-ui.js"></script>
 <script src="/csrf-fetch.js"></script>
 <script src="/distributed-tests.js"></script>
 </body>
