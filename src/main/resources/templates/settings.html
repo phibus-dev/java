@@ -7,6 +7,7 @@
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Настройки — ЭВО.СНТ</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app-ui.css">
 </head>
 <body>
 <main class="container">
@@ -19,7 +20,7 @@
             <img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo">
             <div class="platform-name">ТПП ЭВОПЛАТФОРМА</div>
         </div>
-        <span class="badge" th:text="${'Версия ' + applicationVersion}">Версия 2.1.0</span>
+        <span class="badge" th:text="${'Версия ' + applicationVersion}">Версия 2.2.3-rc8</span>
     </header>
 
     <nav class="corporate-nav" aria-label="Основная навигация">
@@ -118,7 +119,7 @@
     <section class="panel" id="system-information">
         <h2>Система</h2>
         <div class="system-grid">
-            <div><span>Версия приложения</span><strong th:text="${applicationVersion}">2.1.0</strong></div>
+            <div><span>Версия приложения</span><strong th:text="${applicationVersion}">2.2.3-rc8</strong></div>
             <div><span>Режим конфигурации</span><strong th:text="${state}">STATE</strong></div>
             <div><span>Браузерная платформа</span><strong id="system-platform">—</strong></div>
             <div><span>Язык интерфейса</span><strong id="system-language">—</strong></div>
@@ -127,6 +128,7 @@
         </div>
     </section>
 </main>
+<script src="/app-ui.js"></script>
 <script src="/settings.js"></script>
 </body>
 </html>
