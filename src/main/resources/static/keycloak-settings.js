@@ -18,18 +18,27 @@
     };
   }
 
-  function csrf() {
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="_csrf"]');
+    if (meta?.content) return meta.content;
     const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : '';
   }
 
+  function csrfHeader() {
+    const meta = document.querySelector('meta[name="_csrf_header"]');
+    return meta?.content || 'X-XSRF-TOKEN';
+  }
+
   async function call(url) {
+    const headers = {'Content-Type': 'application/json'};
+    const token = csrfToken();
+    if (token) headers[csrfHeader()] = token;
+
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRF-TOKEN': csrf()
-      },
+      headers,
+      credentials: 'same-origin',
       body: JSON.stringify(payload())
     });
     const text = await response.text();
