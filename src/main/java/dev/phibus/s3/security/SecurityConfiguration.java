@@ -120,10 +120,12 @@ public class SecurityConfiguration {
         private final String viewerRole;
 
         KeycloakRoleConverter(String clientId, String adminRole, String operatorRole, String viewerRole) {
-            this.clientId = normalize(clientId);
-            this.adminRole = normalize(adminRole);
-            this.operatorRole = normalize(operatorRole);
-            this.viewerRole = normalize(viewerRole);
+            // Keycloak client IDs are map keys under resource_access and are case-sensitive.
+            // Do not uppercase/lowercase the client ID; only remove accidental surrounding whitespace.
+            this.clientId = trim(clientId);
+            this.adminRole = normalizeRole(adminRole);
+            this.operatorRole = normalizeRole(operatorRole);
+            this.viewerRole = normalizeRole(viewerRole);
         }
 
         @Override
@@ -142,7 +144,7 @@ public class SecurityConfiguration {
                 return authorities;
             }
             for (Object roleValue : roles) {
-                String role = normalize(String.valueOf(roleValue));
+                String role = normalizeRole(String.valueOf(roleValue));
                 if (role.equals(adminRole)) {
                     authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                 } else if (role.equals(operatorRole)) {
@@ -154,8 +156,12 @@ public class SecurityConfiguration {
             return authorities;
         }
 
-        private static String normalize(String value) {
-            return value == null ? "" : value.trim().toUpperCase();
+        private static String trim(String value) {
+            return value == null ? "" : value.trim();
+        }
+
+        private static String normalizeRole(String value) {
+            return trim(value).toUpperCase();
         }
     }
 }
