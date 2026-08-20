@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Replicated test history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Replicated test history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css"></head>
 <body><main class="container">
 <header class="brand-header"><div class="brand-title"><h1>Результат Replicated test</h1><p th:text="${run.id}"></p></div><span class="badge">Replicated test</span></header>
 <nav class="corporate-nav"><a href="/clickhouse">Общая история</a><a href="/clickhouse/replicated-tests">Replicated tests</a><a href="/settings">Настройки</a></nav>
@@ -25,4 +25,4 @@
 <tr th:if="${#lists.isEmpty(consistencyDetails)}"><td colspan="8">Для этого запуска детальная диагностика не сохранена. Она будет доступна для новых запусков после обновления.</td></tr></tbody></table></div>
 </section>
 <section class="panel"><h2>Ошибки и сообщения выполнения</h2><pre style="white-space:pre-wrap;overflow-wrap:anywhere" th:text="${run.message ?: 'Нет сообщений'}"></pre></section>
-</main></body></html>
+</main><script src="/app-ui.js"></script></body></html>
