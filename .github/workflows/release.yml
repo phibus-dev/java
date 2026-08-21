@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.2.3'
+        description: 'Release tag, for example v2.3.0-rc1'
         required: true
-        default: 'v2.2.3'
+        default: 'v2.3.0-rc1'
   push:
     branches:
       - 'release/**'
@@ -23,50 +23,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-
       - name: Resolve versions
         id: version
         shell: bash
         run: |
           PROJECT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            RELEASE_TAG="${{ inputs.version }}"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            RELEASE_TAG="${GITHUB_REF_NAME}"
-          else
-            RELEASE_TAG="v${PROJECT_VERSION}"
-          fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then RELEASE_TAG="${{ inputs.version }}"; elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then RELEASE_TAG="${GITHUB_REF_NAME}"; else RELEASE_TAG="v${PROJECT_VERSION}"; fi
           test "$RELEASE_TAG" = "v${PROJECT_VERSION}"
           echo "project=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-
       - name: Build, test and create documentation artifacts
         run: mvn -B clean verify source:jar javadoc:jar
-
       - name: Prepare release assets
         shell: bash
         run: |
-          VERSION="${{ steps.version.outputs.project }}"
-          RELEASE_NOTES="RELEASE_NOTES_${VERSION}.md"
-          UPGRADE_GUIDE="UPGRADE_${VERSION}.md"
-          mkdir -p dist
-          test -f "$RELEASE_NOTES"
-          test -f "$UPGRADE_GUIDE"
+          VERSION="${{ steps.version.outputs.project }}"; RELEASE_NOTES="RELEASE_NOTES_${VERSION}.md"; UPGRADE_GUIDE="UPGRADE_${VERSION}.md"
+          mkdir -p dist; test -f "$RELEASE_NOTES"; test -f "$UPGRADE_GUIDE"
           cp "target/s3-multipart-uploader-${VERSION}.jar" "dist/evo-snt-s3-${VERSION}.jar"
           cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/evo-snt-s3-${VERSION}-sources.jar"
           cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/evo-snt-s3-${VERSION}-javadoc.jar"
           cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
-          cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" dist/
-          cd dist
-          sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" > SHA256SUMS
-
+          cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" UX_PREVIEW_2.3.0.md dist/
+          cd dist; sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" UX_PREVIEW_2.3.0.md > SHA256SUMS
       - name: Upload release assets to Actions
         uses: actions/upload-artifact@v7
         with:
@@ -74,17 +58,14 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Build and publish prerelease Docker image
         if: ${{ contains(steps.version.outputs.project, '-') }}
         uses: docker/build-push-action@v7
@@ -92,25 +73,13 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
-
-      - name: Build and publish stable Docker image
-        if: ${{ !contains(steps.version.outputs.project, '-') }}
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.2
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
-
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ЭВО.СНТ S3 ${{ steps.version.outputs.tag }}
-          prerelease: ${{ contains(steps.version.outputs.project, '-') }}
+          name: ЭВО.СНТ S3 ${{ steps.version.outputs.tag }} UX Preview
+          prerelease: true
           body_path: RELEASE_NOTES_${{ steps.version.outputs.project }}.md
           fail_on_unmatched_files: true
           files: |
@@ -122,3 +91,4 @@ jobs:
             dist/README.md
             dist/RELEASE_NOTES_${{ steps.version.outputs.project }}.md
             dist/UPGRADE_${{ steps.version.outputs.project }}.md
+            dist/UX_PREVIEW_2.3.0.md
