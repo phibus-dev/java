@@ -1,61 +1,50 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>S3 profiles</title>
-    <style>
-        body{font-family:system-ui,sans-serif;margin:2rem;max-width:1200px}input,select,button{padding:.55rem;margin:.2rem}fieldset{margin:1rem 0;padding:1rem}table{width:100%;border-collapse:collapse}th,td{padding:.6rem;border-bottom:1px solid #ddd;text-align:left}.default{font-weight:700}.muted{color:#666}.error{color:#b00020}
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>Профили S3 — ЭВО.СНТ</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app-ui.css">
 </head>
 <body>
-<h1>Профили подключений S3</h1>
-<p class="muted">Секретные ключи не сохраняются в PostgreSQL. Профиль хранит только параметры подключения и ссылку на путь в Vault.</p>
+<main class="container">
+  <header class="brand-header">
+    <div class="brand-title"><h1>Профили подключений S3</h1><p>Управление подключениями к S3-совместимым хранилищам и ссылками на секреты в Vault.</p></div>
+  </header>
+  <nav class="corporate-nav"><a href="/">Главная</a><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/history">История</a><a href="/agents">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings" aria-current="page">Настройки</a></nav>
 
-<fieldset>
-    <legend>Создание профиля</legend>
-    <input id="name" placeholder="Имя профиля" required>
-    <input id="endpoint" placeholder="https://s3.example.org" size="35" required>
-    <input id="region" value="us-east-1" placeholder="Регион">
-    <input id="bucket" placeholder="Бакет">
-    <select id="credentialsSource"><option>VAULT</option><option>ENVIRONMENT</option><option>MANUAL</option></select>
-    <input id="vaultSecretPath" placeholder="secret/data/s3/profile" size="30">
-    <input id="caCertificatePath" placeholder="Путь к CA certificate" size="28">
-    <label><input id="pathStyleAccess" type="checkbox" checked> Path-style</label>
-    <label><input id="defaultProfile" type="checkbox"> По умолчанию</label>
-    <button onclick="createProfile()">Создать</button>
-    <div id="message"></div>
-</fieldset>
+  <section class="panel">
+    <div class="section-heading"><div><h2>Новый профиль</h2><p class="muted">Секретные ключи не сохраняются в PostgreSQL. Профиль содержит параметры подключения и путь к секрету в Vault.</p></div><a href="/settings">← К настройкам</a></div>
+    <div class="grid two">
+      <label>Имя профиля<input id="name" placeholder="Например, minio-prod" required></label>
+      <label>Endpoint<input id="endpoint" placeholder="https://s3.example.org" required></label>
+      <label>Регион<input id="region" value="us-east-1" placeholder="Регион"></label>
+      <label>Бакет<input id="bucket" placeholder="Бакет"></label>
+      <label>Источник credentials<select id="credentialsSource"><option>VAULT</option><option>ENVIRONMENT</option><option>MANUAL</option></select></label>
+      <label>Vault path<input id="vaultSecretPath" placeholder="secret/data/s3/profile"></label>
+      <label>CA certificate<input id="caCertificatePath" placeholder="Путь к CA certificate"></label>
+      <div class="form-options"><label class="check"><input id="pathStyleAccess" type="checkbox" checked> Path-style access</label><label class="check"><input id="defaultProfile" type="checkbox"> Профиль по умолчанию</label></div>
+    </div>
+    <div class="actions"><button type="button" id="create-profile">Создать профиль</button></div>
+    <div id="message" class="diagnostic-output" aria-live="polite"></div>
+  </section>
 
-<table>
-<thead><tr><th>Имя</th><th>Endpoint</th><th>Регион</th><th>Бакет</th><th>Credentials</th><th>Vault path</th><th>Действия</th></tr></thead>
-<tbody id="profiles"></tbody>
-</table>
-
-<script>
-const csrf = document.cookie.split('; ').find(v=>v.startsWith('XSRF-TOKEN='));
-const headers = {'Content-Type':'application/json', ...(csrf ? {'X-XSRF-TOKEN':decodeURIComponent(csrf.split('=')[1])} : {})};
-async function load(){
- const response=await fetch('/api/s3-profiles'); const profiles=await response.json();
- document.getElementById('profiles').innerHTML=profiles.map(p=>`<tr class="${p.defaultProfile?'default':''}">
- <td>${esc(p.name)}${p.defaultProfile?' ★':''}</td><td>${esc(p.endpoint)}</td><td>${esc(p.region)}</td><td>${esc(p.bucket||'')}</td>
- <td>${esc(p.credentialsSource)}</td><td>${esc(p.vaultSecretPath||'')}</td><td>
- <button onclick="makeDefault('${p.id}')">Default</button><button onclick="cloneProfile('${p.id}','${escAttr(p.name)}')">Clone</button>
- <button onclick="removeProfile('${p.id}',${p.defaultProfile})">Delete</button></td></tr>`).join('');
-}
-async function createProfile(){
- const body={name:v('name'),endpoint:v('endpoint'),region:v('region'),bucket:v('bucket'),pathStyleAccess:c('pathStyleAccess'),
- credentialsSource:v('credentialsSource'),vaultSecretPath:v('vaultSecretPath'),accessKeyField:'accessKey',secretKeyField:'secretKey',
- sessionTokenField:'sessionToken',caCertificatePath:v('caCertificatePath'),defaultProfile:c('defaultProfile')};
- await call('/api/s3-profiles','POST',body); await load();
-}
-async function makeDefault(id){await call(`/api/s3-profiles/${id}/default`,'POST',{});await load()}
-async function cloneProfile(id,name){const cloneName=prompt('Имя копии',name+' copy');if(cloneName){await call(`/api/s3-profiles/${id}/clone`,'POST',{name:cloneName});await load()}}
-async function removeProfile(id,isDefault){if(isDefault){alert('Сначала назначьте другой профиль по умолчанию');return}if(confirm('Удалить профиль?')){await call(`/api/s3-profiles/${id}`,'DELETE');await load()}}
-async function call(url,method,body){const r=await fetch(url,{method,headers,body:method==='DELETE'?undefined:JSON.stringify(body)});if(!r.ok){const text=await r.text();document.getElementById('message').innerHTML=`<span class="error">${esc(text)}</span>`;throw new Error(text)}document.getElementById('message').textContent='Сохранено'}
-function v(id){return document.getElementById(id).value}function c(id){return document.getElementById(id).checked}
-function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}function escAttr(s){return esc(s).replace(/`/g,'&#96;')}
-load();
-</script>
+  <section class="panel">
+    <div class="section-heading"><div><h2>Сохранённые профили</h2><p class="muted">Назначение профиля по умолчанию, клонирование и удаление.</p></div><button type="button" class="secondary" id="reload-profiles">Обновить</button></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Имя</th><th>Endpoint</th><th>Регион</th><th>Бакет</th><th>Credentials</th><th>Vault path</th><th>Действия</th></tr></thead>
+        <tbody id="profiles"><tr><td colspan="7" class="muted">Загрузка…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script src="/app-ui.js"></script>
+<script src="/s3-profiles.js"></script>
 </body>
 </html>
