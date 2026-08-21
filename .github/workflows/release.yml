@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.3.0-rc3'
+        description: 'Release tag, for example v2.3.0-rc4'
         required: true
-        default: 'v2.3.0-rc3'
+        default: 'v2.3.0-rc4'
   push:
     branches:
       - 'release/**'
