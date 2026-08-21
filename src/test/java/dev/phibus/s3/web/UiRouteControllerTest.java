@@ -26,6 +26,14 @@ class UiRouteControllerTest {
     }
 
     @Test
+    void exposesHomeDashboard() throws Exception {
+        mvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("home"))
+                .andExpect(forwardedUrl("/templates/home.html"));
+    }
+
+    @Test
     void exposesCanonicalSchedulesRoute() throws Exception {
         mvc.perform(get("/schedules"))
                 .andExpect(status().isOk())
@@ -35,7 +43,7 @@ class UiRouteControllerTest {
 
     @Test
     void redirectsLegacyHtmlRoutes() throws Exception {
-        mvc.perform(get("/index.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/tasks"));
+        mvc.perform(get("/index.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/"));
         mvc.perform(get("/history.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/history"));
         mvc.perform(get("/agents.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/agents"));
         mvc.perform(get("/distributed-tests.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/distributed-tests"));
