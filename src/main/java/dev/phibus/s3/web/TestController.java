@@ -31,7 +31,7 @@ public class TestController {
     private final TestRunService service;
     public TestController(TestRunService service) { this.service = service; }
 
-    @GetMapping({"/", "/tasks"})
+    @GetMapping("/tasks")
     public String tasks(Model model) {
         model.addAttribute("applicationVersion", applicationVersion());
         return "index";
