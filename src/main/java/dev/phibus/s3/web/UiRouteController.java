@@ -5,6 +5,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
 public class UiRouteController {
+    @GetMapping("/")
+    public String home() {
+        return "home";
+    }
+
     @GetMapping("/schedules")
     public String schedules() {
         return "schedules";
@@ -12,7 +17,7 @@ public class UiRouteController {
 
     @GetMapping("/index.html")
     public String legacyIndex() {
-        return "redirect:/tasks";
+        return "redirect:/";
     }
 
     @GetMapping("/history.html")
