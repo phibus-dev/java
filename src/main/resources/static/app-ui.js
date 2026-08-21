@@ -36,7 +36,7 @@
   }
   function breadcrumbs() {
     if(document.querySelector('.breadcrumbs')||location.pathname==='/') return;
-    const labels={tasks:'S3',history:'История',clickhouse:'ClickHouse',agents:'Агенты','distributed-tests':'Распределённые тесты',monitoring:'Мониторинг',settings:'Настройки',schedules:'Расписания','replicated-tests':'Replicated tests','failover-tests':'Failover',replication:'Replication',ha:'HA Dashboard',keycloak:'Keycloak'};
+    const labels={tasks:'S3',history:'История',clickhouse:'ClickHouse',agents:'Агенты','distributed-tests':'Распределённые тесты',monitoring:'Мониторинг',settings:'Настройки',schedules:'Расписания','replicated-tests':'Replicated tests','failover-tests':'Failover',replication:'Replication',ha:'HA Dashboard',keycloak:'Keycloak','s3-profiles':'Профили S3'};
     const parts=location.pathname.split('/').filter(Boolean); if(!parts.length)return;
     let path=''; const items=['<a href="/">Главная</a>'];
     parts.forEach((p,i)=>{path+=`/${p}`;const label=labels[p]||decodeURIComponent(p);items.push(i===parts.length-1?`<span>${label}</span>`:`<a href="${path}">${label}</a>`);});
@@ -47,6 +47,13 @@
     let host=document.querySelector('.toast-host'); if(!host){host=document.createElement('div');host.className='toast-host';document.body.appendChild(host);}
     const t=document.createElement('div');t.className=`toast toast-${type}`;t.textContent=message;host.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),200);},4200);
   }
+  function submitLogout() {
+    const c=csrf();
+    if(!c.token){notify('Не удалось получить CSRF-токен для выхода','error');return;}
+    const form=document.createElement('form');form.method='POST';form.action='/logout';form.hidden=true;
+    const input=document.createElement('input');input.type='hidden';input.name='_csrf';input.value=c.token;form.appendChild(input);
+    document.body.appendChild(form);form.submit();
+  }
   function addSearchAndUser(session) {
     const header=document.querySelector('.brand-header'); if(!header||header.querySelector('.app-user-tools')) return;
     const roles=session?.roles||[]; const primary=roles.includes('ADMIN')?'ADMIN':roles.includes('OPERATOR')?'OPERATOR':roles.includes('VIEWER')?'VIEWER':'';
@@ -55,7 +62,7 @@
     header.appendChild(box);
     const sf=box.querySelector('.global-search');sf.addEventListener('submit',e=>{e.preventDefault();const q=sf.querySelector('input').value.trim();if(q)location.href=`/history?search=${encodeURIComponent(q)}`;});
     box.querySelector('.user-menu-toggle').addEventListener('click',()=>box.querySelector('.user-menu').classList.toggle('open'));
-    box.querySelector('.logout-button')?.addEventListener('click',async()=>{const c=csrf();const h={};if(c.token)h[c.header]=c.token;const r=await fetch('/logout',{method:'POST',headers:h,credentials:'same-origin'});if(r.ok||r.redirected)location.href='/';else notify('Не удалось завершить сессию','error');});
+    box.querySelector('.logout-button')?.addEventListener('click',submitLogout);
     applyRoleAwareUi(primary);
   }
   function applyRoleAwareUi(role) {
