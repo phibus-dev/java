@@ -40,7 +40,7 @@ public class SessionInfoController {
         result.put("authenticated", true);
         String username = authentication.getName();
         if (authentication.getPrincipal() instanceof OidcUser oidcUser) {
-            String preferred = oidcUser.getPreferredUsername();
+            String preferred = oidcUser.getClaimAsString("preferred_username");
             if (preferred != null && !preferred.isBlank()) username = preferred;
         }
         result.put("username", username);
