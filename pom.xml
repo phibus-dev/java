@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.5.16</version><relativePath/></parent>
-    <groupId>dev.phibus</groupId><artifactId>s3-multipart-uploader</artifactId><version>2.2.3-rc8</version><name>ЭВО.СНТ S3</name>
+    <groupId>dev.phibus</groupId><artifactId>s3-multipart-uploader</artifactId><version>2.2.3</version><name>ЭВО.СНТ S3</name>
     <properties><java.version>21</java.version><aws.sdk.version>2.53.1</aws.sdk.version><clickhouse.jdbc.version>0.9.8</clickhouse.jdbc.version><pdfbox.version>3.0.8</pdfbox.version><jacoco.version>0.8.15</jacoco.version><spotbugs.version>4.10.3.0</spotbugs.version><testcontainers.version>1.21.4</testcontainers.version><cyclonedx.version>2.9.3</cyclonedx.version></properties>
     <dependencyManagement><dependencies>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bom</artifactId><version>${aws.sdk.version}</version><type>pom</type><scope>import</scope></dependency>

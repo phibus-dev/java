@@ -29,7 +29,7 @@ public class KeycloakSettingsService {
         BootstrapSettings.KeycloakSettings keycloak = new BootstrapSettings.KeycloakSettings(
                 form.enabled(), trim(form.issuerUri()), trim(form.clientId()), encryptedSecret,
                 defaultValue(form.scopes(), "openid,profile,email"),
-                defaultValue(form.roleSource(), "REALM"),
+                "CLIENT",
                 defaultValue(form.adminRole(), "ADMIN"),
                 defaultValue(form.operatorRole(), "OPERATOR"),
                 defaultValue(form.viewerRole(), "VIEWER"));

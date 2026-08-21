@@ -37,6 +37,10 @@ public class KeycloakBootstrapEnvironmentPostProcessor implements EnvironmentPos
             }
             Map<String, Object> properties = new LinkedHashMap<>();
             properties.put("s3perf.security.enabled", "true");
+            properties.put("s3perf.security.keycloak.client-id", keycloak.clientId());
+            properties.put("s3perf.security.keycloak.admin-role", value(keycloak.adminRole(), "ADMIN"));
+            properties.put("s3perf.security.keycloak.operator-role", value(keycloak.operatorRole(), "OPERATOR"));
+            properties.put("s3perf.security.keycloak.viewer-role", value(keycloak.viewerRole(), "VIEWER"));
             properties.put("spring.security.oauth2.client.provider.keycloak.issuer-uri", keycloak.issuerUri());
             properties.put("spring.security.oauth2.client.registration.keycloak.client-id", keycloak.clientId());
             properties.put("spring.security.oauth2.client.registration.keycloak.authorization-grant-type", "authorization_code");
