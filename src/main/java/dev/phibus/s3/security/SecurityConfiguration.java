@@ -13,6 +13,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
@@ -21,6 +23,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration
@@ -60,7 +63,8 @@ public class SecurityConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "s3perf.security.enabled", havingValue = "true")
-    SecurityFilterChain keycloakSecurity(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
+    SecurityFilterChain keycloakSecurity(HttpSecurity http, JwtDecoder jwtDecoder,
+                                         ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         configureHeaders(http);
         OidcUserService delegate = new OidcUserService();
         return http
@@ -81,8 +85,14 @@ public class SecurityConfiguration {
                 .oauth2Login(oauth -> oauth.userInfoEndpoint(userInfo -> userInfo.oidcUserService(userRequest ->
                         loadOidcUserWithClientRoles(delegate, jwtDecoder, userRequest))))
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
-                .logout(logout -> logout.logoutSuccessUrl("/"))
+                .logout(logout -> logout.logoutSuccessHandler(oidcLogoutSuccessHandler(clientRegistrationRepository)))
                 .build();
+    }
+
+    private LogoutSuccessHandler oidcLogoutSuccessHandler(ClientRegistrationRepository repository) {
+        OidcClientInitiatedLogoutSuccessHandler handler = new OidcClientInitiatedLogoutSuccessHandler(repository);
+        handler.setPostLogoutRedirectUri("{baseUrl}/");
+        return handler;
     }
 
     private OidcUser loadOidcUserWithClientRoles(OidcUserService delegate, JwtDecoder jwtDecoder,
@@ -120,8 +130,6 @@ public class SecurityConfiguration {
         private final String viewerRole;
 
         KeycloakRoleConverter(String clientId, String adminRole, String operatorRole, String viewerRole) {
-            // Keycloak client IDs are map keys under resource_access and are case-sensitive.
-            // Do not uppercase/lowercase the client ID; only remove accidental surrounding whitespace.
             this.clientId = trim(clientId);
             this.adminRole = normalizeRole(adminRole);
             this.operatorRole = normalizeRole(operatorRole);
