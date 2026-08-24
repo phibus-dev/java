@@ -8,6 +8,9 @@ public class KafkaPageController {
     @GetMapping("/kafka")
     public String kafka() { return "kafka"; }
 
+    @GetMapping("/kafka/m2")
+    public String kafkaM2() { return "kafka-m2"; }
+
     @GetMapping("/settings/kafka-profiles")
     public String profiles() { return "kafka-profiles"; }
 }
