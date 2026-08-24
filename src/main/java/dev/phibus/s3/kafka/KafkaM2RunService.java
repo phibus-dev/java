@@ -207,7 +207,7 @@ public class KafkaM2RunService {
     private KafkaProfileService.Profile resolveProfile(UUID id) { KafkaProfileService.Profile p=id==null?profiles.defaultProfile():profiles.get(id); if(p==null)throw new IllegalArgumentException("Kafka profile is required"); return p; }
     private static byte[] payload(int size,long seq){byte[] b=new byte[Math.max(32,size)];ByteBuffer.wrap(b).putLong(seq);return b;}
     private static double p(List<Double> values,double q){if(values.isEmpty())return 0;int i=(int)Math.ceil(q*values.size())-1;return values.get(Math.max(0,Math.min(i,values.size()-1)));}
-    private static void throttle(long started,long sent,long rate){long expected=(long)(sent*1_000_000_000d/rate);long wait=expected-(System.nanoTime()-started);if(wait>0)java.util.concurrent.locks.LockSupport.parkNanos(wait);}
+    private static void throttle(long started,long sent,double rate){long expected=(long)(sent*1_000_000_000d/rate);long wait=expected-(System.nanoTime()-started);if(wait>0)java.util.concurrent.locks.LockSupport.parkNanos(wait);}
     private static String rootMessage(Throwable t){Throwable c=t;while(c.getCause()!=null)c=c.getCause();return c.getMessage()==null?c.getClass().getSimpleName():c.getMessage();}
     private static String defaultValue(String v,String d){return v==null||v.isBlank()?d:v.trim();}
     private static String required(String v,String m){if(v==null||v.isBlank())throw new IllegalArgumentException(m);return v.trim();}
