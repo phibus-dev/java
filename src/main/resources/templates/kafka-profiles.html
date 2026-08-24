@@ -10,18 +10,19 @@
 <header class="brand-header"><div class="brand-title"><h1>Профили Kafka</h1><p>Подключения к Apache Kafka/KRaft для нагрузочного тестирования.</p></div></header>
 <nav class="corporate-nav" aria-label="Основная навигация"><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/kafka" aria-current="page">Kafka</a><a href="/distributed-tests">Распределённые тесты</a><a href="/agents">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
 <nav class="corporate-nav" aria-label="Разделы Kafka"><a href="/kafka">Producer</a><a href="/kafka/m2">Consumer &amp; E2E</a><a href="/kafka/m3">Replication &amp; KRaft</a><a href="/kafka/m4">Failover &amp; Resilience</a><a href="/settings/kafka-profiles" aria-current="page">Профили</a></nav>
-<section class="panel"><div class="section-heading"><div><h2 id="formTitle">Новый профиль</h2><p class="muted">Секреты SASL не сохраняются в PostgreSQL. Используйте Vault или переменную окружения.</p></div><button id="reset" class="secondary" type="button">Новый профиль</button></div>
+<section class="panel"><div class="section-heading"><div><h2 id="formTitle">Новый профиль</h2><p class="muted">Источник credentials выбирается для SASL-подключений: пароль в профиле, переменная окружения ОС или Vault.</p></div><button id="reset" class="secondary" type="button">Новый профиль</button></div>
 <input id="id" type="hidden">
 <div class="grid two">
 <label>Название<input id="name" required placeholder="Kafka PROD"></label>
 <label>Bootstrap servers<input id="bootstrapServers" required placeholder="broker-01:9093,broker-02:9093"></label>
 <label>Security protocol<select id="securityProtocol"><option>PLAINTEXT</option><option>SSL</option><option>SASL_PLAINTEXT</option><option>SASL_SSL</option></select></label>
-<label>SASL mechanism<select id="saslMechanism"><option value="">—</option><option>PLAIN</option><option>SCRAM-SHA-256</option><option>SCRAM-SHA-512</option></select></label>
-<label>Username<input id="username" autocomplete="off"></label>
-<label>Источник credentials<select id="credentialsSource"><option>NONE</option><option>VAULT</option><option>ENVIRONMENT</option></select></label>
-<label>Vault secret path<input id="vaultSecretPath" placeholder="kafka/load-test"></label>
-<label>Поле пароля в Vault<input id="passwordField" value="password"></label>
-<label>Переменная окружения с паролем<input id="passwordEnv" placeholder="KAFKA_PASSWORD"></label>
+<label id="saslMechanismWrap">SASL mechanism<select id="saslMechanism"><option value="">—</option><option>PLAIN</option><option>SCRAM-SHA-256</option><option>SCRAM-SHA-512</option></select></label>
+<label id="usernameWrap">Username<input id="username" autocomplete="off"></label>
+<label id="credentialsSourceWrap">Источник credentials<select id="credentialsSource"><option value="PLAIN">PLAIN — пароль в профиле</option><option value="ENVIRONMENT">ENVIRONMENT — переменная ОС</option><option value="VAULT">VAULT — секрет в Vault</option></select></label>
+<label id="plainPasswordWrap">Пароль пользователя Kafka<input id="password" type="password" autocomplete="new-password" placeholder="При редактировании оставьте пустым, чтобы не менять"></label>
+<label id="passwordEnvWrap">Переменная окружения с паролем<input id="passwordEnv" placeholder="KAFKA_PASSWORD"></label>
+<label id="vaultSecretPathWrap">Vault secret path<input id="vaultSecretPath" placeholder="kafka/load-test"></label>
+<label id="passwordFieldWrap">Поле пароля в Vault<input id="passwordField" value="password"></label>
 <label>Путь к CA certificate<input id="caCertificatePath" placeholder="/app/config/kafka-ca.pem"></label>
 <label>Topic по умолчанию<input id="defaultTopic" placeholder="evo-load-test"></label>
 <label>Client ID prefix<input id="clientIdPrefix" value="evo-snt"></label>
