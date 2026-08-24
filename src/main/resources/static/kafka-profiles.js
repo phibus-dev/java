@@ -10,7 +10,18 @@
   }
   function reset(){ $('id').value=''; $('formTitle').textContent='Новый профиль'; fields.forEach(k=>$(k).value=''); $('securityProtocol').value='PLAINTEXT'; $('credentialsSource').value='NONE'; $('passwordField').value='password'; $('clientIdPrefix').value='evo-snt'; $('defaultProfile').checked=false; $('diagnostic').textContent=''; }
   function edit(p){ $('id').value=p.id; $('formTitle').textContent=`Редактирование: ${p.name}`; fields.forEach(k=>$(k).value=p[k]??''); $('defaultProfile').checked=!!p.defaultProfile; window.scrollTo({top:0,behavior:'smooth'}); }
-  async function request(url, options={}){ const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}); if(!r.ok){throw new Error((await r.text())||`HTTP ${r.status}`);} return r.status===204?null:r.json(); }
+  function csrfHeaders(){
+    const token=document.querySelector('meta[name="_csrf"]')?.content;
+    const header=document.querySelector('meta[name="_csrf_header"]')?.content;
+    return token&&header?{[header]:token}:{};
+  }
+  async function request(url, options={}){
+    const method=(options.method||'GET').toUpperCase();
+    const headers={'Content-Type':'application/json',...(method==='GET'||method==='HEAD'?{}:csrfHeaders()),...(options.headers||{})};
+    const r=await fetch(url,{credentials:'same-origin',...options,headers});
+    if(!r.ok){throw new Error((await r.text())||`HTTP ${r.status}`);}
+    return r.status===204?null:r.json();
+  }
   async function load(){ items=await request('/api/kafka/profiles'); const body=$('profiles'); body.innerHTML=''; items.forEach(p=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${esc(p.name)}</td><td>${esc(p.bootstrapServers)}</td><td>${esc(p.securityProtocol)}${p.saslMechanism?` / ${esc(p.saslMechanism)}`:''}</td><td>${esc(p.credentialsSource)}</td><td>${esc(p.defaultTopic||'—')}</td><td>${p.defaultProfile?'Да':'Нет'}</td><td><button type="button" data-edit="${p.id}" class="secondary">Изменить</button> <button type="button" data-default="${p.id}" class="secondary">По умолчанию</button> <button type="button" data-delete="${p.id}" class="danger">Удалить</button></td>`; body.appendChild(tr); }); }
   async function save(){ try{ const id=$('id').value; await request(id?`/api/kafka/profiles/${id}`:'/api/kafka/profiles',{method:id?'PUT':'POST',body:JSON.stringify(payload())}); EvoUI?.notify('Профиль Kafka сохранён','success'); reset(); await load(); }catch(e){EvoUI?.notify(e.message,'error');} }
   async function check(){ try{ const id=$('id').value; if(!id) throw new Error('Сначала сохраните профиль'); $('diagnostic').textContent='Проверка…'; const v=await request(`/api/kafka/profiles/${id}/check`,{method:'POST'}); $('diagnostic').textContent=JSON.stringify(v,null,2); }catch(e){$('diagnostic').textContent=e.message;EvoUI?.notify(e.message,'error');} }
