@@ -14,6 +14,9 @@ public class KafkaPageController {
     @GetMapping("/kafka/m3")
     public String kafkaM3() { return "kafka-m3"; }
 
+    @GetMapping("/kafka/m4")
+    public String kafkaM4() { return "kafka-m4"; }
+
     @GetMapping("/settings/kafka-profiles")
     public String profiles() { return "kafka-profiles"; }
 }
