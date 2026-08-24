@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.3.0'
+        description: 'Release tag, for example v2.4.0-rc1'
         required: true
-        default: 'v2.3.0'
+        default: 'v2.4.0-rc1'
   push:
     branches:
       - 'release/**'
@@ -49,8 +49,8 @@ jobs:
           cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/evo-snt-s3-${VERSION}-sources.jar"
           cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/evo-snt-s3-${VERSION}-javadoc.jar"
           cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
-          cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" UX_PREVIEW_2.3.0.md dist/
-          cd dist; sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" UX_PREVIEW_2.3.0.md > SHA256SUMS
+          cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md dist/
+          cd dist; sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md > SHA256SUMS
       - name: Upload release assets to Actions
         uses: actions/upload-artifact@v7
         with:
@@ -81,7 +81,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
-            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.3
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.4
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
@@ -101,4 +101,5 @@ jobs:
             dist/README.md
             dist/RELEASE_NOTES_${{ steps.version.outputs.project }}.md
             dist/UPGRADE_${{ steps.version.outputs.project }}.md
-            dist/UX_PREVIEW_2.3.0.md
+            dist/KAFKA_M3_ACCEPTANCE.md
+            dist/KAFKA_M4_ACCEPTANCE.md
