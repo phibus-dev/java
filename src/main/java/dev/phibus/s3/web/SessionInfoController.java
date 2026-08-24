@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,11 +26,16 @@ public class SessionInfoController {
     }
 
     @GetMapping("/api/session")
-    public Map<String, Object> session(Authentication authentication) {
+    public Map<String, Object> session(Authentication authentication, CsrfToken csrfToken) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("securityEnabled", securityEnabled);
         result.put("version", applicationVersion);
         result.put("startedAt", startedAt.toString());
+        if (csrfToken != null) {
+            result.put("csrfToken", csrfToken.getToken());
+            result.put("csrfParameterName", csrfToken.getParameterName());
+            result.put("csrfHeaderName", csrfToken.getHeaderName());
+        }
         if (authentication == null || !authentication.isAuthenticated()) {
             result.put("authenticated", false);
             result.put("username", "anonymous");
