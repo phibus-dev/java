@@ -125,32 +125,44 @@ public class KafkaProfileService {
     }
 
     private String encryptedPasswordForCreate(ProfileRequest request) {
-        if (!"PROFILE".equals(normalizedSource(request.credentialsSource()))) return null;
-        if (request.password() == null || request.password().isBlank()) throw new IllegalArgumentException("Kafka password is required for PROFILE credentials source");
+        if (!isPlainSource(normalizedSource(request.credentialsSource()))) return null;
+        if (request.password() == null || request.password().isBlank()) throw new IllegalArgumentException("Kafka password is required for PLAIN credentials source");
         if (!secretCodec.available()) throw new IllegalStateException("S3_PERF_BOOTSTRAP_KEY must be set before saving Kafka passwords");
         return secretCodec.encrypt(request.password());
     }
 
     private String encryptedPasswordForUpdate(UUID id, String source, String newPassword) {
-        if (!"PROFILE".equals(source)) return null;
+        if (!isPlainSource(source)) return null;
         if (newPassword != null && !newPassword.isBlank()) {
             if (!secretCodec.available()) throw new IllegalStateException("S3_PERF_BOOTSTRAP_KEY must be set before saving Kafka passwords");
             return secretCodec.encrypt(newPassword);
         }
         String existing = jdbc.query("SELECT password_encrypted FROM kafka_profile WHERE id=?", rs -> rs.next() ? rs.getString(1) : null, id);
-        if (existing == null || existing.isBlank()) throw new IllegalArgumentException("Kafka password is required for PROFILE credentials source");
+        if (existing == null || existing.isBlank()) throw new IllegalArgumentException("Kafka password is required for PLAIN credentials source");
         return existing;
     }
 
     private static Instant instant(ResultSet rs,String column)throws SQLException{OffsetDateTime value=rs.getObject(column,OffsetDateTime.class);return value==null?null:value.toInstant();}
-    private static void validate(ProfileRequest r, boolean update, Profile existing){if(r==null||r.name()==null||r.name().isBlank())throw new IllegalArgumentException("Profile name is required");if(r.bootstrapServers()==null||r.bootstrapServers().isBlank())throw new IllegalArgumentException("Kafka bootstrap servers are required");String protocol=normalizedProtocol(r.securityProtocol());if(protocol.startsWith("SASL_")&&(r.saslMechanism()==null||r.saslMechanism().isBlank()))throw new IllegalArgumentException("SASL mechanism is required for "+protocol);String source=normalizedSource(r.credentialsSource());if(protocol.startsWith("SASL_")&&"VAULT".equals(source)&&(r.vaultSecretPath()==null||r.vaultSecretPath().isBlank()))throw new IllegalArgumentException("Vault secret path is required for SASL/VAULT");if(protocol.startsWith("SASL_")&&"PROFILE".equals(source)&&!update&&(r.password()==null||r.password().isBlank()))throw new IllegalArgumentException("Kafka password is required for SASL/PROFILE");if(protocol.startsWith("SASL_")&&"PROFILE".equals(source)&&update&&(r.password()==null||r.password().isBlank())&&(existing==null||!existing.passwordConfigured()))throw new IllegalArgumentException("Kafka password is required for SASL/PROFILE");}
+    private static void validate(ProfileRequest r, boolean update, Profile existing){
+        if(r==null||r.name()==null||r.name().isBlank())throw new IllegalArgumentException("Profile name is required");
+        if(r.bootstrapServers()==null||r.bootstrapServers().isBlank())throw new IllegalArgumentException("Kafka bootstrap servers are required");
+        String protocol=normalizedProtocol(r.securityProtocol());
+        if(protocol.startsWith("SASL_")&&(r.saslMechanism()==null||r.saslMechanism().isBlank()))throw new IllegalArgumentException("SASL mechanism is required for "+protocol);
+        String source=normalizedSource(r.credentialsSource());
+        if(protocol.startsWith("SASL_")&&"NONE".equals(source))throw new IllegalArgumentException("SASL profile requires PLAIN, ENVIRONMENT or VAULT credentials source");
+        if(protocol.startsWith("SASL_")&&"VAULT".equals(source)&&(r.vaultSecretPath()==null||r.vaultSecretPath().isBlank()))throw new IllegalArgumentException("Vault secret path is required for SASL/VAULT");
+        if(protocol.startsWith("SASL_")&&"ENVIRONMENT".equals(source)&&(r.passwordEnv()==null||r.passwordEnv().isBlank()))throw new IllegalArgumentException("Environment variable name is required for SASL/ENVIRONMENT");
+        if(protocol.startsWith("SASL_")&&isPlainSource(source)&&!update&&(r.password()==null||r.password().isBlank()))throw new IllegalArgumentException("Kafka password is required for SASL/PLAIN credentials");
+        if(protocol.startsWith("SASL_")&&isPlainSource(source)&&update&&(r.password()==null||r.password().isBlank())&&(existing==null||!existing.passwordConfigured()))throw new IllegalArgumentException("Kafka password is required for SASL/PLAIN credentials");
+    }
     private static String normalizedProtocol(String value){String protocol=defaultValue(value,"PLAINTEXT").toUpperCase();if(!List.of("PLAINTEXT","SSL","SASL_PLAINTEXT","SASL_SSL").contains(protocol))throw new IllegalArgumentException("Unsupported Kafka security protocol: "+protocol);return protocol;}
-    private static String normalizedSource(String value){String source=defaultValue(value,"VAULT").toUpperCase();if(!List.of("VAULT","ENVIRONMENT","PROFILE","NONE").contains(source))throw new IllegalArgumentException("Unsupported Kafka credentials source: "+source);return source;}
+    private static String normalizedSource(String value){String source=defaultValue(value,"NONE").toUpperCase();if("PROFILE".equals(source))return "PLAIN";if(!List.of("VAULT","ENVIRONMENT","PLAIN","NONE").contains(source))throw new IllegalArgumentException("Unsupported Kafka credentials source: "+source);return source;}
+    private static boolean isPlainSource(String source){return "PLAIN".equals(source)||"PROFILE".equals(source);}
     private static String defaultValue(String value,String fallback){return value==null||value.isBlank()?fallback:value.trim();}
     private static String blankToNull(String value){return value==null||value.isBlank()?null:value.trim();}
 
     public record ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String password,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile){
-        /** Compatibility constructor for M1-M4 code written before PROFILE credentials were added. */
+        /** Compatibility constructor for M1-M4 code written before inline password credentials were added. */
         public ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile) {
             this(name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
                     passwordField, passwordEnv, null, caCertificatePath, defaultTopic, clientIdPrefix, defaultProfile);
