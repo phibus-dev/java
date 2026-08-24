@@ -76,10 +76,11 @@ public class SecurityConfiguration {
                         .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/api/agents/register", "/api/agents/*/heartbeat",
                                 "/api/distributed-tests/agent/**").permitAll()
-                        .requestMatchers("/api/settings/**", "/api/s3-profiles/**", "/api/audit/**", "/audit.html")
-                                .hasRole("ADMIN")
-                        .requestMatchers("/api/schedules/**", "/api/distributed-tests/**", "/api/tests/**")
-                                .hasAnyRole("ADMIN", "OPERATOR")
+                        .requestMatchers("/api/settings/**", "/api/s3-profiles/**", "/api/kafka/profiles/**",
+                                "/api/audit/**", "/audit.html").hasRole("ADMIN")
+                        .requestMatchers("/api/schedules/**", "/api/distributed-tests/**", "/api/tests/**",
+                                "/api/kafka/producer-tests/**").hasAnyRole("ADMIN", "OPERATOR")
+                        .requestMatchers("/api/kafka/profiles/*/check").hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/settings/**").hasRole("ADMIN")
                         .anyRequest().hasAnyRole("ADMIN", "OPERATOR", "VIEWER"))
                 .oauth2Login(oauth -> oauth.userInfoEndpoint(userInfo -> userInfo.oidcUserService(userRequest ->
@@ -140,36 +141,21 @@ public class SecurityConfiguration {
         public Collection<GrantedAuthority> convert(Jwt jwt) {
             Set<GrantedAuthority> authorities = new LinkedHashSet<>();
             Object resourceAccessValue = jwt.getClaims().get("resource_access");
-            if (!(resourceAccessValue instanceof Map<?, ?> resourceAccess)) {
-                return authorities;
-            }
+            if (!(resourceAccessValue instanceof Map<?, ?> resourceAccess)) return authorities;
             Object clientAccessValue = resourceAccess.get(clientId);
-            if (!(clientAccessValue instanceof Map<?, ?> clientAccess)) {
-                return authorities;
-            }
+            if (!(clientAccessValue instanceof Map<?, ?> clientAccess)) return authorities;
             Object rolesValue = clientAccess.get("roles");
-            if (!(rolesValue instanceof Collection<?> roles)) {
-                return authorities;
-            }
+            if (!(rolesValue instanceof Collection<?> roles)) return authorities;
             for (Object roleValue : roles) {
                 String role = normalizeRole(String.valueOf(roleValue));
-                if (role.equals(adminRole)) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
-                } else if (role.equals(operatorRole)) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_OPERATOR"));
-                } else if (role.equals(viewerRole)) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_VIEWER"));
-                }
+                if (role.equals(adminRole)) authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                else if (role.equals(operatorRole)) authorities.add(new SimpleGrantedAuthority("ROLE_OPERATOR"));
+                else if (role.equals(viewerRole)) authorities.add(new SimpleGrantedAuthority("ROLE_VIEWER"));
             }
             return authorities;
         }
 
-        private static String trim(String value) {
-            return value == null ? "" : value.trim();
-        }
-
-        private static String normalizeRole(String value) {
-            return trim(value).toUpperCase();
-        }
+        private static String trim(String value) { return value == null ? "" : value.trim(); }
+        private static String normalizeRole(String value) { return trim(value).toUpperCase(); }
     }
 }
