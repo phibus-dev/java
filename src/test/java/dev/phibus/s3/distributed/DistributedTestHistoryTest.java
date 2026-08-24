@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
 import dev.phibus.s3.history.TestHistoryStore;
+import dev.phibus.s3.kafka.KafkaProfileService;
 import dev.phibus.s3.test.TestRequest;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class DistributedTestHistoryTest {
-
     @Test
     void persistsTerminalAgentResultInCommonHistoryWithAgentName() {
         AgentRegistry registry = new AgentRegistry("registration-secret");
@@ -23,7 +23,7 @@ class DistributedTestHistoryTest {
                         1024, Map.of("capabilities", "S3")), "registration-secret");
         TestHistoryStore history = mock(TestHistoryStore.class);
         DistributedTestService service = new DistributedTestService(registry, mock(ClickHouseProfileService.class),
-                mock(ClickHouseHistoryStore.class), history);
+                mock(ClickHouseHistoryStore.class), history, mock(KafkaProfileService.class));
         TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", null, null,
                 true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
 
