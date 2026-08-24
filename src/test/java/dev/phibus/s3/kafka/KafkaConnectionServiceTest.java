@@ -21,7 +21,7 @@ class KafkaConnectionServiceTest {
         KafkaConnectionService service = new KafkaConnectionService(profiles, mock(SettingsService.class), mock(VaultAuthService.class));
         KafkaProfileService.Profile profile = new KafkaProfileService.Profile(UUID.randomUUID(), "test",
                 "broker-1:9092,broker-2:9092", "PLAINTEXT", null, null, "NONE", null,
-                "password", null, null, "load-test", "evo-snt", true, Instant.now(), Instant.now());
+                "password", null, false, null, "load-test", "evo-snt", true, Instant.now(), Instant.now());
 
         Properties properties = service.clientProperties(profile);
 
