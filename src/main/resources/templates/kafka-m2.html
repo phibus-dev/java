@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka M2 — ЭВО.СНТ</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css">
+</head>
+<body><main class="container">
+<header class="brand-header"><div class="brand-title"><h1>Kafka Consumer & E2E</h1><p>2.4.0-M2: чтение, сквозная задержка и контроль консистентности сообщений.</p></div></header>
+<nav class="corporate-nav"><a href="/">Главная</a><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/kafka">Kafka Producer</a><a href="/kafka/m2" aria-current="page">Kafka M2</a><a href="/history">История</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
+
+<section class="panel"><div class="section-heading"><div><h2>Consumer Load Test</h2><p class="muted">Измеряет скорость чтения и consumer lag.</p></div></div>
+<div class="grid two"><label>Профиль<select id="cProfile"></select></label><label>Topic<input id="cTopic"></label><label>Consumer group<input id="cGroup" placeholder="evo-load-consumer"></label><label>Consumer threads<input id="cThreads" type="number" value="1" min="1" max="64"></label><label>Duration, sec<input id="cDuration" type="number" value="60" min="1"></label><label>Target messages<input id="cTarget" type="number" value="0" min="0"><span class="muted">0 = до завершения duration</span></label><label>auto.offset.reset<select id="cOffset"><option>latest</option><option>earliest</option></select></label><label>max.poll.records<input id="cMaxPoll" type="number" value="500" min="1"></label></div>
+<div class="actions"><button id="cStart">Запустить Consumer test</button></div></section>
+
+<section class="panel"><h2>Consumer Runtime</h2><div class="metrics"><article><span>Статус</span><strong id="cStatus">—</strong></article><article><span>Прочитано</span><strong id="cConsumed">0</strong></article><article><span>Сообщений/с</span><strong id="cRate">0</strong></article><article><span>Consumer lag</span><strong id="cLag">0</strong></article><article><span>Max partition lag</span><strong id="cMaxLag">0</strong></article><article><span>Ошибки</span><strong id="cErrors">0</strong></article></div></section>
+
+<section class="panel"><div class="section-heading"><div><h2>Producer → Consumer E2E</h2><p class="muted">Тестирует сквозную задержку, потери, дубли и целостность.</p></div></div>
+<div class="grid two"><label>Профиль<select id="eProfile"></select></label><label>Topic<input id="eTopic"></label><label>Количество сообщений<input id="eCount" type="number" value="100000" min="1" max="10000000"></label><label>Размер сообщения, байт<input id="eSize" type="number" value="1024" min="32"></label><label>Target msg/s<input id="eRateTarget" type="number" value="0" min="0"></label><label>acks<select id="eAcks"><option>all</option><option>1</option></select></label><label>Compression<select id="eCompression"><option>none</option><option>lz4</option><option>zstd</option><option>snappy</option><option>gzip</option></select></label><label>Consumer timeout, sec<input id="eTimeout" type="number" value="120" min="5"></label></div>
+<label class="check"><input id="eIdempotence" type="checkbox" checked> Enable idempotence</label><div class="actions"><button id="eStart">Запустить E2E test</button></div></section>
+
+<section class="panel"><h2>E2E Runtime / Consistency</h2><div class="metrics"><article><span>Статус</span><strong id="eStatus">—</strong></article><article><span>Produced</span><strong id="eProduced">0</strong></article><article><span>Consumed</span><strong id="eConsumed">0</strong></article><article><span>Missing</span><strong id="eMissing">0</strong></article><article><span>Duplicates</span><strong id="eDuplicates">0</strong></article><article><span>Out-of-order</span><strong id="eOrder">0</strong></article><article><span>Corrupted</span><strong id="eCorrupted">0</strong></article><article><span>Consistency</span><strong id="eConsistency">—</strong></article><article><span>E2E p50</span><strong id="eP50">0 ms</strong></article><article><span>E2E p95</span><strong id="eP95">0 ms</strong></article><article><span>E2E p99</span><strong id="eP99">0 ms</strong></article><article><span>E2E max</span><strong id="eMax">0 ms</strong></article></div></section>
+
+<section class="panel"><h2>История Consumer / E2E</h2><div class="table-wrap"><table><thead><tr><th>Начало</th><th>Тип</th><th>Topic</th><th>Статус</th><th>Produced</th><th>Consumed</th><th>Lag/Missing</th><th>Consistency</th><th>p99</th></tr></thead><tbody id="m2History"></tbody></table></div></section>
+</main><script src="/app-ui.js"></script><script src="/kafka-m2.js"></script></body></html>
