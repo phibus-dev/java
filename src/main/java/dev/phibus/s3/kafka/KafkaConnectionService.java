@@ -1,5 +1,8 @@
 package dev.phibus.s3.kafka;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import dev.phibus.s3.settings.SettingsService;
+import dev.phibus.s3.settings.VaultAuthService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -7,11 +10,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.DescribeClusterResult;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.config.SslConfigs;
@@ -20,9 +23,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class KafkaConnectionService {
     private final KafkaProfileService profiles;
+    private final SettingsService settingsService;
+    private final VaultAuthService vaultAuthService;
 
-    public KafkaConnectionService(KafkaProfileService profiles) {
+    public KafkaConnectionService(KafkaProfileService profiles, SettingsService settingsService,
+                                  VaultAuthService vaultAuthService) {
         this.profiles = profiles;
+        this.settingsService = settingsService;
+        this.vaultAuthService = vaultAuthService;
     }
 
     public ClusterInfo check(java.util.UUID profileId) {
@@ -60,23 +68,38 @@ public class KafkaConnectionService {
                 throw new IllegalStateException("Cannot read Kafka CA certificate: " + profile.caCertificatePath(), e);
             }
         }
-        if (profile.securityProtocol().startsWith("SASL_")) {
-            String mechanism = profile.saslMechanism() == null ? "SCRAM-SHA-512" : profile.saslMechanism();
-            String envName = profile.passwordEnv() == null || profile.passwordEnv().isBlank() ? "KAFKA_PASSWORD" : profile.passwordEnv();
-            String secret = System.getenv(envName);
-            if (secret == null || secret.isBlank()) {
-                if ("VAULT".equals(profile.credentialsSource()))
-                    throw new IllegalStateException("Kafka VAULT credentials are configured; Vault SASL resolver is the next M1 task");
-                throw new IllegalStateException("Environment variable " + envName + " is not set");
-            }
-            String loginModule = "PLAIN".equalsIgnoreCase(mechanism)
-                    ? "org.apache.kafka.common.security.plain.PlainLoginModule"
-                    : "org.apache.kafka.common.security.scram.ScramLoginModule";
-            p.put(SaslConfigs.SASL_MECHANISM, mechanism);
-            p.put(SaslConfigs.SASL_JAAS_CONFIG, loginModule + " required username=\"" + escape(profile.username())
-                    + "\" password=\"" + escape(secret) + "\";");
-        }
+        if (profile.securityProtocol().startsWith("SASL_")) configureSasl(p, profile);
         return p;
+    }
+
+    private void configureSasl(Properties p, KafkaProfileService.Profile profile) {
+        String mechanism = profile.saslMechanism() == null || profile.saslMechanism().isBlank()
+                ? "SCRAM-SHA-512" : profile.saslMechanism();
+        String secret = resolvePassword(profile);
+        String loginModule = "PLAIN".equalsIgnoreCase(mechanism)
+                ? "org.apache.kafka.common.security.plain.PlainLoginModule"
+                : "org.apache.kafka.common.security.scram.ScramLoginModule";
+        p.put(SaslConfigs.SASL_MECHANISM, mechanism);
+        p.put(SaslConfigs.SASL_JAAS_CONFIG, loginModule + " required username=\"" + escape(profile.username())
+                + "\" password=\"" + escape(secret) + "\";");
+    }
+
+    private String resolvePassword(KafkaProfileService.Profile profile) {
+        String source = profile.credentialsSource() == null ? "NONE" : profile.credentialsSource().toUpperCase();
+        if ("VAULT".equals(source)) {
+            JsonNode data = vaultAuthService.readKvV2(settingsService.load().vault(), profile.vaultSecretPath());
+            String field = profile.passwordField() == null || profile.passwordField().isBlank() ? "password" : profile.passwordField();
+            String value = data.path(field).asText("");
+            if (value.isBlank()) throw new IllegalStateException("Vault secret does not contain Kafka password field: " + field);
+            return value;
+        }
+        if ("ENVIRONMENT".equals(source)) {
+            String envName = profile.passwordEnv() == null || profile.passwordEnv().isBlank() ? "KAFKA_PASSWORD" : profile.passwordEnv();
+            String value = System.getenv(envName);
+            if (value == null || value.isBlank()) throw new IllegalStateException("Environment variable " + envName + " is not set");
+            return value;
+        }
+        throw new IllegalStateException("SASL Kafka profile requires VAULT or ENVIRONMENT credentials source");
     }
 
     private static String escape(String value) {
