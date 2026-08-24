@@ -1,0 +1,20 @@
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumer_group VARCHAR(249);
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumer_threads INTEGER;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumed_messages BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumed_bytes BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumer_messages_sec DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumer_mib_sec DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consumer_lag BIGINT;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS max_partition_lag BIGINT;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS missing_messages BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS duplicate_messages BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS out_of_order_messages BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS corrupted_messages BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS consistency_status VARCHAR(16);
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS e2e_latency_avg_ms DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS e2e_latency_p50_ms DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS e2e_latency_p95_ms DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS e2e_latency_p99_ms DOUBLE PRECISION;
+ALTER TABLE kafka_test_run ADD COLUMN IF NOT EXISTS e2e_latency_max_ms DOUBLE PRECISION;
+
+CREATE INDEX IF NOT EXISTS ix_kafka_test_run_type_started_at ON kafka_test_run(test_type, started_at DESC);

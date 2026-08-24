@@ -20,45 +20,25 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "COORDINATOR", matchIfMissing = true)
 public class DistributedTestController {
     private final DistributedTestService service;
-
     public DistributedTestController(DistributedTestService service) { this.service = service; }
 
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public DistributedTestService.DistributedRunView create(
-            @RequestBody DistributedTestService.CreateDistributedTestRequest request) {
-        return service.create(request);
-    }
+    @PostMapping @ResponseStatus(HttpStatus.CREATED)
+    public DistributedTestService.DistributedRunView create(@RequestBody DistributedTestService.CreateDistributedTestRequest request) { return service.create(request); }
 
-    @PostMapping("/clickhouse")
-    @ResponseStatus(HttpStatus.CREATED)
-    public DistributedTestService.DistributedRunView createClickHouse(
-            @RequestBody DistributedTestService.CreateDistributedClickHouseTestRequest request) {
-        return service.createClickHouse(request);
-    }
+    @PostMapping("/clickhouse") @ResponseStatus(HttpStatus.CREATED)
+    public DistributedTestService.DistributedRunView createClickHouse(@RequestBody DistributedTestService.CreateDistributedClickHouseTestRequest request) { return service.createClickHouse(request); }
 
-    @GetMapping
-    public List<DistributedTestService.DistributedRunView> list() { return service.list(); }
+    @PostMapping("/kafka") @ResponseStatus(HttpStatus.CREATED)
+    public DistributedTestService.DistributedRunView createKafka(@RequestBody DistributedTestService.CreateDistributedKafkaTestRequest request) { return service.createKafka(request); }
 
-    @GetMapping("/{id}")
-    public DistributedTestService.DistributedRunView get(@PathVariable UUID id) { return service.get(id); }
+    @GetMapping public List<DistributedTestService.DistributedRunView> list() { return service.list(); }
+    @GetMapping("/{id}") public DistributedTestService.DistributedRunView get(@PathVariable UUID id) { return service.get(id); }
 
     @GetMapping("/agent/{agentId}/assignment")
-    public DistributedTestService.Assignment poll(
-            @PathVariable UUID agentId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
-        return service.poll(agentId, bearer(authorization));
-    }
+    public DistributedTestService.Assignment poll(@PathVariable UUID agentId,@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) { return service.poll(agentId,bearer(authorization)); }
 
     @PostMapping("/agent/{agentId}/statistics")
-    public DistributedTestService.DistributedRunView report(
-            @PathVariable UUID agentId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
-            @RequestBody DistributedTestService.AgentStatistics statistics) {
-        return service.report(agentId, bearer(authorization), statistics);
-    }
+    public DistributedTestService.DistributedRunView report(@PathVariable UUID agentId,@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,@RequestBody DistributedTestService.AgentStatistics statistics) { return service.report(agentId,bearer(authorization),statistics); }
 
-    private static String bearer(String authorization) {
-        return authorization != null && authorization.startsWith("Bearer ") ? authorization.substring(7) : authorization;
-    }
+    private static String bearer(String authorization){return authorization!=null&&authorization.startsWith("Bearer ")?authorization.substring(7):authorization;}
 }
