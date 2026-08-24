@@ -86,6 +86,12 @@ public class KafkaConnectionService {
 
     private String resolvePassword(KafkaProfileService.Profile profile) {
         String source = profile.credentialsSource() == null ? "NONE" : profile.credentialsSource().toUpperCase();
+        if ("PROFILE".equals(source)) {
+            if (!profile.passwordConfigured()) {
+                throw new IllegalStateException("Kafka password is not configured in this profile");
+            }
+            return profiles.profilePassword(profile.id());
+        }
         if ("VAULT".equals(source)) {
             JsonNode data = vaultAuthService.readKvV2(settingsService.load().vault(), profile.vaultSecretPath());
             String field = profile.passwordField() == null || profile.passwordField().isBlank() ? "password" : profile.passwordField();
@@ -99,7 +105,7 @@ public class KafkaConnectionService {
             if (value == null || value.isBlank()) throw new IllegalStateException("Environment variable " + envName + " is not set");
             return value;
         }
-        throw new IllegalStateException("SASL Kafka profile requires VAULT or ENVIRONMENT credentials source");
+        throw new IllegalStateException("SASL Kafka profile requires PROFILE, VAULT or ENVIRONMENT credentials source; NONE is not valid for SASL");
     }
 
     private static String escape(String value) {
