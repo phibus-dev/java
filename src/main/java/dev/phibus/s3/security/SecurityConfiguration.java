@@ -31,7 +31,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 public class SecurityConfiguration {
     private static final String CONTENT_SECURITY_POLICY =
             "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; "
-                    + "form-action 'self'; img-src 'self' data:; connect-src 'self'; script-src 'self'; style-src 'self'";
+                    + "form-action 'self' https:; img-src 'self' data:; connect-src 'self'; script-src 'self'; style-src 'self'";
 
     private static final String[] AGENT_API_CSRF_IGNORED = {
             "/api/agents/register",
