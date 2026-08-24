@@ -149,6 +149,19 @@ public class KafkaProfileService {
     private static String defaultValue(String value,String fallback){return value==null||value.isBlank()?fallback:value.trim();}
     private static String blankToNull(String value){return value==null||value.isBlank()?null:value.trim();}
 
-    public record ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String password,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile){}
-    public record Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,boolean passwordConfigured,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt){}
+    public record ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String password,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile){
+        /** Compatibility constructor for M1-M4 code written before PROFILE credentials were added. */
+        public ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile) {
+            this(name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
+                    passwordField, passwordEnv, null, caCertificatePath, defaultTopic, clientIdPrefix, defaultProfile);
+        }
+    }
+
+    public record Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,boolean passwordConfigured,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt){
+        /** Compatibility constructor for M1-M4 code written before passwordConfigured was added. */
+        public Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt) {
+            this(id, name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
+                    passwordField, passwordEnv, false, caCertificatePath, defaultTopic, clientIdPrefix, defaultProfile, createdAt, updatedAt);
+        }
+    }
 }
