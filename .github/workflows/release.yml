@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.3.0-rc6'
+        description: 'Release tag, for example v2.3.0'
         required: true
-        default: 'v2.3.0-rc6'
+        default: 'v2.3.0'
   push:
     branches:
       - 'release/**'
@@ -73,13 +73,23 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
+      - name: Build and publish stable Docker image
+        if: ${{ !contains(steps.version.outputs.project, '-') }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.3
+            ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:latest
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ЭВО.СНТ S3 ${{ steps.version.outputs.tag }} UX Preview
-          prerelease: true
+          name: ЭВО.СНТ S3 ${{ steps.version.outputs.tag }}
+          prerelease: ${{ contains(steps.version.outputs.project, '-') }}
           body_path: RELEASE_NOTES_${{ steps.version.outputs.project }}.md
           fail_on_unmatched_files: true
           files: |
