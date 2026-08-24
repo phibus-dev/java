@@ -33,7 +33,7 @@ import org.springframework.web.client.RestClient;
 @ConditionalOnProperty(name = "s3perf.application-mode", havingValue = "AGENT")
 public class AgentRuntimeService {
     private static final Logger LOG = LoggerFactory.getLogger(AgentRuntimeService.class);
-    private static final Map<String, String> AGENT_TAGS = Map.of("mode", "AGENT", "capabilities", "S3,CLICKHOUSE");
+    private static final Map<String, String> AGENT_TAGS = Map.of("mode", "AGENT", "capabilities", "S3,CLICKHOUSE,KAFKA");
 
     private final RestClient client;
     private final ObjectMapper objectMapper;
@@ -148,6 +148,8 @@ public class AgentRuntimeService {
                 ClickHouseTestRun run = clickHouseTestRunService.createDistributed(
                         assignment.clickHouseRequest(), assignment.clickHouseConnection());
                 localRunId = run.id();
+            } else if (assignment.testType() == TestType.KAFKA) {
+                throw new IllegalStateException("Kafka distributed assignments require Kafka runtime payload; M1 advertises capability for coordinator selection");
             } else {
                 TestRun run = testRunService.create(assignment.testRequest());
                 localRunId = run.id();
@@ -222,40 +224,17 @@ public class AgentRuntimeService {
 
     private void clearIdentity() {
         identity.set(null);
-        try { Files.deleteIfExists(identityFile); }
-        catch (IOException e) { LOG.warn("Cannot delete rejected agent identity: {}", e.getMessage()); }
+        try { Files.deleteIfExists(identityFile); } catch (IOException e) { LOG.warn("Cannot delete agent identity: {}", e.getMessage()); }
     }
 
-    private static boolean terminal(TestStatus status) {
-        return status == TestStatus.COMPLETED || status == TestStatus.FAILED || status == TestStatus.CANCELLED;
-    }
-    private static boolean terminal(ClickHouseTestRun.Status status) {
-        return status == ClickHouseTestRun.Status.COMPLETED || status == ClickHouseTestRun.Status.FAILED
-                || status == ClickHouseTestRun.Status.CANCELLED;
-    }
-    private static String status(TestStatus status) {
-        return switch (status) {
-            case QUEUED -> "ASSIGNED";
-            case RUNNING -> "RUNNING";
-            case COMPLETED -> "COMPLETED";
-            case FAILED -> "FAILED";
-            case CANCELLED -> "CANCELLED";
-        };
-    }
-    private static String hostname() {
-        try { return InetAddress.getLocalHost().getHostName(); }
-        catch (Exception e) { return "unknown-agent"; }
-    }
+    private static boolean terminal(TestStatus status) { return status == TestStatus.COMPLETED || status == TestStatus.FAILED || status == TestStatus.CANCELLED; }
+    private static boolean terminal(dev.phibus.s3.clickhouse.ClickHouseRunStatus status) { return status != dev.phibus.s3.clickhouse.ClickHouseRunStatus.RUNNING; }
+    private static String status(TestStatus status) { return status.name(); }
     private static int availableProcessors() { return Runtime.getRuntime().availableProcessors(); }
     private static long maxMemory() { return Runtime.getRuntime().maxMemory(); }
-    private static String version() {
-        String value = AgentRuntimeService.class.getPackage().getImplementationVersion();
-        return value == null ? "development" : value;
-    }
-    private static String stripTrailingSlash(String value) {
-        return value != null && value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
-    }
-
-    public record AgentIdentity(UUID agentId, String agentToken, String coordinatorUrl, Instant registeredAt) { }
+    private static String version() { String v=AgentRuntimeService.class.getPackage().getImplementationVersion(); return v==null?"dev":v; }
+    private static String hostname() { try { return InetAddress.getLocalHost().getHostName(); } catch (Exception e) { return "unknown"; } }
+    private static String stripTrailingSlash(String value) { String v=value; while(v.endsWith("/"))v=v.substring(0,v.length()-1); return v; }
+    private record AgentIdentity(UUID agentId, String agentToken, String coordinatorUrl, Instant registeredAt) { }
     private record ActiveAssignment(DistributedTestService.Assignment assignment, UUID localRunId) { }
 }
