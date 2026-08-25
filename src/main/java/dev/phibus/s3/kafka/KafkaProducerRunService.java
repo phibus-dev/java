@@ -15,7 +15,8 @@ import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.HdrHistogram.ConcurrentHistogram;
+import org.HdrHistogram.Histogram;
+import org.HdrHistogram.Recorder;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 public class KafkaProducerRunService {
     private static final int DEFAULT_MAX_IN_FLIGHT_MESSAGES = 10_000;
     private static final long SNAPSHOT_CACHE_NANOS = 250_000_000L;
+    private static final long MAX_LATENCY_NANOS = Duration.ofHours(1).toNanos();
     private final KafkaProfileService profiles;
     private final KafkaConnectionService connections;
     private final JdbcTemplate jdbc;
@@ -243,7 +245,9 @@ public class KafkaProducerRunService {
         final AtomicLong errors = new AtomicLong();
         final AtomicLong retries = new AtomicLong();
         final AtomicLong inFlight = new AtomicLong();
-        final ConcurrentHistogram latencies = new ConcurrentHistogram(3);
+        final Recorder latencyRecorder = new Recorder(1, MAX_LATENCY_NANOS, 3);
+        final Histogram latencyTotals = new Histogram(1, MAX_LATENCY_NANOS, 3);
+        Histogram intervalLatency;
         volatile String status = "RUNNING";
         volatile String errorMessage;
         volatile Instant finishedAt;
@@ -256,10 +260,10 @@ public class KafkaProducerRunService {
         void recordSuccess(long size, long latencyNanos) {
             sent.incrementAndGet();
             bytes.addAndGet(size);
-            latencies.recordValue(Math.max(1, latencyNanos));
+            latencyRecorder.recordValue(Math.max(1, Math.min(MAX_LATENCY_NANOS, latencyNanos)));
         }
         void recordError(String message) { errors.incrementAndGet(); errorMessage=message; }
-        void finish(String newStatus) {
+        synchronized void finish(String newStatus) {
             status=newStatus;
             finishedAt=Instant.now();
             cachedSnapshot=buildSnapshot();
@@ -286,13 +290,15 @@ public class KafkaProducerRunService {
             long count = sent.get();
             long byteCount = bytes.get();
             double seconds = durationMs / 1000d;
-            long histogramCount = latencies.getTotalCount();
+            intervalLatency = latencyRecorder.getIntervalHistogram(intervalLatency);
+            latencyTotals.add(intervalLatency);
+            long histogramCount = latencyTotals.getTotalCount();
             double avg=0,p95=0,p99=0,max=0;
             if (histogramCount > 0) {
-                avg = latencies.getMean() / 1_000_000d;
-                p95 = latencies.getValueAtPercentile(95.0) / 1_000_000d;
-                p99 = latencies.getValueAtPercentile(99.0) / 1_000_000d;
-                max = latencies.getMaxValue() / 1_000_000d;
+                avg = latencyTotals.getMean() / 1_000_000d;
+                p95 = latencyTotals.getValueAtPercentile(95.0) / 1_000_000d;
+                p99 = latencyTotals.getValueAtPercentile(99.0) / 1_000_000d;
+                max = latencyTotals.getMaxValue() / 1_000_000d;
             }
             return new Snapshot(id, profileId, topic, status, startedAt, finishedAt, durationMs,
                     request.messageCount(), count, byteCount, request.producerThreads(), request.messageSizeBytes(),
