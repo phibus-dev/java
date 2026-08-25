@@ -11,7 +11,6 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -117,9 +116,14 @@ public class KafkaProducerRunService {
                         byte[] key = Long.toString(index).getBytes(StandardCharsets.UTF_8);
                         long started = System.nanoTime();
                         try {
-                            producer.send(new ProducerRecord<>(state.topic, key, payload)).get();
-                            long latency = System.nanoTime() - started;
-                            state.recordSuccess(payload.length, latency);
+                            producer.send(new ProducerRecord<>(state.topic, key, payload), (metadata, exception) -> {
+                                long latency = System.nanoTime() - started;
+                                if (exception == null) {
+                                    state.recordSuccess(payload.length, latency);
+                                } else {
+                                    state.recordError(rootMessage(exception));
+                                }
+                            });
                         } catch (Exception e) {
                             state.recordError(rootMessage(e));
                         }
