@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import dev.phibus.s3.settings.SettingsService;
 import dev.phibus.s3.settings.VaultAuthService;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -21,13 +22,15 @@ class KafkaConnectionServiceTest {
         KafkaConnectionService service = new KafkaConnectionService(profiles, mock(SettingsService.class), mock(VaultAuthService.class));
         KafkaProfileService.Profile profile = new KafkaProfileService.Profile(UUID.randomUUID(), "test",
                 "broker-1:9092,broker-2:9092", "PLAINTEXT", null, null, "NONE", null,
-                "password", null, false, null, "load-test", "evo-snt", true, Instant.now(), Instant.now());
+                "password", null, false, null, "load-test", "evo-snt", 10000,
+                Map.of("metadata.max.age.ms", "15000"), true, Instant.now(), Instant.now());
 
         Properties properties = service.clientProperties(profile);
 
         assertEquals("broker-1:9092,broker-2:9092", properties.get(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG));
         assertEquals("PLAINTEXT", properties.get(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
         assertEquals("evo-snt-admin", properties.get(AdminClientConfig.CLIENT_ID_CONFIG));
+        assertEquals("15000", properties.get("metadata.max.age.ms"));
         assertFalse(properties.containsKey(SaslConfigs.SASL_JAAS_CONFIG));
     }
 }

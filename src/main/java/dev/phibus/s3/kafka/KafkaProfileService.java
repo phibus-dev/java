@@ -1,11 +1,16 @@
 package dev.phibus.s3.kafka;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.phibus.s3.settings.BootstrapSecretCodec;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -15,17 +20,23 @@ import org.springframework.transaction.annotation.Transactional;
 public class KafkaProfileService {
     private final JdbcTemplate jdbc;
     private final BootstrapSecretCodec secretCodec;
+    private final ObjectMapper objectMapper;
 
-    public KafkaProfileService(JdbcTemplate jdbc, BootstrapSecretCodec secretCodec) {
+    private static final Set<String> MANAGED_PROPERTIES = Set.of(
+            "bootstrap.servers", "client.id", "security.protocol", "sasl.mechanism", "sasl.jaas.config",
+            "ssl.truststore.type", "ssl.truststore.certificates", "session.timeout.ms");
+
+    public KafkaProfileService(JdbcTemplate jdbc, BootstrapSecretCodec secretCodec, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.secretCodec = secretCodec;
+        this.objectMapper = objectMapper;
     }
 
     public List<Profile> list() {
         return jdbc.query("""
                 SELECT id, name, bootstrap_servers, security_protocol, sasl_mechanism, username,
                        credentials_source, vault_secret_path, password_field, password_env,
-                       ca_certificate_path, default_topic, client_id_prefix, is_default,
+                       ca_certificate_path, default_topic, client_id_prefix, session_timeout_ms, custom_properties, is_default,
                        (password_encrypted IS NOT NULL AND password_encrypted <> '') AS password_configured,
                        created_at, updated_at
                   FROM kafka_profile ORDER BY is_default DESC, name
@@ -36,7 +47,7 @@ public class KafkaProfileService {
         List<Profile> result = jdbc.query("""
                 SELECT id, name, bootstrap_servers, security_protocol, sasl_mechanism, username,
                        credentials_source, vault_secret_path, password_field, password_env,
-                       ca_certificate_path, default_topic, client_id_prefix, is_default,
+                       ca_certificate_path, default_topic, client_id_prefix, session_timeout_ms, custom_properties, is_default,
                        (password_encrypted IS NOT NULL AND password_encrypted <> '') AS password_configured,
                        created_at, updated_at FROM kafka_profile WHERE id = ?
                 """, this::map, id);
@@ -55,13 +66,14 @@ public class KafkaProfileService {
         jdbc.update("""
                 INSERT INTO kafka_profile(id, name, bootstrap_servers, security_protocol, sasl_mechanism,
                     username, credentials_source, vault_secret_path, password_field, password_env,
-                    password_encrypted, ca_certificate_path, default_topic, client_id_prefix, is_default)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    password_encrypted, ca_certificate_path, default_topic, client_id_prefix, session_timeout_ms, custom_properties, is_default)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, id, request.name().trim(), request.bootstrapServers().trim(), normalizedProtocol(request.securityProtocol()),
                 blankToNull(request.saslMechanism()), blankToNull(request.username()), normalizedSource(request.credentialsSource()),
                 blankToNull(request.vaultSecretPath()), defaultValue(request.passwordField(), "password"), blankToNull(request.passwordEnv()),
                 encryptedPassword, blankToNull(request.caCertificatePath()), blankToNull(request.defaultTopic()),
-                defaultValue(request.clientIdPrefix(), "evo-snt"), request.defaultProfile());
+                defaultValue(request.clientIdPrefix(), "evo-snt"), normalizedSessionTimeout(request.sessionTimeoutMs()),
+                writeCustomProperties(request.customProperties()), request.defaultProfile());
         return get(id);
     }
 
@@ -75,12 +87,13 @@ public class KafkaProfileService {
         jdbc.update("""
                 UPDATE kafka_profile SET name=?, bootstrap_servers=?, security_protocol=?, sasl_mechanism=?, username=?,
                        credentials_source=?, vault_secret_path=?, password_field=?, password_env=?, password_encrypted=?,
-                       ca_certificate_path=?, default_topic=?, client_id_prefix=?, is_default=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+                       ca_certificate_path=?, default_topic=?, client_id_prefix=?, session_timeout_ms=?, custom_properties=?, is_default=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
                 """, request.name().trim(), request.bootstrapServers().trim(), normalizedProtocol(request.securityProtocol()),
                 blankToNull(request.saslMechanism()), blankToNull(request.username()), source,
                 blankToNull(request.vaultSecretPath()), defaultValue(request.passwordField(), "password"), blankToNull(request.passwordEnv()),
                 encryptedPassword, blankToNull(request.caCertificatePath()), blankToNull(request.defaultTopic()),
-                defaultValue(request.clientIdPrefix(), "evo-snt"), request.defaultProfile(), id);
+                defaultValue(request.clientIdPrefix(), "evo-snt"), normalizedSessionTimeout(request.sessionTimeoutMs()),
+                writeCustomProperties(request.customProperties()), request.defaultProfile(), id);
         return get(id);
     }
 
@@ -90,18 +103,21 @@ public class KafkaProfileService {
         jdbc.update("""
                 INSERT INTO kafka_profile(id, name, bootstrap_servers, security_protocol, sasl_mechanism, username,
                     credentials_source, vault_secret_path, password_field, password_env, ca_certificate_path,
-                    default_topic, client_id_prefix, is_default, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    default_topic, client_id_prefix, session_timeout_ms, custom_properties, is_default, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, bootstrap_servers=EXCLUDED.bootstrap_servers,
                     security_protocol=EXCLUDED.security_protocol, sasl_mechanism=EXCLUDED.sasl_mechanism,
                     username=EXCLUDED.username, credentials_source=EXCLUDED.credentials_source,
                     vault_secret_path=EXCLUDED.vault_secret_path, password_field=EXCLUDED.password_field,
                     password_env=EXCLUDED.password_env, ca_certificate_path=EXCLUDED.ca_certificate_path,
                     default_topic=EXCLUDED.default_topic, client_id_prefix=EXCLUDED.client_id_prefix,
+                    session_timeout_ms=EXCLUDED.session_timeout_ms,
+                    custom_properties=EXCLUDED.custom_properties,
                     updated_at=CURRENT_TIMESTAMP
                 """, profile.id(), profile.name(), profile.bootstrapServers(), profile.securityProtocol(), profile.saslMechanism(),
                 profile.username(), profile.credentialsSource(), profile.vaultSecretPath(), profile.passwordField(), profile.passwordEnv(),
-                profile.caCertificatePath(), profile.defaultTopic(), profile.clientIdPrefix());
+                profile.caCertificatePath(), profile.defaultTopic(), profile.clientIdPrefix(), profile.sessionTimeoutMs(),
+                writeCustomProperties(profile.customProperties()));
         return get(profile.id());
     }
 
@@ -121,7 +137,8 @@ public class KafkaProfileService {
         return new Profile(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("bootstrap_servers"), rs.getString("security_protocol"),
                 rs.getString("sasl_mechanism"), rs.getString("username"), rs.getString("credentials_source"), rs.getString("vault_secret_path"),
                 rs.getString("password_field"), rs.getString("password_env"), rs.getBoolean("password_configured"), rs.getString("ca_certificate_path"), rs.getString("default_topic"),
-                rs.getString("client_id_prefix"), rs.getBoolean("is_default"), instant(rs,"created_at"), instant(rs,"updated_at"));
+                rs.getString("client_id_prefix"), rs.getInt("session_timeout_ms"), readCustomProperties(rs.getString("custom_properties")),
+                rs.getBoolean("is_default"), instant(rs,"created_at"), instant(rs,"updated_at"));
     }
 
     private String encryptedPasswordForCreate(ProfileRequest request) {
@@ -154,26 +171,64 @@ public class KafkaProfileService {
         if(protocol.startsWith("SASL_")&&"ENVIRONMENT".equals(source)&&(r.passwordEnv()==null||r.passwordEnv().isBlank()))throw new IllegalArgumentException("Environment variable name is required for SASL/ENVIRONMENT");
         if(protocol.startsWith("SASL_")&&isPlainSource(source)&&!update&&(r.password()==null||r.password().isBlank()))throw new IllegalArgumentException("Kafka password is required for SASL/PLAIN credentials");
         if(protocol.startsWith("SASL_")&&isPlainSource(source)&&update&&(r.password()==null||r.password().isBlank())&&(existing==null||!existing.passwordConfigured()))throw new IllegalArgumentException("Kafka password is required for SASL/PLAIN credentials");
+        normalizedSessionTimeout(r.sessionTimeoutMs());
+        normalizeCustomProperties(r.customProperties());
     }
     private static String normalizedProtocol(String value){String protocol=defaultValue(value,"PLAINTEXT").toUpperCase();if(!List.of("PLAINTEXT","SSL","SASL_PLAINTEXT","SASL_SSL").contains(protocol))throw new IllegalArgumentException("Unsupported Kafka security protocol: "+protocol);return protocol;}
     private static String normalizedSource(String value){String source=defaultValue(value,"NONE").toUpperCase();if("PROFILE".equals(source))return "PLAIN";if(!List.of("VAULT","ENVIRONMENT","PLAIN","NONE").contains(source))throw new IllegalArgumentException("Unsupported Kafka credentials source: "+source);return source;}
     private static boolean isPlainSource(String source){return "PLAIN".equals(source)||"PROFILE".equals(source);}
     private static String defaultValue(String value,String fallback){return value==null||value.isBlank()?fallback:value.trim();}
     private static String blankToNull(String value){return value==null||value.isBlank()?null:value.trim();}
+    private static int normalizedSessionTimeout(Integer value){
+        int timeout=value==null?10000:value;
+        if(timeout<1000||timeout>300000)throw new IllegalArgumentException("session.timeout.ms must be between 1000 and 300000 ms");
+        return timeout;
+    }
 
-    public record ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String password,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile){
+    private static Map<String,String> normalizeCustomProperties(Map<String,String> values){
+        if(values==null||values.isEmpty())return Map.of();
+        Map<String,String> normalized=new LinkedHashMap<>();
+        values.forEach((rawKey,rawValue)->{
+            String key=rawKey==null?"":rawKey.trim();
+            String value=rawValue==null?"":rawValue.trim();
+            if(key.isBlank())throw new IllegalArgumentException("Kafka property name must not be blank");
+            if(key.length()>255)throw new IllegalArgumentException("Kafka property name is too long: "+key);
+            if(MANAGED_PROPERTIES.contains(key))throw new IllegalArgumentException("Kafka property is managed by a dedicated profile field: "+key);
+            if(value.length()>8192)throw new IllegalArgumentException("Kafka property value is too long: "+key);
+            normalized.put(key,value);
+        });
+        return Map.copyOf(normalized);
+    }
+
+    private String writeCustomProperties(Map<String,String> values){
+        try{return objectMapper.writeValueAsString(normalizeCustomProperties(values));}
+        catch(Exception e){throw new IllegalArgumentException("Cannot serialize Kafka custom properties",e);}
+    }
+
+    private Map<String,String> readCustomProperties(String json){
+        if(json==null||json.isBlank())return Map.of();
+        try{return normalizeCustomProperties(objectMapper.readValue(json,new TypeReference<LinkedHashMap<String,String>>(){}));}
+        catch(Exception e){throw new IllegalStateException("Cannot read Kafka custom properties",e);}
+    }
+
+    public record ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String password,String caCertificatePath,String defaultTopic,String clientIdPrefix,Integer sessionTimeoutMs,Map<String,String> customProperties,boolean defaultProfile){
         /** Compatibility constructor for M1-M4 code written before inline password credentials were added. */
         public ProfileRequest(String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile) {
             this(name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
-                    passwordField, passwordEnv, null, caCertificatePath, defaultTopic, clientIdPrefix, defaultProfile);
+                    passwordField, passwordEnv, null, caCertificatePath, defaultTopic, clientIdPrefix, 10000, Map.of(), defaultProfile);
         }
     }
 
-    public record Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,boolean passwordConfigured,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt){
+    public record Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,boolean passwordConfigured,String caCertificatePath,String defaultTopic,String clientIdPrefix,int sessionTimeoutMs,Map<String,String> customProperties,boolean defaultProfile,Instant createdAt,Instant updatedAt){
+        /** Compatibility constructor for code written before session.timeout.ms was added. */
+        public Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,boolean passwordConfigured,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt) {
+            this(id, name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
+                    passwordField, passwordEnv, passwordConfigured, caCertificatePath, defaultTopic, clientIdPrefix, 10000, Map.of(), defaultProfile, createdAt, updatedAt);
+        }
         /** Compatibility constructor for M1-M4 code written before passwordConfigured was added. */
         public Profile(UUID id,String name,String bootstrapServers,String securityProtocol,String saslMechanism,String username,String credentialsSource,String vaultSecretPath,String passwordField,String passwordEnv,String caCertificatePath,String defaultTopic,String clientIdPrefix,boolean defaultProfile,Instant createdAt,Instant updatedAt) {
             this(id, name, bootstrapServers, securityProtocol, saslMechanism, username, credentialsSource, vaultSecretPath,
-                    passwordField, passwordEnv, false, caCertificatePath, defaultTopic, clientIdPrefix, defaultProfile, createdAt, updatedAt);
+                    passwordField, passwordEnv, false, caCertificatePath, defaultTopic, clientIdPrefix, 10000, Map.of(), defaultProfile, createdAt, updatedAt);
         }
     }
 }

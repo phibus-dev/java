@@ -55,6 +55,7 @@ public class KafkaConnectionService {
 
     public Properties clientProperties(KafkaProfileService.Profile profile) {
         Properties p = new Properties();
+        if (profile.customProperties() != null) profile.customProperties().forEach(p::put);
         p.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, profile.bootstrapServers());
         p.put(AdminClientConfig.CLIENT_ID_CONFIG, profile.clientIdPrefix() + "-admin");
         p.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");

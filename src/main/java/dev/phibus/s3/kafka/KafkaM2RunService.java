@@ -185,6 +185,7 @@ public class KafkaM2RunService {
         Properties p = connections.clientProperties(profile); p.put(ConsumerConfig.GROUP_ID_CONFIG, group); p.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         p.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName()); p.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         p.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, defaultValue(request.autoOffsetReset(), "latest")); p.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Math.max(1, request.maxPollRecords()));
+        p.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, profile.sessionTimeoutMs());
         p.put(ConsumerConfig.CLIENT_ID_CONFIG, profile.clientIdPrefix()+"-consumer-"+UUID.randomUUID()); return p;
     }
 
