@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение ClickHouse — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение ClickHouse — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css"></head>
 <body><main class="container">
 <header class="brand-header"><div class="brand-title"><h1>Сравнение ClickHouse</h1><p>Сопоставление двух сохранённых запусков.</p></div></header>
 <nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/settings">Настройки</a></nav>
@@ -13,4 +13,4 @@
 <tr><td>Errors</td><td th:text="${comparison.left.errors}"></td><td th:text="${comparison.right.errors}"></td><td>—</td></tr>
 </tbody></table></div></section>
 <section class="panel"><div class="grid two"><div><h3>Левый</h3><p th:text="${comparison.left.id}"></p><p th:text="${comparison.left.operation + ' · ' + comparison.left.table}"></p></div><div><h3>Правый</h3><p th:text="${comparison.right.id}"></p><p th:text="${comparison.right.operation + ' · ' + comparison.right.table}"></p></div></div></section>
-</main></body></html>
+</main><script src="/app-ui.js"></script></body></html>

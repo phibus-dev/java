@@ -4,7 +4,12 @@
 
   async function api(url, options={}) {
     const r = await fetch(url, {credentials:'same-origin', headers:{'Content-Type':'application/json', ...(options.headers||{})}, ...options});
-    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    if (!r.ok) {
+      const text=await r.text();
+      let message=text||`HTTP ${r.status}`;
+      try { const problem=JSON.parse(text); message=problem.message||problem.detail||problem.error||message; } catch(_) { /* plain text response */ }
+      throw new Error(message);
+    }
     return r.status === 204 ? null : r.json();
   }
 
@@ -22,9 +27,12 @@
 
   async function startReplication(){
     try {
+      $('repDiagnostic').textContent='';
+      $('repStatus').textContent='STARTING';
       activeRun = await api('/api/kafka/m3/replication-tests',{method:'POST',body:JSON.stringify({profileId:$('profile').value,topic:$('repTopic').value.trim()||null})});
+      render(activeRun);
       poll();
-    } catch(e){ EvoUI?.notify(e.message,'error'); }
+    } catch(e){ $('repStatus').textContent='FAILED'; $('repDiagnostic').textContent=e.message; EvoUI?.notify(e.message,'error'); }
   }
 
   async function startScaling(){
@@ -56,6 +64,7 @@
       $('repUnder').textContent=run.underReplicatedPartitions??0;
       $('repOffline').textContent=run.offlinePartitions??0;
       $('repMinIsr').textContent=run.minIsrViolations??0;
+      $('repDiagnostic').textContent=run.errorMessage||'';
     }
     $('scaleRows').innerHTML=(run.scalingPoints||[]).map(p=>`<tr><td>${p.partitions}</td><td>${p.replicationFactor}</td><td>${p.completedMessages}</td><td>${p.errorCount}</td><td>${fmt(p.messagesPerSecond)}</td><td>${fmt(p.mibPerSecond)}</td><td>${fmt(p.durationSeconds)} s</td></tr>`).join('');
   }

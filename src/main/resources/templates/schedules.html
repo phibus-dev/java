@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
-  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css">
+  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css">
 </head>
 <body><main class="container">
 <header><div><h1>Расписания тестов</h1><p>Планирование автоматических запусков S3-тестов.</p></div><nav><a href="/tasks">Задания</a> · <a href="/history">История</a> · <a href="/agents">Агенты</a> · <a href="/distributed-tests">Распределённые тесты</a> · <a href="/settings">Настройки</a></nav></header>
@@ -19,4 +19,4 @@
 <div class="actions"><button id="create-schedule" type="button">Создать расписание</button><span id="message"></span></div>
 </section>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Название</th><th>Cron</th><th>Часовой пояс</th><th>Статус</th><th>Следующий запуск</th><th>Последний запуск</th><th>Действия</th></tr></thead><tbody id="rows"></tbody></table></div></section>
-</main><script src="/csrf-fetch.js"></script><script src="/schedules.js"></script></body></html>
+</main><script src="/app-ui.js"></script><script src="/csrf-fetch.js"></script><script src="/schedules.js"></script></body></html>

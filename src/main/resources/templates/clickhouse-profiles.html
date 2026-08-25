@@ -6,7 +6,7 @@
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <title>Профили ClickHouse — ЭВО.СНТ</title>
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css">
 </head>
 <body><main class="container">
 <header><div><h1>Профили ClickHouse</h1><p>Подключения к ClickHouse для локальных и распределённых нагрузочных тестов.</p></div><nav><a href="/settings">← Настройки</a></nav></header>
@@ -37,5 +37,5 @@
     </article>
   </div>
 </section>
-</main><script src="/clickhouse-profiles.js"></script></body>
+</main><script src="/app-ui.js"></script><script src="/clickhouse-profiles.js"></script></body>
 </html>

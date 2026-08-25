@@ -72,8 +72,15 @@ public class KafkaM3Service {
         M3Run initial = M3Run.running(id, profile.id(), "KAFKA_REPLICATION", topic, started);
         runtime.put(id, initial);
         insert(initial, initiator);
-        executor.execute(() -> runReplication(initial, profile));
-        return initial;
+        try {
+            executor.execute(() -> runReplication(initial, profile));
+            return initial;
+        } catch (RuntimeException error) {
+            M3Run failed = initial.failed("Cannot schedule Kafka replication test: " + rootMessage(error));
+            runtime.put(id, failed);
+            persist(failed);
+            return failed;
+        }
     }
 
     public M3Run startScaling(ScalingRequest request, String initiator) {
@@ -90,8 +97,15 @@ public class KafkaM3Service {
         M3Run initial = M3Run.running(id, profile.id(), "KAFKA_PARTITION_SCALING", null, started);
         runtime.put(id, initial);
         insert(initial, initiator);
-        executor.execute(() -> runScaling(initial, profile, request, points));
-        return initial;
+        try {
+            executor.execute(() -> runScaling(initial, profile, request, points));
+            return initial;
+        } catch (RuntimeException error) {
+            M3Run failed = initial.failed("Cannot schedule Kafka partition scaling test: " + rootMessage(error));
+            runtime.put(id, failed);
+            persist(failed);
+            return failed;
+        }
     }
 
     public M3Run get(UUID id) {
