@@ -3,26 +3,27 @@ package dev.phibus.s3.kafka;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.HdrHistogram.ConcurrentHistogram;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
 public class KafkaProducerRunService {
-    private static final int MAX_LATENCY_SAMPLES = 100_000;
+    private static final int DEFAULT_MAX_IN_FLIGHT_MESSAGES = 10_000;
+    private static final long SNAPSHOT_CACHE_NANOS = 250_000_000L;
     private final KafkaProfileService profiles;
     private final KafkaConnectionService connections;
     private final JdbcTemplate jdbc;
@@ -97,49 +98,67 @@ public class KafkaProducerRunService {
         CountDownLatch workers = new CountDownLatch(request.producerThreads());
         AtomicLong sequence = new AtomicLong();
         byte[] payload = payload(request.messageSizeBytes());
-        for (int worker = 0; worker < request.producerThreads(); worker++) {
-            final int workerId = worker;
-            Thread.ofVirtual().name("kafka-producer-" + workerId).start(() -> {
-                try (KafkaProducer<byte[], byte[]> producer = producer(profile, request, workerId)) {
+        int maxInFlight = effectiveMaxInFlight(request);
+        Semaphore inFlight = new Semaphore(maxInFlight);
+
+        try (KafkaProducer<byte[], byte[]> producer = producer(profile, request, state.id)) {
+            for (int worker = 0; worker < request.producerThreads(); worker++) {
+                final int workerId = worker;
+                Thread.ofVirtual().name("kafka-producer-" + workerId).start(() -> {
                     long perThreadRate = request.targetMessagesPerSec() > 0
                             ? Math.max(1, request.targetMessagesPerSec() / request.producerThreads()) : 0;
                     long intervalNanos = perThreadRate > 0 ? 1_000_000_000L / perThreadRate : 0;
                     long nextSend = System.nanoTime();
-                    while (true) {
-                        long index = sequence.getAndIncrement();
-                        if (index >= request.messageCount()) break;
-                        if (intervalNanos > 0) {
-                            long delay = nextSend - System.nanoTime();
-                            if (delay > 0) LockSupport.parkNanos(delay);
-                            nextSend += intervalNanos;
+                    try {
+                        while (true) {
+                            long index = sequence.getAndIncrement();
+                            if (index >= request.messageCount()) break;
+                            if (intervalNanos > 0) {
+                                long delay = nextSend - System.nanoTime();
+                                if (delay > 0) LockSupport.parkNanos(delay);
+                                nextSend += intervalNanos;
+                            }
+                            byte[] key = Long.toString(index).getBytes(StandardCharsets.UTF_8);
+                            inFlight.acquire();
+                            state.inFlight.incrementAndGet();
+                            long started = System.nanoTime();
+                            try {
+                                producer.send(new ProducerRecord<>(state.topic, key, payload), (metadata, exception) -> {
+                                    long latency = System.nanoTime() - started;
+                                    try {
+                                        if (exception == null) {
+                                            state.recordSuccess(payload.length, latency);
+                                        } else {
+                                            state.recordError(rootMessage(exception));
+                                        }
+                                    } finally {
+                                        state.inFlight.decrementAndGet();
+                                        inFlight.release();
+                                    }
+                                });
+                            } catch (Exception e) {
+                                state.inFlight.decrementAndGet();
+                                inFlight.release();
+                                state.recordError(rootMessage(e));
+                            }
                         }
-                        byte[] key = Long.toString(index).getBytes(StandardCharsets.UTF_8);
-                        long started = System.nanoTime();
-                        try {
-                            producer.send(new ProducerRecord<>(state.topic, key, payload), (metadata, exception) -> {
-                                long latency = System.nanoTime() - started;
-                                if (exception == null) {
-                                    state.recordSuccess(payload.length, latency);
-                                } else {
-                                    state.recordError(rootMessage(exception));
-                                }
-                            });
-                        } catch (Exception e) {
-                            state.recordError(rootMessage(e));
-                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        state.recordError("Kafka producer worker interrupted");
+                    } finally {
+                        workers.countDown();
                     }
-                    producer.flush();
-                } finally {
-                    workers.countDown();
-                }
-            });
-        }
-        try {
+                });
+            }
             workers.await();
+            producer.flush();
             state.finish(state.errors.get() == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             state.recordError("Kafka producer run interrupted");
+            state.finish("FAILED");
+        } catch (Exception e) {
+            state.recordError(rootMessage(e));
             state.finish("FAILED");
         } finally {
             persistFinal(state);
@@ -147,9 +166,9 @@ public class KafkaProducerRunService {
         }
     }
 
-    private KafkaProducer<byte[], byte[]> producer(KafkaProfileService.Profile profile, ProducerRequest request, int worker) {
+    private KafkaProducer<byte[], byte[]> producer(KafkaProfileService.Profile profile, ProducerRequest request, UUID runId) {
         Properties p = connections.clientProperties(profile);
-        p.put(ProducerConfig.CLIENT_ID_CONFIG, profile.clientIdPrefix() + "-producer-" + worker);
+        p.put(ProducerConfig.CLIENT_ID_CONFIG, profile.clientIdPrefix() + "-producer-" + runId);
         p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
         p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
         p.put(ProducerConfig.ACKS_CONFIG, request.acks() == null || request.acks().isBlank() ? "all" : request.acks());
@@ -182,12 +201,18 @@ public class KafkaProducerRunService {
         if (r.messageSizeBytes() < 1 || r.messageSizeBytes() > 100 * 1024 * 1024) throw new IllegalArgumentException("messageSizeBytes must be 1..104857600");
         if (r.messageCount() < 1) throw new IllegalArgumentException("messageCount must be positive");
         if (r.producerThreads() < 1 || r.producerThreads() > 256) throw new IllegalArgumentException("producerThreads must be 1..256");
+        if (r.maxInFlightMessages() < 0 || r.maxInFlightMessages() > 1_000_000) throw new IllegalArgumentException("maxInFlightMessages must be 0..1000000");
     }
 
     private static String configText(ProducerRequest r) {
         return "acks=" + r.acks() + ";compression=" + r.compressionType() + ";batchSize=" + r.batchSize()
                 + ";lingerMs=" + r.lingerMs() + ";idempotence=" + r.enableIdempotence()
-                + ";targetMessagesPerSec=" + r.targetMessagesPerSec();
+                + ";targetMessagesPerSec=" + r.targetMessagesPerSec()
+                + ";maxInFlightMessages=" + effectiveMaxInFlight(r);
+    }
+
+    private static int effectiveMaxInFlight(ProducerRequest request) {
+        return request.maxInFlightMessages() == 0 ? DEFAULT_MAX_IN_FLIGHT_MESSAGES : request.maxInFlightMessages();
     }
 
     private static String rootMessage(Throwable error) {
@@ -198,7 +223,8 @@ public class KafkaProducerRunService {
 
     public record ProducerRequest(UUID profileId, String topic, int messageSizeBytes, long messageCount,
                                   int producerThreads, String acks, String compressionType, int batchSize,
-                                  long lingerMs, boolean enableIdempotence, long targetMessagesPerSec) { }
+                                  long lingerMs, boolean enableIdempotence, long targetMessagesPerSec,
+                                  int maxInFlightMessages) { }
 
     public record Snapshot(UUID id, UUID profileId, String topic, String status, Instant startedAt, Instant finishedAt,
                            long durationMs, long requestedMessages, long sentMessages, long sentBytes,
@@ -216,42 +242,60 @@ public class KafkaProducerRunService {
         final AtomicLong bytes = new AtomicLong();
         final AtomicLong errors = new AtomicLong();
         final AtomicLong retries = new AtomicLong();
-        final List<Long> latencies = java.util.Collections.synchronizedList(new ArrayList<>());
+        final AtomicLong inFlight = new AtomicLong();
+        final ConcurrentHistogram latencies = new ConcurrentHistogram(3);
         volatile String status = "RUNNING";
         volatile String errorMessage;
         volatile Instant finishedAt;
+        volatile Snapshot cachedSnapshot;
+        volatile long cachedSnapshotAtNanos;
 
         RuntimeState(UUID id, UUID profileId, String topic, ProducerRequest request, Instant startedAt) {
             this.id=id; this.profileId=profileId; this.topic=topic; this.request=request; this.startedAt=startedAt;
         }
         void recordSuccess(long size, long latencyNanos) {
-            sent.incrementAndGet(); bytes.addAndGet(size);
-            if (latencies.size() < MAX_LATENCY_SAMPLES) latencies.add(latencyNanos);
+            sent.incrementAndGet();
+            bytes.addAndGet(size);
+            latencies.recordValue(Math.max(1, latencyNanos));
         }
         void recordError(String message) { errors.incrementAndGet(); errorMessage=message; }
-        void finish(String newStatus) { status=newStatus; finishedAt=Instant.now(); }
+        void finish(String newStatus) {
+            status=newStatus;
+            finishedAt=Instant.now();
+            cachedSnapshot=buildSnapshot();
+            cachedSnapshotAtNanos=System.nanoTime();
+        }
         Snapshot snapshot() {
+            Snapshot current = cachedSnapshot;
+            if (finishedAt != null && current != null) return current;
+            long now = System.nanoTime();
+            if (current != null && now - cachedSnapshotAtNanos < SNAPSHOT_CACHE_NANOS) return current;
+            synchronized (this) {
+                current = cachedSnapshot;
+                if (current == null || now - cachedSnapshotAtNanos >= SNAPSHOT_CACHE_NANOS) {
+                    current = buildSnapshot();
+                    cachedSnapshot=current;
+                    cachedSnapshotAtNanos=now;
+                }
+                return current;
+            }
+        }
+        private Snapshot buildSnapshot() {
             Instant end = finishedAt == null ? Instant.now() : finishedAt;
             long durationMs = Math.max(1, Duration.between(startedAt, end).toMillis());
-            long count = sent.get(); long byteCount = bytes.get();
+            long count = sent.get();
+            long byteCount = bytes.get();
             double seconds = durationMs / 1000d;
-            List<Long> sample;
-            synchronized (latencies) { sample = new ArrayList<>(latencies); }
-            sample.sort(Comparator.naturalOrder());
+            long histogramCount = latencies.getTotalCount();
             double avg=0,p95=0,p99=0,max=0;
-            if (!sample.isEmpty()) {
-                avg = sample.stream().mapToLong(Long::longValue).average().orElse(0) / 1_000_000d;
-                p95 = percentile(sample, .95) / 1_000_000d;
-                p99 = percentile(sample, .99) / 1_000_000d;
-                max = sample.getLast() / 1_000_000d;
+            if (histogramCount > 0) {
+                avg = latencies.getMean() / 1_000_000d;
+                p95 = latencies.getValueAtPercentile(95.0) / 1_000_000d;
+                p99 = latencies.getValueAtPercentile(99.0) / 1_000_000d;
+                max = latencies.getMaxValue() / 1_000_000d;
             }
             return new Snapshot(id, profileId, topic, status, startedAt, finishedAt, durationMs,
                     request.messageCount(), count, byteCount, request.producerThreads(), request.messageSizeBytes(),
                     count/seconds, byteCount/1024d/1024d/seconds, avg, p95, p99, max, errors.get(), retries.get(), errorMessage);
         }
-        private static long percentile(List<Long> values, double q) {
-            int index = (int)Math.ceil(q * values.size()) - 1;
-            return values.get(Math.max(0, Math.min(index, values.size()-1)));
-        }
-    }
-}
+    }}
