@@ -3,6 +3,8 @@ package dev.phibus.s3.kafka;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
@@ -55,10 +57,10 @@ public class KafkaM2RunService {
         Snapshot initial = Snapshot.consumer(id, profile.id(), topic, request.groupId(), started);
         runtime.put(id, initial);
         jdbc.update("""
-            INSERT INTO kafka_test_run(id,profile_id,test_type,topic,status,started_at,consumer_group,consumer_threads,
+            INSERT INTO kafka_test_run(id,profile_id,test_type,topic,status,consumer_group,consumer_threads,
               requested_messages,message_size_bytes,initiator,config_json)
-            VALUES (?,?, 'KAFKA_CONSUMER', ?, 'RUNNING', ?, ?, ?, ?, 0, ?, ?)
-            """, id, profile.id(), topic, started, defaultValue(request.groupId(), "evo-snt-consumer-" + id),
+            VALUES (?,?, 'KAFKA_CONSUMER', ?, 'RUNNING', ?, ?, ?, 0, ?, ?)
+            """, id, profile.id(), topic, defaultValue(request.groupId(), "evo-snt-consumer-" + id),
                 Math.max(1, request.consumerThreads()), request.targetMessages(), initiator, request.toString());
         executor.execute(() -> runConsumer(initial, request, profile));
         return initial;
@@ -73,10 +75,10 @@ public class KafkaM2RunService {
         Snapshot initial = Snapshot.e2e(id, profile.id(), topic, started, request.messageCount());
         runtime.put(id, initial);
         jdbc.update("""
-            INSERT INTO kafka_test_run(id,profile_id,test_type,topic,status,started_at,consumer_group,consumer_threads,
+            INSERT INTO kafka_test_run(id,profile_id,test_type,topic,status,consumer_group,consumer_threads,
               requested_messages,message_size_bytes,producer_threads,initiator,config_json)
-            VALUES (?,?, 'KAFKA_E2E', ?, 'RUNNING', ?, ?, 1, ?, ?, 1, ?, ?)
-            """, id, profile.id(), topic, started, "evo-snt-e2e-" + id, request.messageCount(),
+            VALUES (?,?, 'KAFKA_E2E', ?, 'RUNNING', ?, 1, ?, ?, 1, ?, ?)
+            """, id, profile.id(), topic, "evo-snt-e2e-" + id, request.messageCount(),
                 Math.max(32, request.messageSizeBytes()), initiator, request.toString());
         executor.execute(() -> runE2e(initial, request, profile));
         return initial;
@@ -198,10 +200,14 @@ public class KafkaM2RunService {
               throughput_messages_sec=?,consumer_messages_sec=?,consumer_lag=?,max_partition_lag=?,missing_messages=?,duplicate_messages=?,
               out_of_order_messages=?,corrupted_messages=?,consistency_status=?,e2e_latency_avg_ms=?,e2e_latency_p50_ms=?,e2e_latency_p95_ms=?,
               e2e_latency_p99_ms=?,e2e_latency_max_ms=?,error_count=?,error_message=? WHERE id=?
-            """, s.status(), s.finishedAt(), s.finishedAt()==null?null:Duration.between(s.startedAt(),s.finishedAt()).toMillis(), s.sentMessages(), s.consumedMessages(),
+            """, s.status(), toOffsetDateTime(s.finishedAt()), s.finishedAt()==null?null:Duration.between(s.startedAt(),s.finishedAt()).toMillis(), s.sentMessages(), s.consumedMessages(),
                 s.sentBytes(), s.consumedBytes(), s.producerMessagesPerSec(), s.consumerMessagesPerSec(), s.consumerLag(), s.maxPartitionLag(), s.missingMessages(),
                 s.duplicateMessages(), s.outOfOrderMessages(), s.corruptedMessages(), s.consistencyStatus(), s.e2eLatencyAvgMs(), s.e2eLatencyP50Ms(), s.e2eLatencyP95Ms(),
                 s.e2eLatencyP99Ms(), s.e2eLatencyMaxMs(), s.errorCount(), s.errorMessage(), s.id());
+    }
+
+    private static OffsetDateTime toOffsetDateTime(Instant value) {
+        return value == null ? null : OffsetDateTime.ofInstant(value, ZoneOffset.UTC);
     }
 
     private KafkaProfileService.Profile resolveProfile(UUID id) { KafkaProfileService.Profile p=id==null?profiles.defaultProfile():profiles.get(id); if(p==null)throw new IllegalArgumentException("Kafka profile is required"); return p; }
