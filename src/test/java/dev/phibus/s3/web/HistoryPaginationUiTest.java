@@ -47,7 +47,7 @@ class HistoryPaginationUiTest {
                 String html = Files.readString(template);
                 if (html.contains("/app-ui.js")) {
                     assertThat(html).as(template.getFileName().toString())
-                            .contains("/app-ui.js?v=20260825.2");
+                            .contains("/app-ui.js?v=20260825.3");
                 }
             }
         }

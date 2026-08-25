@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
 <title>Kafka — ЭВО.СНТ</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css?v=20260825.3">
 </head>
 <body><main class="container">
 <header class="brand-header"><div class="brand-title"><h1>Kafka</h1><p>Нагрузочное тестирование Apache Kafka в режиме KRaft.</p></div></header>
@@ -16,4 +16,4 @@
 <div class="actions"><button id="check">Проверить подключение</button><button id="start">Запустить тест</button></div><pre id="diagnostic" class="diagnostic-output"></pre></section>
 <section class="panel"><h2>Runtime</h2><div class="metrics"><article><span>Статус</span><strong id="status">—</strong></article><article><span>Отправлено</span><strong id="sent">0</strong></article><article><span>Сообщений/с</span><strong id="rate">0</strong></article><article><span>MiB/s</span><strong id="mib">0</strong></article><article><span>p95</span><strong id="p95">0 ms</strong></article><article><span>p99</span><strong id="p99">0 ms</strong></article><article><span>Ошибки</span><strong id="errors">0</strong></article></div></section>
 <section class="panel"><h2>История Kafka Producer</h2><div class="table-wrap"><table><thead><tr><th>Начало</th><th>Topic</th><th>Статус</th><th>Сообщений</th><th>msg/s</th><th>p99</th><th>Ошибки</th></tr></thead><tbody id="history" data-history-page></tbody></table></div></section>
-</main><script src="/app-ui.js?v=20260825.2"></script><script src="/csrf-fetch.js"></script><script src="/kafka.js"></script></body></html>
+</main><script src="/app-ui.js?v=20260825.3"></script><script src="/csrf-fetch.js"></script><script src="/kafka.js"></script></body></html>

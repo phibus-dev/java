@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
-  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css"><script src="/csrf-fetch.js"></script>
+  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css?v=20260825.3"><script src="/csrf-fetch.js"></script>
   <style>.transfer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}.drop{border:2px dashed #8aa0b8;padding:28px;text-align:center;border-radius:8px}.warning{border-left:4px solid #c8102e;padding:10px 14px;background:#fff4f5}.status{white-space:pre-wrap}</style>
 </head>
 <body><main class="container">
@@ -39,4 +39,4 @@ async function exportConfig(){
 function form(){const f=document.getElementById('file').files[0];if(!f)throw new Error('Выберите файл');const d=new FormData();d.append('file',f);const p=password('importPassword');if(p)d.append('password',p);return d;}
 async function validateConfig(){try{const r=await fetch('/api/config/validate',{method:'POST',body:form()});const j=await r.json();statusNode.textContent=JSON.stringify(j,null,2);}catch(e){statusNode.textContent=e.message;}}
 async function importConfig(){if(!confirm('Импортировать конфигурацию и заменить текущие настройки?'))return;try{const r=await fetch('/api/config/import',{method:'POST',body:form()});const j=await r.json();statusNode.textContent=JSON.stringify(j,null,2);}catch(e){statusNode.textContent=e.message;}}
-</script><script src="/app-ui.js?v=20260825.2"></script></body></html>
+</script><script src="/app-ui.js?v=20260825.3"></script></body></html>

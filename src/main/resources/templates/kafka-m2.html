@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
 <title>Kafka M2 — ЭВО.СНТ</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css?v=20260825.3">
 </head>
 <body><main class="container">
 <header class="brand-header"><div class="brand-title"><h1>Kafka Consumer\Throughput</h1><p>Чтение, пропускная способность, сквозная задержка и контроль консистентности сообщений.</p></div></header>
@@ -19,4 +19,4 @@
 <label class="check"><input id="eIdempotence" type="checkbox" checked> Enable idempotence</label><div class="actions"><button id="eStart">Запустить Producer -&gt; Consumer</button></div></section>
 <section class="panel"><h2>Runtime results</h2><div class="metrics"><article><span>Статус</span><strong id="eStatus">—</strong></article><article><span>Produced</span><strong id="eProduced">0</strong></article><article><span>Consumed</span><strong id="eConsumed">0</strong></article><article><span>Producer msg/s</span><strong id="eProducerRate">0</strong></article><article><span>Consumer msg/s</span><strong id="eConsumerRate">0</strong></article><article><span>Missing</span><strong id="eMissing">0</strong></article><article><span>Duplicates</span><strong id="eDuplicates">0</strong></article><article><span>Out-of-order</span><strong id="eOrder">0</strong></article><article><span>Corrupted</span><strong id="eCorrupted">0</strong></article><article><span>Consistency</span><strong id="eConsistency">—</strong></article><article><span>E2E average</span><strong id="eAvg">0 ms</strong></article><article><span>E2E p50</span><strong id="eP50">0 ms</strong></article><article><span>E2E p95</span><strong id="eP95">0 ms</strong></article><article><span>E2E p99</span><strong id="eP99">0 ms</strong></article><article><span>E2E max</span><strong id="eMax">0 ms</strong></article></div><pre id="eDiagnostic" class="diagnostic-output"></pre></section>
 <section class="panel"><h2>История Consumer / Throughput</h2><div class="table-wrap"><table><thead><tr><th>Начало</th><th>Тип</th><th>Topic</th><th>Статус</th><th>Produced</th><th>Consumed</th><th>Producer msg/s</th><th>Consumer msg/s</th><th>Lag/Missing</th><th>Consistency</th><th>p99</th><th>Причина ошибки</th></tr></thead><tbody id="m2History" data-history-page></tbody></table></div></section>
-</main><script src="/app-ui.js?v=20260825.2"></script><script src="/csrf-fetch.js"></script><script src="/kafka-m2.js"></script></body></html>
+</main><script src="/app-ui.js?v=20260825.3"></script><script src="/csrf-fetch.js"></script><script src="/kafka-m2.js"></script></body></html>
