@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -246,7 +248,7 @@ public class KafkaM3Service {
 
     private void insert(M3Run run, String initiator) {
         jdbc.update("INSERT INTO kafka_m3_run(id,profile_id,test_type,topic,status,started_at,initiator) VALUES (?,?,?,?,?,?,?)",
-                run.id(), run.profileId(), run.testType(), run.topic(), run.status(), run.startedAt(), initiator);
+                run.id(), run.profileId(), run.testType(), run.topic(), run.status(), toOffsetDateTime(run.startedAt()), initiator);
     }
 
     private void persist(M3Run run) {
@@ -255,7 +257,7 @@ public class KafkaM3Service {
                 replica_count=?,isr_count=?,under_replicated_partitions=?,offline_partitions=?,min_isr_violations=?,scaling_json=?,error_message=?
                 WHERE id=?
                 """,
-                run.status(), run.finishedAt(), run.finishedAt() == null ? null : Duration.between(run.startedAt(), run.finishedAt()).toMillis(),
+                run.status(), toOffsetDateTime(run.finishedAt()), run.finishedAt() == null ? null : Duration.between(run.startedAt(), run.finishedAt()).toMillis(),
                 run.brokerCount(), run.controllerId(), run.partitionCount(), run.replicaCount(), run.isrCount(),
                 run.underReplicatedPartitions(), run.offlinePartitions(), run.minIsrViolations(), writePoints(run.scalingPoints()),
                 run.errorMessage(), run.id());
@@ -305,6 +307,10 @@ public class KafkaM3Service {
         Throwable current = error;
         while (current.getCause() != null) current = current.getCause();
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private static OffsetDateTime toOffsetDateTime(Instant value) {
+        return value == null ? null : OffsetDateTime.ofInstant(value, ZoneOffset.UTC);
     }
 
     public record ReplicationRequest(UUID profileId, String topic) { }

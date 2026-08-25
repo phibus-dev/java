@@ -8,4 +8,4 @@
 <script>
 async function rerun(id){const r=await fetch('/api/history/'+id+'/rerun',{method:'POST'});document.getElementById('result').textContent=r.ok?'Новый тест создан: '+(await r.json()).id:'Ошибка повторного запуска: '+await r.text();}
 document.getElementById('rerun-button')?.addEventListener('click',event=>rerun(event.currentTarget.dataset.runId));
-</script><script src="/app-ui.js"></script></body></html>
+</script><script src="/app-ui.js?v=20260825.2"></script></body></html>

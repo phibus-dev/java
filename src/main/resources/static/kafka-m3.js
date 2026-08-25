@@ -72,6 +72,7 @@
   async function loadHistory(){
     const items=await api('/api/kafka/m3/runs?limit=100');
     $('history').innerHTML=items.map(r=>`<tr><td>${esc(r.startedAt||'')}</td><td>${esc(r.testType)}</td><td>${esc(r.topic||'—')}</td><td>${esc(r.status)}</td><td>${r.underReplicatedPartitions??0}</td><td>${r.offlinePartitions??0}</td><td>${esc(r.errorMessage||'')}</td></tr>`).join('');
+    EvoUI?.refreshHistoryPagination?.();
   }
 
   function fmt(v){return Number(v||0).toLocaleString('ru-RU',{maximumFractionDigits:2});}

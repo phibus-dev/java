@@ -2,6 +2,8 @@ package dev.phibus.s3.kafka;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +53,7 @@ public class KafkaM4FailoverService {
         FailoverRun run = FailoverRun.running(id, profile.id(), topic, started, warmup, observe);
         runtime.put(id, run);
         jdbc.update("INSERT INTO kafka_m4_failover_run(id,profile_id,topic,status,started_at,config_json,initiator) VALUES (?,?,?,?,?,?,?)",
-                id, profile.id(), topic, "RUNNING", started, request.toString(), initiator);
+                id, profile.id(), topic, "RUNNING", toOffsetDateTime(started), request.toString(), initiator);
         executor.execute(() -> execute(run, profile, request, size, warmup, observe));
         return run;
     }
@@ -128,7 +130,8 @@ public class KafkaM4FailoverService {
     private static void sleepForRate(long batch,double rate)throws InterruptedException{long ms=Math.max(1,Math.round(batch/rate*1000d));Thread.sleep(Math.min(ms,1000));}
     private void persist(FailoverRun r){jdbc.update("""
       UPDATE kafka_m4_failover_run SET status=?,finished_at=?,duration_ms=?,baseline_controller_id=?,final_controller_id=?,controller_changes=?,leader_changes=?,failure_detected_at=?,recovered_at=?,recovery_time_ms=?,sent_messages=?,sent_bytes=?,producer_errors=?,avg_messages_sec=?,min_messages_sec=?,max_under_replicated=?,max_offline_partitions=?,consistency_status=?,error_message=? WHERE id=?
-      """,r.status(),r.finishedAt(),r.finishedAt()==null?null:Duration.between(r.startedAt(),r.finishedAt()).toMillis(),r.baselineControllerId(),r.finalControllerId(),r.controllerChanges(),r.leaderChanges(),r.failureDetectedAt(),r.recoveredAt(),r.recoveryTimeMs(),r.sentMessages(),r.sentBytes(),r.producerErrors(),r.avgMessagesPerSec(),r.minMessagesPerSec(),r.maxUnderReplicated(),r.maxOfflinePartitions(),r.consistencyStatus(),r.errorMessage(),r.id());}
+      """,r.status(),toOffsetDateTime(r.finishedAt()),r.finishedAt()==null?null:Duration.between(r.startedAt(),r.finishedAt()).toMillis(),r.baselineControllerId(),r.finalControllerId(),r.controllerChanges(),r.leaderChanges(),toOffsetDateTime(r.failureDetectedAt()),toOffsetDateTime(r.recoveredAt()),r.recoveryTimeMs(),r.sentMessages(),r.sentBytes(),r.producerErrors(),r.avgMessagesPerSec(),r.minMessagesPerSec(),r.maxUnderReplicated(),r.maxOfflinePartitions(),r.consistencyStatus(),r.errorMessage(),r.id());}
+    private static OffsetDateTime toOffsetDateTime(Instant value){return value==null?null:OffsetDateTime.ofInstant(value,ZoneOffset.UTC);}
     private static String rootMessage(Throwable e){Throwable c=e;while(c.getCause()!=null)c=c.getCause();return c.getMessage()==null?c.getClass().getSimpleName():c.getMessage();}
     private record Sample(Map<Integer,Integer> leaders,long underReplicated,long offline){}
 
