@@ -5,17 +5,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import org.HdrHistogram.Histogram;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -35,6 +38,7 @@ public class KafkaM2RunService {
     private static final String RUN_HEADER = "evo-run";
     private static final String SEQ_HEADER = "evo-seq";
     private static final String SENT_NANOS_HEADER = "evo-sent-nanos";
+    private static final long MAX_E2E_LATENCY_NANOS = Duration.ofHours(1).toNanos();
 
     private final KafkaProfileService profiles;
     private final KafkaConnectionService connections;
@@ -137,48 +141,83 @@ public class KafkaM2RunService {
 
     private void runE2e(Snapshot initial, E2eRequest request, KafkaProfileService.Profile profile) {
         UUID id = initial.id(); String runMarker = id.toString(); int total = Math.toIntExact(request.messageCount());
-        BitSet seen = new BitSet(total); Map<Integer,Long> lastByPartition = new HashMap<>(); List<Double> latencies = new ArrayList<>(Math.min(total, 1_000_000));
+        BitSet seen = new BitSet(total); Map<Integer,Long> lastByPartition = new HashMap<>();
+        Histogram latencies = new Histogram(1, MAX_E2E_LATENCY_NANOS, 3);
         AtomicLong produced = new AtomicLong(); AtomicLong consumed = new AtomicLong(); AtomicLong sentBytes = new AtomicLong(); AtomicLong consumedBytes = new AtomicLong();
         AtomicLong duplicates = new AtomicLong(); AtomicLong outOfOrder = new AtomicLong(); AtomicLong corrupted = new AtomicLong(); AtomicLong errors = new AtomicLong();
-        String[] error = new String[1]; long startedNanos = System.nanoTime();
+        AtomicReference<String> error = new AtomicReference<>(); AtomicBoolean producerFinished = new AtomicBoolean();
+        AtomicLong producerStartedNanos = new AtomicLong(); AtomicLong producerFinishedNanos = new AtomicLong(); AtomicLong lastConsumedNanos = new AtomicLong();
+        CountDownLatch consumerReady = new CountDownLatch(1); long startedNanos = System.nanoTime();
         Properties consumerProps = consumerProperties(profile, "evo-snt-e2e-" + id, new ConsumerRequest(profile.id(), initial.topic(), "evo-snt-e2e-" + id, 1, 0, 120, "latest", 500));
         Properties producerProps = producerProperties(profile, request);
-        try (KafkaConsumer<byte[],byte[]> consumer = new KafkaConsumer<>(consumerProps); KafkaProducer<byte[],byte[]> producer = new KafkaProducer<>(producerProps)) {
-            consumer.subscribe(List.of(initial.topic()));
-            consumer.poll(Duration.ofMillis(500));
+        Thread consumerThread = Thread.ofVirtual().name("kafka-e2e-consumer-" + id).start(() -> {
+            try (KafkaConsumer<byte[],byte[]> consumer = new KafkaConsumer<>(consumerProps)) {
+                consumer.subscribe(List.of(initial.topic()));
+                long assignmentDeadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+                while (consumer.assignment().isEmpty() && System.nanoTime() < assignmentDeadline) consumer.poll(Duration.ofMillis(100));
+                if (consumer.assignment().isEmpty()) throw new IllegalStateException("Consumer did not receive partition assignment within 15 seconds");
+                consumer.seekToEnd(consumer.assignment());
+                for (TopicPartition partition : consumer.assignment()) consumer.position(partition);
+                consumerReady.countDown();
+                while (!producerFinished.get() || consumed.get() < produced.get()) {
+                    if (producerFinished.get() && System.nanoTime() - producerFinishedNanos.get() >= Duration.ofSeconds(Math.max(5, request.consumeTimeoutSeconds())).toNanos()) break;
+                    for (ConsumerRecord<byte[],byte[]> record : consumer.poll(Duration.ofMillis(100))) {
+                        Header rh = record.headers().lastHeader(RUN_HEADER); if (rh == null || !runMarker.equals(new String(rh.value(), java.nio.charset.StandardCharsets.UTF_8))) continue;
+                        Header sh = record.headers().lastHeader(SEQ_HEADER); Header th = record.headers().lastHeader(SENT_NANOS_HEADER);
+                        if (sh == null || th == null || sh.value().length != Long.BYTES || th.value().length != Long.BYTES) { corrupted.incrementAndGet(); continue; }
+                        long seq = ByteBuffer.wrap(sh.value()).getLong(); long sent = ByteBuffer.wrap(th.value()).getLong();
+                        if (seq < 0 || seq >= total) { corrupted.incrementAndGet(); continue; }
+                        int index = (int) seq; boolean unique = !seen.get(index);
+                        if (!unique) duplicates.incrementAndGet(); else { seen.set(index); consumed.incrementAndGet(); consumedBytes.addAndGet(Math.max(0, record.serializedValueSize())); }
+                        Long last = lastByPartition.put(record.partition(), seq); if (last != null && seq < last) outOfOrder.incrementAndGet();
+                        if (unique) latencies.recordValue(Math.max(1, Math.min(MAX_E2E_LATENCY_NANOS, System.nanoTime() - sent)));
+                        lastConsumedNanos.set(System.nanoTime());
+                    }
+                    long measurementStart = producerStartedNanos.get();
+                    if (measurementStart > 0) {
+                        double seconds = Math.max(0.001, (System.nanoTime() - measurementStart) / 1_000_000_000d);
+                        runtime.put(id, initial.withE2eProgress(produced.get(), consumed.get(), sentBytes.get(), consumedBytes.get(), produced.get()/seconds,
+                                consumed.get()/seconds, duplicates.get(), outOfOrder.get(), corrupted.get()));
+                    }
+                }
+            } catch (Exception e) {
+                errors.incrementAndGet(); error.compareAndSet(null, rootMessage(e));
+            } finally { consumerReady.countDown(); }
+        });
+        try (KafkaProducer<byte[],byte[]> producer = new KafkaProducer<>(producerProps)) {
+            if (!consumerReady.await(16, TimeUnit.SECONDS)) throw new IllegalStateException("Consumer startup timed out");
+            if (error.get() != null) throw new IllegalStateException(error.get());
+            producer.partitionsFor(initial.topic());
+            long sendStarted = System.nanoTime(); producerStartedNanos.set(sendStarted);
             byte[] marker = runMarker.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             for (int i=0;i<total;i++) {
+                if (error.get() != null) break;
                 byte[] payload = payload(request.messageSizeBytes(), i);
                 ProducerRecord<byte[],byte[]> rec = new ProducerRecord<>(initial.topic(), payload);
                 rec.headers().add(RUN_HEADER, marker).add(SEQ_HEADER, ByteBuffer.allocate(Long.BYTES).putLong(i).array())
                         .add(SENT_NANOS_HEADER, ByteBuffer.allocate(Long.BYTES).putLong(System.nanoTime()).array());
-                producer.send(rec, (metadata, ex) -> { if (ex != null) { errors.incrementAndGet(); error[0] = rootMessage(ex); } else { produced.incrementAndGet(); sentBytes.addAndGet(payload.length); } });
-                if (request.targetMessagesPerSec() > 0) throttle(startedNanos, i + 1L, request.targetMessagesPerSec());
+                producer.send(rec, (metadata, ex) -> { if (ex != null) { errors.incrementAndGet(); error.compareAndSet(null, rootMessage(ex)); } else { produced.incrementAndGet(); sentBytes.addAndGet(payload.length); } });
+                if (request.targetMessagesPerSec() > 0) throttle(sendStarted, i + 1L, request.targetMessagesPerSec());
             }
             producer.flush();
-            long deadline = System.nanoTime() + Duration.ofSeconds(Math.max(5, request.consumeTimeoutSeconds())).toNanos();
-            while (System.nanoTime() < deadline && consumed.get() < produced.get()) {
-                for (ConsumerRecord<byte[],byte[]> record : consumer.poll(Duration.ofMillis(300))) {
-                    Header rh = record.headers().lastHeader(RUN_HEADER); if (rh == null || !runMarker.equals(new String(rh.value(), java.nio.charset.StandardCharsets.UTF_8))) continue;
-                    Header sh = record.headers().lastHeader(SEQ_HEADER); Header th = record.headers().lastHeader(SENT_NANOS_HEADER);
-                    if (sh == null || th == null || sh.value().length != Long.BYTES || th.value().length != Long.BYTES) { corrupted.incrementAndGet(); continue; }
-                    long seq = ByteBuffer.wrap(sh.value()).getLong(); long sent = ByteBuffer.wrap(th.value()).getLong();
-                    if (seq < 0 || seq >= total) { corrupted.incrementAndGet(); continue; }
-                    int index = (int) seq; if (seen.get(index)) duplicates.incrementAndGet(); else { seen.set(index); consumed.incrementAndGet(); consumedBytes.addAndGet(Math.max(0, record.serializedValueSize())); }
-                    Long last = lastByPartition.put(record.partition(), seq); if (last != null && seq < last) outOfOrder.incrementAndGet();
-                    double latency = Math.max(0, (System.nanoTime() - sent) / 1_000_000d); if (latencies.size() < 1_000_000) latencies.add(latency);
-                }
-                double seconds = Math.max(0.001, (System.nanoTime()-startedNanos)/1_000_000_000d);
-                runtime.put(id, initial.withE2eProgress(produced.get(), consumed.get(), sentBytes.get(), consumedBytes.get(), produced.get()/seconds,
-                        duplicates.get(), outOfOrder.get(), corrupted.get()));
-            }
-        } catch (Exception e) { errors.incrementAndGet(); error[0] = rootMessage(e); }
+        } catch (Exception e) { if (error.compareAndSet(null, rootMessage(e))) errors.incrementAndGet(); }
+        finally { producerFinishedNanos.set(System.nanoTime()); producerFinished.set(true); }
+        try { consumerThread.join(Duration.ofSeconds(Math.max(5, request.consumeTimeoutSeconds()) + 2).toMillis()); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); errors.incrementAndGet(); error.compareAndSet(null, "E2E test interrupted"); }
+        if (consumerThread.isAlive()) {
+            consumerThread.interrupt(); errors.incrementAndGet(); error.compareAndSet(null, "Consumer did not stop after timeout");
+            try { consumerThread.join(2_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
         long missing = Math.max(0, produced.get() - consumed.get()); String consistency = missing==0 && duplicates.get()==0 && corrupted.get()==0 ? "PASS" : "FAIL";
-        latencies.sort(Comparator.naturalOrder()); double avg = latencies.stream().mapToDouble(Double::doubleValue).average().orElse(0);
-        double p50=p(latencies,.50), p95=p(latencies,.95), p99=p(latencies,.99), max=latencies.isEmpty()?0:latencies.getLast();
-        String status = errors.get()>0 ? "FAILED" : "COMPLETED"; Instant finished=Instant.now(); double seconds=Math.max(.001,(System.nanoTime()-startedNanos)/1_000_000_000d);
-        Snapshot done=initial.finishE2e(status,finished,produced.get(),consumed.get(),sentBytes.get(),consumedBytes.get(),produced.get()/seconds,missing,
-                duplicates.get(),outOfOrder.get(),corrupted.get(),consistency,avg,p50,p95,p99,max,errors.get(),error[0]); runtime.put(id,done); persist(done);
+        if (missing > 0 && error.compareAndSet(null, "Consumer timeout: produced=" + produced.get() + ", consumed=" + consumed.get() + ", missing=" + missing)) errors.incrementAndGet();
+        double avg=latencies.getTotalCount()==0?0:latencies.getMean()/1_000_000d;
+        double p50=latencyMs(latencies,50), p95=latencyMs(latencies,95), p99=latencyMs(latencies,99), max=latencies.getMaxValue()/1_000_000d;
+        long sendStart=producerStartedNanos.get(); double producerSeconds=sendStart==0?0:Math.max(.001,(producerFinishedNanos.get()-sendStart)/1_000_000_000d);
+        long consumeEnd=lastConsumedNanos.get(); double consumerSeconds=sendStart==0||consumeEnd==0?0:Math.max(.001,(consumeEnd-sendStart)/1_000_000_000d);
+        double producerRate=producerSeconds==0?0:produced.get()/producerSeconds; double consumerRate=consumerSeconds==0?0:consumed.get()/consumerSeconds;
+        String status = errors.get()>0 || "FAIL".equals(consistency) ? "FAILED" : "COMPLETED"; Instant finished=Instant.now();
+        Snapshot done=initial.finishE2e(status,finished,produced.get(),consumed.get(),sentBytes.get(),consumedBytes.get(),producerRate,consumerRate,missing,
+                duplicates.get(),outOfOrder.get(),corrupted.get(),consistency,avg,p50,p95,p99,max,errors.get(),error.get()); runtime.put(id,done); persist(done);
     }
 
     private Properties consumerProperties(KafkaProfileService.Profile profile, String group, ConsumerRequest request) {
@@ -213,7 +252,7 @@ public class KafkaM2RunService {
 
     private KafkaProfileService.Profile resolveProfile(UUID id) { KafkaProfileService.Profile p=id==null?profiles.defaultProfile():profiles.get(id); if(p==null)throw new IllegalArgumentException("Kafka profile is required"); return p; }
     private static byte[] payload(int size,long seq){byte[] b=new byte[Math.max(32,size)];ByteBuffer.wrap(b).putLong(seq);return b;}
-    private static double p(List<Double> values,double q){if(values.isEmpty())return 0;int i=(int)Math.ceil(q*values.size())-1;return values.get(Math.max(0,Math.min(i,values.size()-1)));}
+    private static double latencyMs(Histogram histogram,double percentile){return histogram.getTotalCount()==0?0:histogram.getValueAtPercentile(percentile)/1_000_000d;}
     private static void throttle(long started,long sent,double rate){long expected=(long)(sent*1_000_000_000d/rate);long wait=expected-(System.nanoTime()-started);if(wait>0)java.util.concurrent.locks.LockSupport.parkNanos(wait);}
     private static String rootMessage(Throwable t){Throwable c=t;while(c.getCause()!=null)c=c.getCause();return c.getMessage()==null?c.getClass().getSimpleName():c.getMessage();}
     private static String defaultValue(String v,String d){return v==null||v.isBlank()?d:v.trim();}
@@ -227,7 +266,7 @@ public class KafkaM2RunService {
         static Snapshot e2e(UUID id,UUID profile,String topic,Instant started,long requested){return new Snapshot(id,profile,"KAFKA_E2E",topic,"RUNNING",started,null,0,0,0,0,0,0,0,0,requested,0,0,0,"PENDING",0,0,0,0,0,0,null);}
         Snapshot withProgress(String st,long consumed,long bytes,double rate,long lag,long maxLag){return new Snapshot(id,profileId,testType,topic,st,startedAt,null,0,consumed,0,bytes,0,rate,lag,maxLag,0,0,0,0,null,0,0,0,0,0,0,null);}
         Snapshot finishConsumer(String st,Instant f,long consumed,long bytes,double rate,long lag,long maxLag,long errors,String error){return new Snapshot(id,profileId,testType,topic,st,startedAt,f,0,consumed,0,bytes,0,rate,lag,maxLag,0,0,0,0,null,0,0,0,0,0,errors,error);}
-        Snapshot withE2eProgress(long sent,long consumed,long sb,long cb,double rate,long dup,long oo,long corr){return new Snapshot(id,profileId,testType,topic,"RUNNING",startedAt,null,sent,consumed,sb,cb,rate,0,0,0,Math.max(0,sent-consumed),dup,oo,corr,"PENDING",0,0,0,0,0,0,null);}
-        Snapshot finishE2e(String st,Instant f,long sent,long consumed,long sb,long cb,double rate,long missing,long dup,long oo,long corr,String consistency,double avg,double p50,double p95,double p99,double max,long errors,String error){return new Snapshot(id,profileId,testType,topic,st,startedAt,f,sent,consumed,sb,cb,rate,0,0,0,missing,dup,oo,corr,consistency,avg,p50,p95,p99,max,errors,error);}
+        Snapshot withE2eProgress(long sent,long consumed,long sb,long cb,double producerRate,double consumerRate,long dup,long oo,long corr){return new Snapshot(id,profileId,testType,topic,"RUNNING",startedAt,null,sent,consumed,sb,cb,producerRate,consumerRate,0,0,Math.max(0,sent-consumed),dup,oo,corr,"PENDING",0,0,0,0,0,0,null);}
+        Snapshot finishE2e(String st,Instant f,long sent,long consumed,long sb,long cb,double producerRate,double consumerRate,long missing,long dup,long oo,long corr,String consistency,double avg,double p50,double p95,double p99,double max,long errors,String error){return new Snapshot(id,profileId,testType,topic,st,startedAt,f,sent,consumed,sb,cb,producerRate,consumerRate,0,0,missing,dup,oo,corr,consistency,avg,p50,p95,p99,max,errors,error);}
     }
 }
