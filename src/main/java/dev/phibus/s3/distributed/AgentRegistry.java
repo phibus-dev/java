@@ -21,8 +21,21 @@ public class AgentRegistry {
         this.registrationToken = registrationToken;
     }
 
-    public RegistrationResult register(RegistrationRequest request, String suppliedToken) {
+    public synchronized RegistrationResult register(RegistrationRequest request, String suppliedToken) {
         if (!registrationToken.equals(suppliedToken)) throw new SecurityException("Invalid agent registration token");
+        AgentRecord existing = agents.values().stream()
+                .filter(agent -> sameIdentity(agent, request))
+                .findFirst().orElse(null);
+        if (existing != null) {
+            Instant now = Instant.now();
+            AgentRecord refreshed = new AgentRecord(existing.id(), request.name(), request.hostname(), request.address(),
+                    request.version(), request.cpuCount(), request.memoryBytes(),
+                    request.tags() == null ? Map.of() : Map.copyOf(request.tags()), existing.registeredAt(), now,
+                    AgentStatus.ONLINE, existing.agentToken());
+            agents.put(existing.id(), refreshed);
+            management.putIfAbsent(existing.id(), AgentManagement.defaults());
+            return new RegistrationResult(existing.id(), existing.agentToken(), existing.registeredAt());
+        }
         UUID id = UUID.randomUUID();
         String agentToken = UUID.randomUUID() + "." + UUID.randomUUID();
         Instant now = Instant.now();
@@ -32,6 +45,12 @@ public class AgentRegistry {
         agents.put(id, record);
         management.put(id, new AgentManagement(true, null, false, null, now));
         return new RegistrationResult(id, agentToken, now);
+    }
+
+    private static boolean sameIdentity(AgentRecord agent, RegistrationRequest request) {
+        return java.util.Objects.equals(agent.name(), request.name())
+                && java.util.Objects.equals(agent.hostname(), request.hostname())
+                && java.util.Objects.equals(agent.address(), request.address());
     }
 
     public AgentRecord heartbeat(UUID id, String token, HeartbeatRequest request) {

@@ -35,10 +35,11 @@ public class DistributedTestController {
     @GetMapping("/{id}") public DistributedTestService.DistributedRunView get(@PathVariable UUID id) { return service.get(id); }
 
     @GetMapping("/agent/{agentId}/assignment")
-    public DistributedTestService.Assignment poll(@PathVariable UUID agentId,@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) { return service.poll(agentId,bearer(authorization)); }
+    public DistributedTestService.Assignment poll(@PathVariable UUID agentId,@RequestHeader(value="X-Agent-Token",required=false) String agentToken,@RequestHeader(value=HttpHeaders.AUTHORIZATION,required=false) String authorization) { return service.poll(agentId,token(agentToken,authorization)); }
 
     @PostMapping("/agent/{agentId}/statistics")
-    public DistributedTestService.DistributedRunView report(@PathVariable UUID agentId,@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,@RequestBody DistributedTestService.AgentStatistics statistics) { return service.report(agentId,bearer(authorization),statistics); }
+    public DistributedTestService.DistributedRunView report(@PathVariable UUID agentId,@RequestHeader(value="X-Agent-Token",required=false) String agentToken,@RequestHeader(value=HttpHeaders.AUTHORIZATION,required=false) String authorization,@RequestBody DistributedTestService.AgentStatistics statistics) { return service.report(agentId,token(agentToken,authorization),statistics); }
 
     private static String bearer(String authorization){return authorization!=null&&authorization.startsWith("Bearer ")?authorization.substring(7):authorization;}
+    private static String token(String agentToken,String authorization){return agentToken!=null&&!agentToken.isBlank()?agentToken:bearer(authorization);}
 }

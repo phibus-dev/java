@@ -51,4 +51,22 @@ class AgentRegistryTest {
         assertThrows(SecurityException.class, () -> registry.register(
                 new AgentRegistry.RegistrationRequest("agent", "host", "http://agent", "1", 1, 1, Map.of()), "wrong"));
     }
+
+    @Test
+    void repeatedRegistrationReusesIdentityInsteadOfCreatingDuplicate() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationRequest firstRequest = new AgentRegistry.RegistrationRequest(
+                "agent-1", "host-1", "https://agent-1:8080", "2.4.0-rc13", 8, 1024, Map.of("dc", "dc1"));
+        AgentRegistry.RegistrationResult first = registry.register(firstRequest, "registration-secret");
+
+        AgentRegistry.RegistrationResult repeated = registry.register(
+                new AgentRegistry.RegistrationRequest("agent-1", "host-1", "https://agent-1:8080",
+                        "2.4.0-rc14", 12, 2048, Map.of("dc", "dc1")), "registration-secret");
+
+        assertEquals(first.agentId(), repeated.agentId());
+        assertEquals(first.agentToken(), repeated.agentToken());
+        assertEquals(1, registry.list().size());
+        assertEquals("2.4.0-rc14", registry.list().getFirst().version());
+        assertEquals(12, registry.list().getFirst().cpuCount());
+    }
 }
