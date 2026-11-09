@@ -28,6 +28,8 @@ ALTER TABLE test_run ALTER COLUMN total_parts TYPE BIGINT;
 ALTER TABLE test_run ALTER COLUMN successful_parts TYPE BIGINT;
 ALTER TABLE test_run ALTER COLUMN failed_parts TYPE BIGINT;
 
+ALTER TABLE clickhouse_test_run ADD COLUMN IF NOT EXISTS requested_queries BIGINT NOT NULL DEFAULT 1;
+
 -- Manual credentials must never remain in scheduler JSON. Existing schedules
 -- continue to use their profile/environment/Vault configuration after cleanup.
 UPDATE test_schedule

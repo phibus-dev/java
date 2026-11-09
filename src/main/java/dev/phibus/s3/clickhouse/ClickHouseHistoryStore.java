@@ -23,10 +23,10 @@ public class ClickHouseHistoryStore {
         jdbc.update("""
                 INSERT INTO clickhouse_test_run(
                     id, profile_id, endpoint, table_name, operation, status, created_at, started_at, finished_at,
-                    concurrency, batch_size, requested_rows, duration_seconds, warmup_seconds, payload_bytes,
+                    concurrency, batch_size, requested_rows, requested_queries, duration_seconds, warmup_seconds, payload_bytes,
                     auto_create_table, rows_processed, bytes_processed, queries, errors, rows_per_second,
                     mib_per_second, queries_per_second, p50_latency_ms, p95_latency_ms, p99_latency_ms, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status, started_at = EXCLUDED.started_at, finished_at = EXCLUDED.finished_at,
                     rows_processed = EXCLUDED.rows_processed, bytes_processed = EXCLUDED.bytes_processed,
@@ -38,7 +38,7 @@ public class ClickHouseHistoryStore {
                 snapshot.id(), request.profileId(), snapshot.endpoint(), snapshot.table(), snapshot.operation(),
                 snapshot.status().name(), ClickHouseJdbcTime.timestamptz(snapshot.createdAt()),
                 ClickHouseJdbcTime.timestamptz(snapshot.startedAt()), ClickHouseJdbcTime.timestamptz(snapshot.finishedAt()),
-                request.concurrency(), request.batchSize(), request.rowCount(), request.durationSeconds(),
+                request.concurrency(), request.batchSize(), request.rowCount(), request.effectiveQueryCount(), request.durationSeconds(),
                 request.warmupSeconds(), request.payloadBytes(), request.autoCreateTable(), snapshot.rows(),
                 snapshot.bytes(), snapshot.queries(), snapshot.errors(), snapshot.rowsPerSecond(),
                 snapshot.mibPerSecond(), snapshot.queriesPerSecond(), snapshot.p50LatencyMs(),
@@ -52,14 +52,14 @@ public class ClickHouseHistoryStore {
         jdbc.update("""
                 INSERT INTO clickhouse_test_run(
                     id, profile_id, endpoint, table_name, operation, status, created_at, started_at, finished_at,
-                    concurrency, batch_size, requested_rows, duration_seconds, warmup_seconds, payload_bytes,
+                    concurrency, batch_size, requested_rows, requested_queries, duration_seconds, warmup_seconds, payload_bytes,
                     auto_create_table, rows_processed, bytes_processed, queries, errors, rows_per_second,
                     mib_per_second, queries_per_second, p50_latency_ms, p95_latency_ms, p99_latency_ms, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """, id, request.profileId(), endpoint, request.normalizedTable(), request.normalizedOperation(), status,
                 ClickHouseJdbcTime.timestamptz(startedAt), ClickHouseJdbcTime.timestamptz(startedAt),
-                ClickHouseJdbcTime.timestamptz(finishedAt), request.concurrency(), request.batchSize(), request.rowCount(),
+                ClickHouseJdbcTime.timestamptz(finishedAt), request.concurrency(), request.batchSize(), request.rowCount(), request.effectiveQueryCount(),
                 request.durationSeconds(), request.warmupSeconds(), request.payloadBytes(), request.autoCreateTable(),
                 rows, bytes, queries, errors, rowsPerSecond, mibPerSecond, queriesPerSecond,
                 p50LatencyMs, p95LatencyMs, p99LatencyMs, message);
@@ -136,6 +136,7 @@ public class ClickHouseHistoryStore {
                 rs.getString("endpoint"), rs.getString("table_name"), rs.getString("operation"),
                 rs.getString("status"), instant(rs, "created_at"), instant(rs, "started_at"), instant(rs, "finished_at"),
                 rs.getInt("concurrency"), rs.getInt("batch_size"), rs.getLong("requested_rows"),
+                rs.getLong("requested_queries"),
                 rs.getLong("duration_seconds"), rs.getLong("warmup_seconds"), rs.getInt("payload_bytes"),
                 rs.getBoolean("auto_create_table"), rs.getLong("rows_processed"), rs.getLong("bytes_processed"),
                 rs.getLong("queries"), rs.getLong("errors"), rs.getDouble("rows_per_second"),
@@ -160,7 +161,7 @@ public class ClickHouseHistoryStore {
                                     String detailUrl, boolean comparable) { }
     public record HistoryRow(UUID id, UUID profileId, String endpoint, String table, String operation, String status,
                              Instant createdAt, Instant startedAt, Instant finishedAt, int concurrency, int batchSize,
-                             long requestedRows, long durationSeconds, long warmupSeconds, int payloadBytes,
+                             long requestedRows, long requestedQueries, long durationSeconds, long warmupSeconds, int payloadBytes,
                              boolean autoCreateTable, long rows, long bytes, long queries, long errors,
                              double rowsPerSecond, double mibPerSecond, double queriesPerSecond,
                              double p50LatencyMs, double p95LatencyMs, double p99LatencyMs, String message) { }

@@ -45,13 +45,20 @@ class DistributedTestHistoryTest {
     }
 
     @Test
-    void redactsCredentialsAndUsesWorstAgentPercentile() {
+    void rejectsCredentialsAndUsesWorstAgentPercentile() {
         AgentRegistry registry = new AgentRegistry("registration-secret");
         AgentRegistry.RegistrationResult first = register(registry, "agent-a");
         AgentRegistry.RegistrationResult second = register(registry, "agent-b");
         DistributedTestService service = new DistributedTestService(registry, mock(ClickHouseProfileService.class),
                 mock(ClickHouseHistoryStore.class), mock(TestHistoryStore.class), mock(KafkaProfileService.class));
-        TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", "access", "secret",
+        TestRequest requestWithCredentials = new TestRequest("http://s3", "bucket", "us-east-1", "access", "secret",
+                true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
+
+        assertThatThrownBy(() -> service.create(new DistributedTestService.CreateDistributedTestRequest(
+                "unsafe", List.of(first.agentId()), requestWithCredentials)))
+                .hasMessageContaining("configured locally on each agent");
+
+        TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", null, null,
                 true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
 
         DistributedTestService.DistributedRunView run = service.create(

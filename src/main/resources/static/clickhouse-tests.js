@@ -21,6 +21,7 @@
       operation: document.getElementById('operation').value,
       concurrency: n('concurrency'), batchSize: n('batchSize'), rowCount: n('rowCount'),
       durationSeconds: n('durationSeconds'), warmupSeconds: n('warmupSeconds'), payloadBytes: n('payloadBytes'),
+      queryCount: n('queryCount'),
       autoCreateTable: document.getElementById('autoCreateTable').checked
     };
     try {

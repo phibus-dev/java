@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest(controllers = SecurityAuthorizationTest.ProbeController.class,
-        properties = "s3perf.security.enabled=true")
+        properties = {"s3perf.security.enabled=true", "s3perf.security.audit-enabled=false"})
 @Import(SecurityConfiguration.class)
 class SecurityAuthorizationTest {
     @Autowired

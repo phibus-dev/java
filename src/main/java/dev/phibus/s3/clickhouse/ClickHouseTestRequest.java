@@ -17,7 +17,15 @@ public record ClickHouseTestRequest(
         @Min(0) @Max(86400) long durationSeconds,
         @Min(0) @Max(3600) long warmupSeconds,
         @Min(1) @Max(1048576) int payloadBytes,
+        @Min(1) @Max(10000000) Long queryCount,
         boolean autoCreateTable) {
+
+    public ClickHouseTestRequest(UUID profileId, String endpoint, String table, String operation,
+                                 int concurrency, int batchSize, long rowCount, long durationSeconds,
+                                 long warmupSeconds, int payloadBytes, boolean autoCreateTable) {
+        this(profileId, endpoint, table, operation, concurrency, batchSize, rowCount, durationSeconds,
+                warmupSeconds, payloadBytes, null, autoCreateTable);
+    }
 
     public String normalizedTable() {
         return table == null || table.isBlank() ? "evo_snt_perf_load" : table.trim();
@@ -29,5 +37,9 @@ public record ClickHouseTestRequest(
 
     public boolean durationMode() {
         return durationSeconds > 0;
+    }
+
+    public long effectiveQueryCount() {
+        return queryCount == null ? 1 : queryCount;
     }
 }

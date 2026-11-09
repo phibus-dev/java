@@ -44,6 +44,11 @@ public class DistributedTestService {
 
     public DistributedRunView create(CreateDistributedTestRequest request) {
         requireAgents(request.agentIds());
+        if (request.testRequest() == null) throw new IllegalArgumentException("S3 test request is required");
+        if (notBlank(request.testRequest().accessKey()) || notBlank(request.testRequest().secretKey())) {
+            throw new IllegalArgumentException(
+                    "Distributed S3 tests require credentials configured locally on each agent");
+        }
         UUID runId = UUID.randomUUID(); Instant now = Instant.now();
         Map<UUID, AgentProgress> agents = prepareAgents(request.agentIds(), TestType.S3);
         for (UUID agentId : request.agentIds()) assignments.put(agentId,
@@ -57,12 +62,17 @@ public class DistributedTestService {
         requireAgents(request.agentIds());
         if (request.testRequest() == null) throw new IllegalArgumentException("ClickHouse test request is required");
         UUID runId=UUID.randomUUID(); Instant now=Instant.now();
-        Map<UUID,AgentProgress> agents=prepareAgents(request.agentIds(),TestType.CLICKHOUSE); String firstEndpoint=null;
+        Map<UUID,ClickHouseConnectionSpec> connections=new LinkedHashMap<>(); String firstEndpoint=null;
         for(UUID agentId:request.agentIds()){
             String endpoint=request.endpointByAgent()==null?request.testRequest().endpoint():request.endpointByAgent().getOrDefault(agentId,request.testRequest().endpoint());
             ClickHouseConnectionSpec spec=clickHouseProfiles.connectionSpec(request.testRequest().profileId(),endpoint);
             if(firstEndpoint==null) firstEndpoint=spec.endpoint();
-            ClickHouseTestRequest agentRequest=new ClickHouseTestRequest(request.testRequest().profileId(),spec.endpoint(),request.testRequest().table(),request.testRequest().operation(),request.testRequest().concurrency(),request.testRequest().batchSize(),request.testRequest().rowCount(),request.testRequest().durationSeconds(),request.testRequest().warmupSeconds(),request.testRequest().payloadBytes(),request.testRequest().autoCreateTable());
+            connections.put(agentId,spec);
+        }
+        Map<UUID,AgentProgress> agents=prepareAgents(request.agentIds(),TestType.CLICKHOUSE);
+        for(UUID agentId:request.agentIds()){
+            ClickHouseConnectionSpec spec=connections.get(agentId);
+            ClickHouseTestRequest agentRequest=new ClickHouseTestRequest(request.testRequest().profileId(),spec.endpoint(),request.testRequest().table(),request.testRequest().operation(),request.testRequest().concurrency(),request.testRequest().batchSize(),request.testRequest().rowCount(),request.testRequest().durationSeconds(),request.testRequest().warmupSeconds(),request.testRequest().payloadBytes(),request.testRequest().queryCount(),request.testRequest().autoCreateTable());
             assignments.put(agentId,new Assignment(runId,agentId,TestType.CLICKHOUSE,null,agentRequest,spec,null,null,now));
         }
         DistributedRun run=new DistributedRun(runId,request.name(),TestType.CLICKHOUSE,null,request.testRequest(),null,now,null,"RUNNING",new ConcurrentHashMap<>(agents),firstEndpoint);
@@ -131,6 +141,7 @@ public class DistributedTestService {
     private static double maxLatency(List<AgentProgress> agents,int percentile){return agents.stream().filter(a->a.completedOperations()>0).mapToDouble(a->percentile==50?a.p50LatencyMs():percentile==99?a.p99LatencyMs():a.p95LatencyMs()).max().orElse(0);}
     private static TestRequest safeRequest(TestRequest request){if(request==null)return null;return new TestRequest(request.endpoint(),request.bucket(),request.region(),null,null,request.pathStyleAccess(),request.objectKey(),request.objectSizeMiB(),request.partSizeMiB(),request.parallelism(),request.objectCount(),request.deleteAfterTest(),request.operation(),request.executionMode(),request.durationSeconds(),request.warmupSeconds(),request.workloadProfile(),request.workloadWeights(),request.targetOperationsPerSecond(),request.operationThreads(),request.profileId());}
     private static void requireAgents(List<UUID> agentIds){if(agentIds==null||agentIds.isEmpty())throw new IllegalArgumentException("At least one agent is required");}
+    private static boolean notBlank(String value){return value!=null&&!value.isBlank();}
     private static boolean isTerminal(String status){return "COMPLETED".equals(status)||"COMPLETED_WITH_ERRORS".equals(status)||"FAILED".equals(status)||"CANCELLED".equals(status);}
 
     public record CreateDistributedTestRequest(String name,List<UUID> agentIds,TestRequest testRequest){}

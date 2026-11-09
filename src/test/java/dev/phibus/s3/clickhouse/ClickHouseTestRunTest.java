@@ -62,6 +62,21 @@ class ClickHouseTestRunTest {
     }
 
     @Test
+    void selectProgressUsesRequestedQueriesInsteadOfReturnedRows() {
+        ClickHouseTestRequest request = new ClickHouseTestRequest(UUID.randomUUID(), null,
+                "evo_snt_perf_load", "SELECT", 1, 100, 1_000_000, 0, 0, 128, 3L, true);
+        ClickHouseTestRun run = new ClickHouseTestRun(request, "http://clickhouse:8123");
+        run.start();
+
+        run.operationCompleted(1_000_000, 128_000_000, 10);
+        assertThat(run.snapshot().percent()).isCloseTo(33.33, org.assertj.core.data.Offset.offset(0.01));
+        run.operationCompleted(1_000_000, 128_000_000, 10);
+        run.operationCompleted(1_000_000, 128_000_000, 10);
+
+        assertThat(run.snapshot().percent()).isEqualTo(100.0);
+    }
+
+    @Test
     void validatesOperationAndTableName() {
         ClickHouseTestRequest invalidOperation = request("DROP", 10, 0);
         assertThatThrownBy(() -> ClickHouseTestRunService.validate(invalidOperation))
@@ -73,6 +88,10 @@ class ClickHouseTestRunTest {
         assertThatThrownBy(() -> ClickHouseTestRunService.validate(invalidTable))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("table");
+
+        assertThatThrownBy(() -> ClickHouseTestRunService.validate(request("INSERT_SELECT", 100, 60)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("fixed row and query counts");
     }
 
     private static ClickHouseTestRequest request(String operation, long rows, long duration) {
