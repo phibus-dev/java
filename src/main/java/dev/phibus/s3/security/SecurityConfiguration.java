@@ -6,9 +6,11 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
@@ -56,13 +58,16 @@ public class SecurityConfiguration {
         configureHeaders(http); OidcUserService delegate=new OidcUserService();
         return http.csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()).ignoringRequestMatchers(AGENT_API_CSRF_IGNORED))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/settings","/api/settings/**","/static/**","/actuator/health/**").permitAll()
+                        .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
+                        .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/prometheus").hasAnyRole("ADMIN","OPERATOR")
                         .requestMatchers("/api/agents/register","/api/agents/*/heartbeat","/api/distributed-tests/agent/**").permitAll()
                         .requestMatchers("/api/kafka/profiles/*/check").hasAnyRole("ADMIN","OPERATOR")
-                        .requestMatchers("/api/settings/**","/api/s3-profiles/**","/api/kafka/profiles/**","/api/audit/**","/audit.html").hasRole("ADMIN")
-                        .requestMatchers("/api/schedules/**","/api/distributed-tests/**","/api/tests/**","/api/kafka/**").hasAnyRole("ADMIN","OPERATOR")
-                        .requestMatchers("/settings/**").hasRole("ADMIN")
+                        .requestMatchers("/api/settings/**","/api/config/**","/api/s3-profiles/**",
+                                "/api/kafka/profiles/**","/api/agents/**","/api/audit/**",
+                                "/settings","/settings/**","/audit.html").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET,"/api/**").hasAnyRole("ADMIN","OPERATOR","VIEWER")
+                        .requestMatchers("/api/**").hasAnyRole("ADMIN","OPERATOR")
                         .anyRequest().hasAnyRole("ADMIN","OPERATOR","VIEWER"))
                 .oauth2Login(oauth -> oauth.userInfoEndpoint(ui -> ui.oidcUserService(req -> loadOidcUserWithClientRoles(delegate,jwtDecoder,req))))
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))

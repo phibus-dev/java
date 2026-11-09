@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -55,7 +57,7 @@ public class SystemDiagnosticsService {
             try (S3Client client = S3Client.builder().endpointOverride(URI.create(profile.endpoint()))
                     .region(Region.of(profile.region()))
                     .credentialsProvider(StaticCredentialsProvider.create(
-                            AwsBasicCredentials.create(credentials.accessKey(), credentials.secretKey())))
+                            awsCredentials(credentials)))
                     .serviceConfiguration(S3Configuration.builder()
                             .pathStyleAccessEnabled(profile.pathStyleAccess()).build()).build()) {
                 List<String> buckets = client.listBuckets().buckets().stream().map(bucket -> bucket.name()).sorted().toList();
@@ -85,6 +87,12 @@ public class SystemDiagnosticsService {
 
     private static long elapsed(long started) {
         return Duration.ofNanos(System.nanoTime() - started).toMillis();
+    }
+
+    private static AwsCredentials awsCredentials(S3Credentials credentials) {
+        return credentials.temporary()
+                ? AwsSessionCredentials.create(credentials.accessKey(), credentials.secretKey(), credentials.sessionToken())
+                : AwsBasicCredentials.create(credentials.accessKey(), credentials.secretKey());
     }
 
     private static String rootMessage(Throwable error) {

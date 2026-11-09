@@ -14,9 +14,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.springframework.stereotype.Repository;
@@ -222,32 +220,26 @@ public class TestHistoryStore {
             delete.executeUpdate();
         }
         String sql = """
-                insert into part_result(test_run_id, object_number, part_number, bytes, duration_ms,
-                    speed_mibps, etag, status, error_message) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                insert into part_result(test_run_id, sequence_no, object_number, part_number, bytes, duration_ms,
+                    speed_mibps, etag, status, error_message) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
-            for (PartResult part : deduplicateParts(run.parts())) {
+            long sequence = 0;
+            for (PartResult part : run.parts()) {
                 insert.setObject(1, run.id());
-                insert.setInt(2, part.objectNumber());
-                insert.setInt(3, part.partNumber());
-                insert.setLong(4, part.bytes());
-                insert.setLong(5, part.durationMillis());
-                insert.setDouble(6, part.speedMiBps());
-                insert.setString(7, part.eTag());
-                insert.setString(8, part.status());
-                insert.setString(9, part.error());
+                insert.setLong(2, sequence++);
+                insert.setInt(3, part.objectNumber());
+                insert.setInt(4, part.partNumber());
+                insert.setLong(5, part.bytes());
+                insert.setLong(6, part.durationMillis());
+                insert.setDouble(7, part.speedMiBps());
+                insert.setString(8, part.eTag());
+                insert.setString(9, part.status());
+                insert.setString(10, part.error());
                 insert.addBatch();
             }
             insert.executeBatch();
         }
-    }
-
-    static List<PartResult> deduplicateParts(List<PartResult> parts) {
-        Map<PartKey, PartResult> unique = new LinkedHashMap<>();
-        for (PartResult part : parts) {
-            unique.put(new PartKey(part.objectNumber(), part.partNumber()), part);
-        }
-        return List.copyOf(unique.values());
     }
 
     private static HistoryRow map(ResultSet rs) throws SQLException {
@@ -268,8 +260,6 @@ public class TestHistoryStore {
     private static String normalizeInitiator(String value) {
         return value == null || value.isBlank() ? "local" : value.trim();
     }
-
-    private record PartKey(int objectNumber, int partNumber) { }
 
     public record HistoryRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                              String endpoint, String bucket, String region, String objectKey, long totalBytes,
