@@ -1,84 +1,346 @@
 (() => {
-  const KEY = 'evo-snt-ui-view';
-  const MODES = [
-    {id:'A', name:'Карточный', title:'Карточный (рекомендуемый)'},
-    {id:'B', name:'Инфоблоки', title:'Информационные блоки'},
-    {id:'C', name:'Компактный', title:'Компактный с иконками'},
-    {id:'D', name:'Табличный', title:'Табличный фокус'}
-  ];
-  const ROLE_LEVEL = {VIEWER:1, OPERATOR:2, ADMIN:3};
+  const ROLE_LEVEL = {NONE: 0, VIEWER: 1, OPERATOR: 2, ADMIN: 3, OPEN: 99};
+  let activeRole = 'NONE';
 
-  function currentMode() { const saved=localStorage.getItem(KEY); return MODES.some(m=>m.id===saved)?saved:'A'; }
-  function applyMode(mode) {
-    document.documentElement.dataset.uiView=mode; localStorage.setItem(KEY,mode);
-    document.querySelectorAll('[data-ui-mode]').forEach(b=>{const s=b.dataset.uiMode===mode;b.classList.toggle('active',s);b.setAttribute('aria-pressed',s?'true':'false');});
-    window.dispatchEvent(new Event('resize'));
-  }
   function ensureMetadata() {
-    if (!document.querySelector('link[rel="icon"]')) document.head.insertAdjacentHTML('beforeend','<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
-    if (!document.querySelector('link[rel="manifest"]')) document.head.insertAdjacentHTML('beforeend','<link rel="manifest" href="/manifest.webmanifest">');
-    if (!document.title.includes('ЭВО.СНТ')) document.title = `${document.title || 'ЭВО.СНТ'} — ЭВО.СНТ`;
+    if (!document.querySelector('link[rel="icon"]')) {
+      document.head.insertAdjacentHTML('beforeend', '<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    }
+    if (!document.querySelector('link[rel="manifest"]')) {
+      document.head.insertAdjacentHTML('beforeend', '<link rel="manifest" href="/manifest.webmanifest">');
+    }
+    if (!document.title.includes('ЭВО.СНТ')) document.title = `${document.title || 'Страница'} — ЭВО.СНТ`;
   }
-  function makeSwitcher() {
-    if (document.querySelector('.ui-view-switcher')) return;
-    const host=document.querySelector('main.container')||document.querySelector('main')||document.body;
-    const s=document.createElement('section'); s.className='ui-view-switcher'; s.setAttribute('aria-label','Вариант представления');
-    s.innerHTML=`<span class="ui-view-label">Вариант представления:</span><div class="ui-view-buttons">${MODES.map(m=>`<button type="button" class="ui-view-button" data-ui-mode="${m.id}" title="${m.title}"><strong>${m.id}</strong><span>${m.name}</span></button>`).join('')}</div>`;
-    const navs=host.querySelectorAll('.corporate-nav'), first=host.querySelector('.panel,.hero-panel');
-    if(navs.length) navs[navs.length-1].insertAdjacentElement('afterend',s); else if(first) first.insertAdjacentElement('beforebegin',s); else host.prepend(s);
-    s.addEventListener('click',e=>{const b=e.target.closest('[data-ui-mode]');if(b)applyMode(b.dataset.uiMode);}); applyMode(currentMode());
+
+  function breadcrumbDefinition(path) {
+    const exact = {
+      '/tasks': [['S3', '/tasks'], ['Задания']],
+      '/history': [['S3', '/tasks'], ['История']],
+      '/history/compare': [['S3', '/tasks'], ['История', '/history'], ['Сравнение запусков']],
+      '/schedules': [['S3', '/tasks'], ['Расписания']],
+      '/baselines': [['S3', '/tasks'], ['Baselines']],
+      '/settings/s3-profiles': [['S3', '/tasks'], ['Профили']],
+      '/clickhouse': [['ClickHouse']],
+      '/clickhouse/compare': [['ClickHouse', '/clickhouse'], ['Сравнение запусков']],
+      '/clickhouse/replication': [['ClickHouse', '/clickhouse'], ['Репликация']],
+      '/clickhouse/replicated-tests': [['ClickHouse', '/clickhouse'], ['Replicated tests']],
+      '/clickhouse/failover-tests': [['ClickHouse', '/clickhouse'], ['Failover']],
+      '/clickhouse/ha': [['ClickHouse', '/clickhouse'], ['HA dashboard']],
+      '/settings/clickhouse-profiles': [['ClickHouse', '/clickhouse'], ['Профили']],
+      '/kafka': [['Kafka']],
+      '/kafka/m2': [['Kafka', '/kafka'], ['Consumer / Throughput']],
+      '/kafka/m3': [['Kafka', '/kafka'], ['Replication / KRaft']],
+      '/kafka/m4': [['Kafka', '/kafka'], ['Failover / Resilience']],
+      '/settings/kafka-profiles': [['Kafka', '/kafka'], ['Профили']],
+      '/distributed-tests': [['Распределённые тесты']],
+      '/agents': [['Агенты']],
+      '/monitoring': [['Мониторинг']],
+      '/settings': [['Настройки']],
+      '/settings/keycloak': [['Настройки', '/settings'], ['Keycloak']],
+      '/settings/configuration': [['Настройки', '/settings'], ['Импорт / экспорт']],
+      '/system': [['Настройки', '/settings'], ['Состояние системы']],
+      '/audit': [['Настройки', '/settings'], ['Аудит']],
+      '/error': [['Ошибка']]
+    };
+    if (exact[path]) return exact[path];
+    if (/^\/history\/[^/]+$/.test(path)) return [['S3', '/tasks'], ['История', '/history'], ['Детали запуска']];
+    if (/^\/clickhouse\/history\/[^/]+$/.test(path)) return [['ClickHouse', '/clickhouse'], ['Тесты и история', '/clickhouse'], ['Результат теста']];
+    if (/^\/clickhouse\/replicated-tests\/history\/[^/]+$/.test(path)) {
+      return [['ClickHouse', '/clickhouse'], ['Replicated tests', '/clickhouse/replicated-tests'], ['Результат теста']];
+    }
+    return [];
   }
+
   function breadcrumbs() {
-    if(document.querySelector('.breadcrumbs')||location.pathname==='/') return;
-    const labels={tasks:'S3',history:'История',clickhouse:'ClickHouse',agents:'Агенты','distributed-tests':'Распределённые тесты',monitoring:'Мониторинг',settings:'Настройки',schedules:'Расписания','replicated-tests':'Replicated tests','failover-tests':'Failover',replication:'Replication',ha:'HA Dashboard',keycloak:'Keycloak','s3-profiles':'Профили S3'};
-    const parts=location.pathname.split('/').filter(Boolean); if(!parts.length)return;
-    let path=''; const items=['<a href="/">Главная</a>'];
-    parts.forEach((p,i)=>{path+=`/${p}`;const label=labels[p]||decodeURIComponent(p);items.push(i===parts.length-1?`<span>${label}</span>`:`<a href="${path}">${label}</a>`);});
-    const el=document.createElement('nav');el.className='breadcrumbs';el.setAttribute('aria-label','Хлебные крошки');el.innerHTML=items.join('<b>›</b>');
-    const host=document.querySelector('main.container')||document.querySelector('main');const nav=host?.querySelector('.corporate-nav'); if(nav)nav.insertAdjacentElement('afterend',el);
+    if (location.pathname === '/' || document.querySelector('.breadcrumbs')) return;
+    const items = breadcrumbDefinition(location.pathname);
+    if (!items.length) return;
+    const host = document.querySelector('main.container') || document.querySelector('main');
+    const navs = host?.querySelectorAll(':scope > .corporate-nav');
+    const anchor = navs?.length ? navs[navs.length - 1] : host?.querySelector(':scope > header');
+    if (!host || !anchor) return;
+
+    const element = document.createElement('nav');
+    element.className = 'breadcrumbs';
+    element.setAttribute('aria-label', 'Хлебные крошки');
+    const home = document.createElement('a');
+    home.href = '/';
+    home.textContent = 'Главная';
+    element.appendChild(home);
+    items.forEach(([label, href], index) => {
+      const separator = document.createElement('span');
+      separator.className = 'breadcrumb-separator';
+      separator.setAttribute('aria-hidden', 'true');
+      separator.textContent = '›';
+      element.appendChild(separator);
+      const isLast = index === items.length - 1;
+      const item = href && !isLast ? document.createElement('a') : document.createElement('span');
+      if (item instanceof HTMLAnchorElement) item.href = href;
+      item.textContent = label;
+      if (isLast) item.setAttribute('aria-current', 'page');
+      element.appendChild(item);
+    });
+    anchor.insertAdjacentElement('afterend', element);
   }
-  function notify(message,type='info') {
-    let host=document.querySelector('.toast-host'); if(!host){host=document.createElement('div');host.className='toast-host';document.body.appendChild(host);}
-    const t=document.createElement('div');t.className=`toast toast-${type}`;t.textContent=message;host.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),200);},4200);
+
+  function notify(message, type = 'info') {
+    let host = document.querySelector('.toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'toast-host';
+      host.setAttribute('aria-live', 'polite');
+      host.setAttribute('aria-atomic', 'false');
+      document.body.appendChild(host);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.textContent = message;
+    host.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 200);
+    }, 4200);
   }
+
   function submitLogout(session) {
-    const token=session?.csrfToken;
-    const parameter=session?.csrfParameterName||'_csrf';
-    if(!token){notify('Не удалось получить CSRF-токен для выхода','error');return;}
-    const form=document.createElement('form');form.method='POST';form.action='/logout';form.hidden=true;
-    const input=document.createElement('input');input.type='hidden';input.name=parameter;input.value=token;form.appendChild(input);
-    document.body.appendChild(form);form.submit();
+    const token = session?.csrfToken;
+    const parameter = session?.csrfParameterName || '_csrf';
+    if (!token) {
+      notify('Не удалось получить CSRF-токен для выхода', 'error');
+      return;
+    }
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/logout';
+    form.hidden = true;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = parameter;
+    input.value = token;
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
   }
+
+  function applyRoleAwareUi(role, root = document) {
+    const resolvedRole = role || 'NONE';
+    activeRole = resolvedRole;
+    document.documentElement.dataset.userRole = resolvedRole;
+    const level = ROLE_LEVEL[resolvedRole] ?? 0;
+    const elements = root.querySelectorAll ? [...root.querySelectorAll('[data-min-role]')] : [];
+    if (root instanceof Element && root.matches('[data-min-role]')) elements.push(root);
+    elements.forEach(element => {
+      const required = ROLE_LEVEL[element.dataset.minRole] ?? 0;
+      element.hidden = level < required;
+    });
+  }
+
+  function observeRoleAwareUi() {
+    new MutationObserver(mutations => {
+      mutations.forEach(mutation => mutation.addedNodes.forEach(node => {
+        if (node instanceof Element) applyRoleAwareUi(activeRole, node);
+      }));
+    }).observe(document.body, {childList: true, subtree: true});
+  }
+
   function addSearchAndUser(session) {
-    const header=document.querySelector('.brand-header'); if(!header||header.querySelector('.app-user-tools')) return;
-    const roles=session?.roles||[]; const primary=roles.includes('ADMIN')?'ADMIN':roles.includes('OPERATOR')?'OPERATOR':roles.includes('VIEWER')?'VIEWER':'';
-    const box=document.createElement('div');box.className='app-user-tools';
-    box.innerHTML=`<form class="global-search header-search"><input type="search" aria-label="Глобальный поиск" placeholder="Найти тест…"><button type="submit">Поиск</button></form><div class="user-menu"><button type="button" class="user-menu-toggle"><span>${session?.username||'Пользователь'}</span>${primary?`<small>${primary}</small>`:''}</button><div class="user-menu-popover"><div><strong>${session?.username||'Пользователь'}</strong><span>${roles.length?roles.join(', '):'Без роли'}</span></div>${session?.securityEnabled?'<button type="button" class="logout-button">Выйти</button>':''}<small>Версия ${session?.version||'dev'}</small></div></div>`;
-    header.appendChild(box);
-    const sf=box.querySelector('.global-search');sf.addEventListener('submit',e=>{e.preventDefault();const q=sf.querySelector('input').value.trim();if(q)location.href=`/history?search=${encodeURIComponent(q)}`;});
-    box.querySelector('.user-menu-toggle').addEventListener('click',()=>box.querySelector('.user-menu').classList.toggle('open'));
-    box.querySelector('.logout-button')?.addEventListener('click',()=>submitLogout(session));
-    applyRoleAwareUi(primary);
+    const header = document.querySelector('.brand-header');
+    if (!header) return;
+    const resolvedVersion = session?.version && !/^(null|undefined)$/i.test(String(session.version))
+      ? String(session.version) : 'dev';
+    document.querySelectorAll('.header-version').forEach(node => { node.textContent = `Версия ${resolvedVersion}`; });
+    document.querySelectorAll('.footer-version').forEach(node => { node.textContent = `Версия ${resolvedVersion}`; });
+    if (header.querySelector('.app-user-tools')) return;
+
+    const roles = Array.isArray(session?.roles) ? session.roles.map(String) : [];
+    const primary = roles.includes('ADMIN') ? 'ADMIN' : roles.includes('OPERATOR') ? 'OPERATOR' : roles.includes('VIEWER') ? 'VIEWER' : '';
+    const username = String(session?.username || 'Пользователь');
+    const tools = document.createElement('div');
+    tools.className = 'app-user-tools';
+
+    const search = document.createElement('form');
+    search.className = 'global-search header-search';
+    search.setAttribute('role', 'search');
+    search.method = 'get';
+    search.action = '/history';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.name = 'q';
+    searchInput.setAttribute('aria-label', 'Поиск по истории S3');
+    searchInput.placeholder = 'Найти запуск S3…';
+    const searchButton = document.createElement('button');
+    searchButton.type = 'submit';
+    searchButton.textContent = 'Поиск';
+    search.append(searchInput, searchButton);
+
+    const menu = document.createElement('div');
+    menu.className = 'user-menu';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'user-menu-toggle';
+    toggle.setAttribute('aria-haspopup', 'true');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'app-user-menu');
+    const usernameNode = document.createElement('span');
+    usernameNode.textContent = username;
+    toggle.appendChild(usernameNode);
+    if (primary) {
+      const roleNode = document.createElement('small');
+      roleNode.textContent = primary;
+      toggle.appendChild(roleNode);
+    }
+
+    const popover = document.createElement('div');
+    popover.id = 'app-user-menu';
+    popover.className = 'user-menu-popover';
+    const identity = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = username;
+    const roleList = document.createElement('span');
+    roleList.textContent = roles.length ? roles.join(', ') : 'Без роли';
+    identity.append(strong, roleList);
+    popover.appendChild(identity);
+    if (session?.securityEnabled) {
+      const logout = document.createElement('button');
+      logout.type = 'button';
+      logout.className = 'logout-button';
+      logout.textContent = 'Выйти';
+      logout.addEventListener('click', () => submitLogout(session));
+      popover.appendChild(logout);
+    }
+    const version = document.createElement('small');
+    version.textContent = `Версия ${resolvedVersion}`;
+    popover.appendChild(version);
+    menu.append(toggle, popover);
+    tools.append(search, menu);
+    header.appendChild(tools);
+
+    search.addEventListener('submit', event => {
+      event.preventDefault();
+      const query = searchInput.value.trim();
+      if (query) location.href = `/history?q=${encodeURIComponent(query)}`;
+    });
+    const closeMenu = () => {
+      menu.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+    };
+    toggle.addEventListener('click', () => {
+      const open = !menu.classList.contains('open');
+      menu.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', event => {
+      if (!menu.contains(event.target)) closeMenu();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && menu.classList.contains('open')) {
+        closeMenu();
+        toggle.focus();
+      }
+    });
+    const effectiveRole = !session ? 'NONE' : session.securityEnabled ? (primary || 'NONE') : 'OPEN';
+    applyRoleAwareUi(effectiveRole);
   }
-  function applyRoleAwareUi(role) {
-    document.documentElement.dataset.userRole=role||'OPEN'; const level=ROLE_LEVEL[role]||99;
-    document.querySelectorAll('[data-min-role]').forEach(el=>{const need=ROLE_LEVEL[el.dataset.minRole]||0;el.hidden=level<need;});
-    if(role==='VIEWER') document.querySelectorAll('form button[type="submit"],button[data-action="delete"],button[data-action="save"]').forEach(b=>{if(!/поиск|обнов|фильтр/i.test(b.textContent||'')){b.disabled=true;b.title='Недоступно для роли VIEWER';}});
-    if(role==='OPERATOR'||role==='VIEWER') document.querySelectorAll('a[href^="/settings"]').forEach(a=>a.classList.add('role-restricted'));
-  }
+
   async function loadSession() {
-    try {const r=await fetch('/api/session',{credentials:'same-origin'});if(r.ok){const s=await r.json();addSearchAndUser(s);return s;}} catch(_){/* optional */}
-    addSearchAndUser(null); return null;
+    try {
+      const response = await fetch('/api/session', {credentials: 'same-origin'});
+      if (response.ok) {
+        const session = await response.json();
+        addSearchAndUser(session);
+        return session;
+      }
+    } catch (_) {
+      // The common shell remains usable when session metadata is temporarily unavailable.
+    }
+    addSearchAndUser(null);
+    return null;
   }
-  function historySearch() {
-    const q=new URLSearchParams(location.search).get('search');if(!q||!location.pathname.includes('history'))return;
-    const needle=q.toLowerCase();document.querySelectorAll('tbody tr').forEach(tr=>tr.hidden=!tr.textContent.toLowerCase().includes(needle));
-    notify(`Фильтр истории: ${q}`,'info');
+
+  function historyBodies() {
+    return [...document.querySelectorAll('tbody[data-history-page],tbody#history,tbody#history-body,tbody#m2History')]
+      .filter(body => {
+        const section = body.closest('section');
+        return !section?.querySelector(':scope > .pager');
+      });
   }
-  function enhanceForms() {
-    document.addEventListener('submit',e=>{if(e.defaultPrevented)return;const f=e.target;if(f.matches('form')&&!f.classList.contains('global-search'))setTimeout(()=>notify('Операция отправлена','info'),50);},true);
+
+  function paginateHistory(body) {
+    const rows = [...body.rows];
+    const signature = rows.map(row => row.dataset.id || row.textContent).join('|');
+    let state = body._historyPager;
+    if (!state) {
+      const wrap = body.closest('.table-wrap');
+      if (!wrap) return;
+      const pager = document.createElement('div');
+      pager.className = 'pager history-pager';
+      pager.setAttribute('aria-label', 'Постраничная навигация');
+      pager.innerHTML = '<button type="button" class="secondary history-prev">← Назад</button><span class="history-page-info" aria-live="polite"></span><button type="button" class="secondary history-next">Вперёд →</button>';
+      wrap.insertAdjacentElement('afterend', pager);
+      state = body._historyPager = {page: 0, signature: '', pager};
+      pager.querySelector('.history-prev').addEventListener('click', () => {
+        state.page = Math.max(0, state.page - 1);
+        paginateHistory(body);
+      });
+      pager.querySelector('.history-next').addEventListener('click', () => {
+        state.page += 1;
+        paginateHistory(body);
+      });
+    }
+    if (state.signature !== signature) {
+      state.signature = signature;
+      state.page = 0;
+    }
+    const pages = Math.max(1, Math.ceil(rows.length / 10));
+    state.page = Math.min(state.page, pages - 1);
+    rows.forEach(row => row.classList.add('history-row-hidden'));
+    rows.slice(state.page * 10, state.page * 10 + 10).forEach(row => row.classList.remove('history-row-hidden'));
+    state.pager.querySelector('.history-page-info').textContent = `Страница ${state.page + 1} из ${pages} · записей: ${rows.length}`;
+    state.pager.querySelector('.history-prev').disabled = state.page === 0;
+    state.pager.querySelector('.history-next').disabled = state.page + 1 >= pages;
+    state.pager.hidden = rows.length <= 10;
   }
-  async function init(){ensureMetadata();breadcrumbs();makeSwitcher();await loadSession();historySearch();enhanceForms();}
-  window.EvoUI={notify,applyMode};document.documentElement.dataset.uiView=currentMode();
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+
+  function enableHistoryPagination() {
+    let scheduled = false;
+    const refresh = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        historyBodies().forEach(paginateHistory);
+      });
+    };
+    refresh();
+    new MutationObserver(refresh).observe(document.body, {childList: true, subtree: true});
+    return refresh;
+  }
+
+  function enhanceTables() {
+    document.querySelectorAll('table').forEach((table, index) => {
+      table.querySelectorAll('thead th').forEach(header => header.setAttribute('scope', 'col'));
+      if (table.querySelector('caption')) return;
+      const caption = document.createElement('caption');
+      caption.className = 'sr-only';
+      const section = table.closest('section, article');
+      caption.textContent = section?.querySelector('h2, h3')?.textContent?.trim() || `Таблица данных ${index + 1}`;
+      table.prepend(caption);
+    });
+  }
+
+  async function init() {
+    ensureMetadata();
+    breadcrumbs();
+    enhanceTables();
+    observeRoleAwareUi();
+    const refreshHistoryPagination = enableHistoryPagination();
+    window.EvoUI.refreshHistoryPagination = refreshHistoryPagination;
+    await loadSession();
+  }
+
+  window.EvoUI = {notify, refreshHistoryPagination: () => {}};
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();

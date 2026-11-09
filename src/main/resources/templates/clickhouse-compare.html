@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение ClickHouse — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение ClickHouse — ЭВО.СНТ</title><th:block th:replace="~{fragments/layout :: headAssets}"></th:block></head>
 <body><main class="container">
-<header class="brand-header"><div class="brand-title"><h1>Сравнение ClickHouse</h1><p>Сопоставление двух сохранённых запусков.</p></div></header>
-<nav class="corporate-nav"><a href="/clickhouse">ClickHouse</a><a href="/settings">Настройки</a></nav>
+<header th:replace="~{fragments/layout :: header(title='Сравнение ClickHouse', subtitle='Сопоставление двух сохранённых запусков.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='clickhouse')}"></nav>
+<nav th:replace="~{fragments/layout :: clickHouseNav(active='tests')}"></nav>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Метрика</th><th>Левый запуск</th><th>Правый запуск</th><th>Изменение</th></tr></thead><tbody>
 <tr><td>Rows/s</td><td th:text="${#numbers.formatDecimal(comparison.left.rowsPerSecond,1,2)}"></td><td th:text="${#numbers.formatDecimal(comparison.right.rowsPerSecond,1,2)}"></td><td th:text="${comparison.rowsPerSecondChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.rowsPerSecondChangePercent,1,2) + '%'}"></td></tr>
 <tr><td>MiB/s</td><td th:text="${#numbers.formatDecimal(comparison.left.mibPerSecond,1,2)}"></td><td th:text="${#numbers.formatDecimal(comparison.right.mibPerSecond,1,2)}"></td><td th:text="${comparison.mibPerSecondChangePercent == null ? 'N/A (baseline = 0)' : #numbers.formatDecimal(comparison.mibPerSecondChangePercent,1,2) + '%'}"></td></tr>
@@ -13,4 +14,4 @@
 <tr><td>Errors</td><td th:text="${comparison.left.errors}"></td><td th:text="${comparison.right.errors}"></td><td>—</td></tr>
 </tbody></table></div></section>
 <section class="panel"><div class="grid two"><div><h3>Левый</h3><p th:text="${comparison.left.id}"></p><p th:text="${comparison.left.operation + ' · ' + comparison.left.table}"></p></div><div><h3>Правый</h3><p th:text="${comparison.right.id}"></p><p th:text="${comparison.right.operation + ' · ' + comparison.right.table}"></p></div></div></section>
-</main></body></html>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block></body></html>

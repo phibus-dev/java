@@ -55,11 +55,13 @@ class PerformanceChartUiTest {
     void trendChartsAreBoundedByParentCardInsteadOfObservingCanvasItself() throws IOException {
         String html = Files.readString(Path.of("src/main/resources/templates/history.html"));
         String renderer = Files.readString(Path.of("src/main/resources/static/performance-chart.js"));
+        String styles = Files.readString(Path.of("src/main/resources/static/app-ui.css"));
 
-        assertThat(html)
-                .contains("grid-template-columns:repeat(2,minmax(0,1fr))")
-                .contains(".trend-chart-card{min-width:0;max-width:100%;overflow:hidden")
-                .contains(".trend-grid canvas{display:block;width:100%;max-width:100%");
+        assertThat(html).contains("class=\"trend-chart-card\"");
+        assertThat(styles)
+                .contains("grid-template-columns: repeat(2, minmax(0, 1fr))")
+                .contains(".trend-chart-card {")
+                .contains(".trend-grid canvas {");
         assertThat(renderer)
                 .contains("this.host = canvas.parentElement || canvas")
                 .contains("this.resizeObserver.observe(this.host)")

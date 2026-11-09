@@ -5,14 +5,13 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +34,7 @@ public class ClickHouseLoadTestEngine {
 
     private void execute(ClickHouseTestRun run, ConnectionFactory connectionFactory, int queryTimeoutSeconds) {
         ClickHouseTestRequest request = run.request();
+        if (run.isCancelled()) return;
         try {
             run.start();
             if (request.autoCreateTable()) createTable(run, connectionFactory, queryTimeoutSeconds);
@@ -88,7 +88,7 @@ public class ClickHouseLoadTestEngine {
                 if (!request.durationMode() && first >= request.rowCount()) break;
                 int batch = request.batchSize();
                 if (!request.durationMode()) batch = (int) Math.min(batch, request.rowCount() - first);
-                Instant started = Instant.now();
+                long started = System.nanoTime();
                 try {
                     for (int i = 0; i < batch; i++) {
                         statement.setLong(1, first + i);
@@ -96,7 +96,7 @@ public class ClickHouseLoadTestEngine {
                         statement.addBatch();
                     }
                     statement.executeBatch();
-                    long latencyMs = Math.max(1, Duration.between(started, Instant.now()).toMillis());
+                    long latencyMs = elapsedMillis(started);
                     run.operationCompleted(batch, (long) batch * request.payloadBytes(), latencyMs);
                 } catch (Exception e) {
                     run.operationFailed(rootMessage(e));
@@ -112,8 +112,8 @@ public class ClickHouseLoadTestEngine {
         try (Connection connection = connectionFactory.open(); Statement statement = connection.createStatement()) {
             statement.setQueryTimeout(timeout);
             while (!run.isCancelled() && !run.durationExpired()
-                    && (request.durationMode() || completed < request.rowCount())) {
-                Instant started = Instant.now();
+                    && (request.durationMode() || completed < request.effectiveQueryCount())) {
+                long started = System.nanoTime();
                 try (ResultSet rs = statement.executeQuery(
                         "SELECT count(), sum(length(payload)) FROM " + request.normalizedTable())) {
                     long rows = 0;
@@ -122,7 +122,7 @@ public class ClickHouseLoadTestEngine {
                         rows = rs.getLong(1);
                         bytes = rs.getLong(2);
                     }
-                    long latencyMs = Math.max(1, Duration.between(started, Instant.now()).toMillis());
+                    long latencyMs = elapsedMillis(started);
                     run.operationCompleted(rows, bytes, latencyMs);
                     completed++;
                 } catch (Exception e) {
@@ -135,7 +135,10 @@ public class ClickHouseLoadTestEngine {
 
     private void executeInsertSelect(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
         executeInsert(run, connectionFactory, timeout);
-        if (!run.isCancelled()) executeSelect(run, connectionFactory, timeout);
+        if (!run.isCancelled()) {
+            run.beginSelectPhase();
+            executeSelect(run, connectionFactory, timeout);
+        }
     }
 
     @FunctionalInterface
@@ -147,5 +150,9 @@ public class ClickHouseLoadTestEngine {
         Throwable current = error;
         while (current.getCause() != null) current = current.getCause();
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private static long elapsedMillis(long startedNanos) {
+        return Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos));
     }
 }

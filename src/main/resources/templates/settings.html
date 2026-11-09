@@ -6,31 +6,13 @@
     <meta name="_csrf" th:content="${_csrf.token}">
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Настройки — ЭВО.СНТ</title>
-    <link rel="stylesheet" href="/app.css">
-    <link rel="stylesheet" href="/app-ui.css">
+    <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body>
 <main class="container">
-    <header class="brand-header">
-        <div class="brand-title">
-            <h1>ЭВО.СНТ S3</h1>
-            <p>Центр настройки инфраструктурных подключений и безопасности.</p>
-        </div>
-        <div class="corporate-brand">
-            <img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo">
-            <div class="platform-name">ТПП ЭВОПЛАТФОРМА</div>
-        </div>
-        <span class="badge" th:text="${'Версия ' + applicationVersion}">Версия 2.2.3-rc8</span>
-    </header>
-
-    <nav class="corporate-nav" aria-label="Основная навигация">
-        <a href="/tasks">Задания</a>
-        <a href="/history">История</a>
-        <a href="/schedules">Расписания</a>
-        <a href="/agents">Агенты</a>
-        <a href="/distributed-tests">Распределённые тесты</a>
-        <a href="/settings" aria-current="page">Настройки</a>
-    </nav>
+    <header th:replace="~{fragments/layout :: header(title='Настройки', subtitle='Центр настройки инфраструктурных подключений и безопасности.')}"></header>
+    <nav th:replace="~{fragments/layout :: primaryNav(active='settings')}"></nav>
+    <nav th:replace="~{fragments/layout :: settingsNav(active='overview')}"></nav>
 
     <section class="panel settings-overview">
         <div class="title-row">
@@ -64,7 +46,7 @@
                 <label>Пользователь<input id="postgresUsername" required th:value="${settings.postgresql.username}"></label>
                 <label>Пароль<input id="postgresPassword" type="password" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять"></label>
             </div>
-            <div class="actions"><button type="button" id="test-postgres" class="secondary">Проверить PostgreSQL</button></div>
+            <div class="actions"><button type="button" id="test-postgres" class="secondary" data-min-role="ADMIN">Проверить PostgreSQL</button></div>
             <pre id="postgres-result" class="diagnostic-output" aria-live="polite"></pre>
         </section>
 
@@ -85,7 +67,7 @@
                 <label>CA certificate path<input id="vaultCaCertificatePath" th:value="${settings.vault.caCertificatePath}"></label>
                 <label class="check"><input id="vaultTlsVerify" type="checkbox" th:checked="${settings.vault.tlsVerify}"> Проверять TLS-сертификат</label>
             </div>
-            <div class="actions"><button type="button" id="test-vault" class="secondary">Проверить Vault</button></div>
+            <div class="actions"><button type="button" id="test-vault" class="secondary" data-min-role="ADMIN">Проверить Vault</button></div>
             <pre id="vault-result" class="diagnostic-output" aria-live="polite"></pre>
         </section>
 
@@ -111,7 +93,7 @@
 
         <section class="panel">
             <div class="title-row"><h2>Сохранение</h2><a href="/settings/configuration">Резервное копирование и перенос</a></div>
-            <div class="actions"><button id="save-settings" type="submit">Сохранить настройки</button><span id="save-result" class="save-result" aria-live="polite"></span></div>
+            <div class="actions"><button id="save-settings" type="submit" data-min-role="ADMIN">Сохранить настройки</button><span id="save-result" class="save-result" aria-live="polite"></span></div>
             <p class="muted">PostgreSQL и Keycloak применяются после перезапуска приложения. Vault применяется без перезапуска. Перед заменой bootstrap-файла создаётся резервная копия.</p>
         </section>
     </form>
@@ -127,8 +109,9 @@
             <div><span>Состояние сети клиента</span><strong id="system-online">—</strong></div>
         </div>
     </section>
+<footer th:replace="~{fragments/layout :: footer}"></footer>
 </main>
-<script src="/app-ui.js"></script>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
 <script src="/settings.js"></script>
 </body>
 </html>

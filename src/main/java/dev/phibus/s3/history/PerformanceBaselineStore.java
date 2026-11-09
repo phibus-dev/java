@@ -134,8 +134,8 @@ public class PerformanceBaselineStore {
         long durationMs = started == null || finished == null ? 0 : Duration.between(started, finished).toMillis();
         return new RunMetrics(rs.getObject("id", UUID.class), rs.getString("endpoint"), rs.getString("bucket"),
                 rs.getString("operation"), rs.getTimestamp("created_at").toInstant(), rs.getDouble("average_speed_mibps"),
-                rs.getDouble("p95_latency_ms"), rs.getDouble("p99_latency_ms"), rs.getInt("failed_parts"),
-                rs.getInt("successful_parts"), rs.getLong("total_bytes"), durationMs, rs.getBoolean("baseline"));
+                rs.getDouble("p95_latency_ms"), rs.getDouble("p99_latency_ms"), rs.getLong("failed_parts"),
+                rs.getLong("successful_parts"), rs.getLong("total_bytes"), durationMs, rs.getBoolean("baseline"));
     }
 
     private static BaselineRow mapBaseline(ResultSet rs) throws SQLException {
@@ -143,7 +143,7 @@ public class PerformanceBaselineStore {
                 rs.getTimestamp("baseline_marked_at").toInstant(), rs.getString("endpoint"), rs.getString("bucket"),
                 rs.getString("operation"), rs.getTimestamp("created_at").toInstant(),
                 rs.getDouble("average_speed_mibps"), rs.getDouble("p95_latency_ms"), rs.getDouble("p99_latency_ms"),
-                rs.getInt("failed_parts"), rs.getLong("total_bytes"));
+                rs.getLong("failed_parts"), rs.getLong("total_bytes"));
     }
 
     private synchronized void ensureMigrated() {
@@ -166,11 +166,11 @@ public class PerformanceBaselineStore {
 
     public record BaselineRow(UUID id, String name, Instant markedAt, String endpoint, String bucket,
                               String operation, Instant createdAt, double averageSpeedMiBps,
-                              double p95LatencyMs, double p99LatencyMs, int errors, long totalBytes) { }
+                              double p95LatencyMs, double p99LatencyMs, long errors, long totalBytes) { }
 
     public record RunMetrics(UUID id, String endpoint, String bucket, String operation, Instant createdAt,
                              double averageSpeedMiBps, double p95LatencyMs, double p99LatencyMs,
-                             int errors, int successfulOperations, long totalBytes, long durationMs,
+                             long errors, long successfulOperations, long totalBytes, long durationMs,
                              boolean baseline) { }
 
     public record RegressionReport(RunMetrics current, RunMetrics baseline, boolean baselineAvailable,

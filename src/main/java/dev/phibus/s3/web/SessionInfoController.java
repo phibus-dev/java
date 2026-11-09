@@ -15,21 +15,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class SessionInfoController {
     private final boolean securityEnabled;
-    private final String applicationVersion;
+    private final ApplicationVersionProvider versions;
     private final Instant startedAt = Instant.now();
 
     public SessionInfoController(
             @Value("${s3perf.security.enabled:false}") boolean securityEnabled,
-            @Value("${info.app.version:${project.version:dev}}") String applicationVersion) {
+            ApplicationVersionProvider versions) {
         this.securityEnabled = securityEnabled;
-        this.applicationVersion = applicationVersion;
+        this.versions = versions;
     }
 
     @GetMapping("/api/session")
     public Map<String, Object> session(Authentication authentication, CsrfToken csrfToken) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("securityEnabled", securityEnabled);
-        result.put("version", applicationVersion);
+        result.put("version", versions.version());
         result.put("startedAt", startedAt.toString());
         if (csrfToken != null) {
             result.put("csrfToken", csrfToken.getToken());

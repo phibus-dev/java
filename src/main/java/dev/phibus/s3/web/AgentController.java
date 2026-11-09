@@ -37,12 +37,17 @@ public class AgentController {
     @PostMapping("/{agentId}/heartbeat")
     public AgentRegistry.AgentView heartbeat(
             @PathVariable UUID agentId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+            @RequestHeader(value = "X-Agent-Token", required = false) String agentToken,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             @RequestBody AgentRegistry.HeartbeatRequest request) {
-        String token = authorization != null && authorization.startsWith("Bearer ")
-                ? authorization.substring(7) : authorization;
+        String token = agentToken != null && !agentToken.isBlank() ? agentToken : bearer(authorization);
         registry.heartbeat(agentId, token, request);
         return registry.list().stream().filter(agent -> agent.id().equals(agentId)).findFirst().orElseThrow();
+    }
+
+    private static String bearer(String authorization) {
+        return authorization != null && authorization.startsWith("Bearer ")
+                ? authorization.substring(7) : authorization;
     }
 
     @PostMapping("/{agentId}/enabled")

@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Controller
 public class HistoryController {
+    private static final int HISTORY_PAGE_SIZE = 10;
     private final AdvancedHistoryStore historyStore;
     private final TestRunService testRunService;
     private final HistoryTrendService trendService;
@@ -40,10 +41,9 @@ public class HistoryController {
                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
                           @RequestParam(defaultValue = "0") int page,
-                          @RequestParam(defaultValue = "50") int size,
                           Model model) {
         AdvancedHistoryStore.Filter filter = new AdvancedHistoryStore.Filter(status, operation, endpoint, bucket,
-                query, from, to, page, size);
+                query, from, to, page, HISTORY_PAGE_SIZE);
         model.addAttribute("result", historyStore.search(filter));
         model.addAttribute("filter", filter);
         return "history";
@@ -73,7 +73,7 @@ public class HistoryController {
                                           @RequestParam(required = false) Instant from,
                                           @RequestParam(required = false) Instant to,
                                           @RequestParam(defaultValue = "0") int page,
-                                          @RequestParam(defaultValue = "50") int size) {
+                                          @RequestParam(defaultValue = "10") int size) {
         return historyStore.search(new AdvancedHistoryStore.Filter(status, operation, endpoint, bucket, query,
                 from, to, page, size));
     }

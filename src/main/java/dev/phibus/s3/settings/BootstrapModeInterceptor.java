@@ -2,11 +2,23 @@ package dev.phibus.s3.settings;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 @Component
 public class BootstrapModeInterceptor implements HandlerInterceptor {
+    private static final Set<String> BOOTSTRAP_ASSETS = Set.of(
+            "/application.css",
+            "/app.css",
+            "/app-ui.css",
+            "/app-ui.js",
+            "/settings.js",
+            "/favicon.ico",
+            "/favicon.svg",
+            "/manifest.webmanifest",
+            "/transneft-logo.svg");
+
     private final ApplicationStateService stateService;
 
     public BootstrapModeInterceptor(ApplicationStateService stateService) {
@@ -31,8 +43,8 @@ public class BootstrapModeInterceptor implements HandlerInterceptor {
 
     private static boolean allowed(String path) {
         return path.equals("/settings") || path.startsWith("/api/settings")
-                || path.equals("/actuator/health") || path.startsWith("/static/")
-                || path.equals("/app.css") || path.equals("/settings.js")
-                || path.equals("/favicon.ico") || path.equals("/error");
+                || path.equals("/api/session") || path.equals("/actuator/health")
+                || path.startsWith("/static/") || BOOTSTRAP_ASSETS.contains(path)
+                || path.equals("/error");
     }
 }

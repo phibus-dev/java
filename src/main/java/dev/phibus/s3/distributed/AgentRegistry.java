@@ -18,13 +18,31 @@ public class AgentRegistry {
     private final String registrationToken;
 
     public AgentRegistry(@Value("${s3perf.distributed.registration-token:change-me}") String registrationToken) {
-        this.registrationToken = registrationToken;
+        this.registrationToken = registrationToken == null ? "" : registrationToken.trim();
     }
 
-    public RegistrationResult register(RegistrationRequest request, String suppliedToken) {
+    public synchronized RegistrationResult register(RegistrationRequest request, String suppliedToken) {
+        if (registrationToken.isBlank() || "change-me".equals(registrationToken)) {
+            throw new IllegalStateException(
+                    "Agent registration is disabled until s3perf.distributed.registration-token is configured");
+        }
         if (!registrationToken.equals(suppliedToken)) throw new SecurityException("Invalid agent registration token");
+        AgentRecord existing = agents.values().stream()
+                .filter(agent -> sameIdentity(agent, request))
+                .findFirst().orElse(null);
+        if (existing != null) {
+            Instant now = Instant.now();
+            String rotatedToken = newAgentToken();
+            AgentRecord refreshed = new AgentRecord(existing.id(), request.name(), request.hostname(), request.address(),
+                    request.version(), request.cpuCount(), request.memoryBytes(),
+                    request.tags() == null ? Map.of() : Map.copyOf(request.tags()), existing.registeredAt(), now,
+                    AgentStatus.ONLINE, rotatedToken);
+            agents.put(existing.id(), refreshed);
+            management.putIfAbsent(existing.id(), AgentManagement.defaults());
+            return new RegistrationResult(existing.id(), rotatedToken, existing.registeredAt());
+        }
         UUID id = UUID.randomUUID();
-        String agentToken = UUID.randomUUID() + "." + UUID.randomUUID();
+        String agentToken = newAgentToken();
         Instant now = Instant.now();
         AgentRecord record = new AgentRecord(id, request.name(), request.hostname(), request.address(), request.version(),
                 request.cpuCount(), request.memoryBytes(), request.tags() == null ? Map.of() : Map.copyOf(request.tags()),
@@ -34,7 +52,15 @@ public class AgentRegistry {
         return new RegistrationResult(id, agentToken, now);
     }
 
-    public AgentRecord heartbeat(UUID id, String token, HeartbeatRequest request) {
+    private static boolean sameIdentity(AgentRecord agent, RegistrationRequest request) {
+        return java.util.Objects.equals(agent.name(), request.name())
+                && java.util.Objects.equals(agent.hostname(), request.hostname())
+                && java.util.Objects.equals(agent.address(), request.address());
+    }
+
+    private static String newAgentToken() { return UUID.randomUUID() + "." + UUID.randomUUID(); }
+
+    public synchronized AgentRecord heartbeat(UUID id, String token, HeartbeatRequest request) {
         AgentRecord current = authenticate(id, token);
         Map<String, String> tags = request.tags() == null || request.tags().isEmpty() ? current.tags() : Map.copyOf(request.tags());
         AgentRecord updated = new AgentRecord(current.id(), current.name(), current.hostname(), current.address(),
@@ -70,7 +96,7 @@ public class AgentRegistry {
         return agent;
     }
 
-    public AgentView setEnabled(UUID id, boolean enabled) {
+    public synchronized AgentView setEnabled(UUID id, boolean enabled) {
         requirePresent(id);
         AgentManagement current = management.getOrDefault(id, AgentManagement.defaults());
         management.put(id, new AgentManagement(enabled, current.desiredVersion(), current.updateRequested(),
@@ -78,7 +104,7 @@ public class AgentRegistry {
         return view(id);
     }
 
-    public AgentView requestUpdate(UUID id, String desiredVersion) {
+    public synchronized AgentView requestUpdate(UUID id, String desiredVersion) {
         requirePresent(id);
         if (desiredVersion == null || desiredVersion.isBlank()) throw new IllegalArgumentException("Desired version is required");
         AgentManagement current = management.getOrDefault(id, AgentManagement.defaults());
@@ -86,7 +112,7 @@ public class AgentRegistry {
         return view(id);
     }
 
-    public void revokeIdentity(UUID id) {
+    public synchronized void revokeIdentity(UUID id) {
         requirePresent(id);
         agents.remove(id);
         management.remove(id);
@@ -110,7 +136,21 @@ public class AgentRegistry {
         if (!supported) throw new IllegalStateException("Agent " + id + " does not support " + capability);
     }
 
-    public void markBusy(UUID id, boolean busy) {
+    public synchronized void reserve(UUID id, String capability) {
+        if (capability == null || capability.isBlank()) requireOnline(id);
+        else requireCapability(id, capability);
+        AgentRecord current = agents.get(id);
+        if (current.status() == AgentStatus.BUSY) {
+            throw new IllegalStateException("Agent is already busy: " + id);
+        }
+        markBusy(id, true);
+    }
+
+    public synchronized void release(UUID id) {
+        if (agents.containsKey(id)) markBusy(id, false);
+    }
+
+    public synchronized void markBusy(UUID id, boolean busy) {
         AgentRecord current = agents.get(id);
         if (current == null) throw new IllegalArgumentException("Agent not found");
         agents.put(id, new AgentRecord(current.id(), current.name(), current.hostname(), current.address(), current.version(),

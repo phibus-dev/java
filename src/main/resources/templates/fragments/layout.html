@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <th:block th:fragment="headAssets">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/application.css?v=20261109.1">
+  </th:block>
+</head>
+<body>
+<header th:fragment="header(title, subtitle)" class="brand-header">
+  <div class="brand-title">
+    <h1 th:text="${title}">ЭВО.СНТ</h1>
+    <p th:if="${subtitle != null}" th:text="${subtitle}"></p>
+  </div>
+  <div class="corporate-brand">
+    <a class="brand-home-link" href="/" aria-label="Перейти на главную страницу">
+      <img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo">
+      <span class="platform-name">ТПП ЭВОПЛАТФОРМА</span>
+    </a>
+  </div>
+  <span class="badge header-version">Версия —</span>
+</header>
+
+<nav th:fragment="primaryNav(active)" class="corporate-nav primary-nav" aria-label="Основная навигация">
+  <a href="/" th:attr="aria-current=${active == 'home'} ? 'page' : null">Главная</a>
+  <a href="/tasks" th:attr="aria-current=${active == 's3'} ? 'page' : null">S3</a>
+  <a href="/clickhouse" th:attr="aria-current=${active == 'clickhouse'} ? 'page' : null">ClickHouse</a>
+  <a href="/kafka" th:attr="aria-current=${active == 'kafka'} ? 'page' : null">Kafka</a>
+  <a href="/distributed-tests" th:attr="aria-current=${active == 'distributed'} ? 'page' : null">Распределённые тесты</a>
+  <a href="/agents" data-min-role="ADMIN" th:attr="aria-current=${active == 'agents'} ? 'page' : null">Агенты</a>
+  <a href="/monitoring" th:attr="aria-current=${active == 'monitoring'} ? 'page' : null">Мониторинг</a>
+  <a href="/settings" data-min-role="ADMIN" th:attr="aria-current=${active == 'settings'} ? 'page' : null">Настройки</a>
+</nav>
+
+<nav th:fragment="s3Nav(active)" class="corporate-nav section-nav" aria-label="Разделы S3">
+  <a href="/tasks" th:attr="aria-current=${active == 'tasks'} ? 'page' : null">Задания</a>
+  <a href="/history" th:attr="aria-current=${active == 'history'} ? 'page' : null">История</a>
+  <a href="/schedules" th:attr="aria-current=${active == 'schedules'} ? 'page' : null">Расписания</a>
+  <a href="/baselines" th:attr="aria-current=${active == 'baselines'} ? 'page' : null">Baselines</a>
+  <a href="/settings/s3-profiles" data-min-role="ADMIN" th:attr="aria-current=${active == 'profiles'} ? 'page' : null">Профили</a>
+</nav>
+
+<nav th:fragment="clickHouseNav(active)" class="corporate-nav section-nav" aria-label="Разделы ClickHouse">
+  <a href="/clickhouse" th:attr="aria-current=${active == 'tests'} ? 'page' : null">Тесты и история</a>
+  <a href="/clickhouse/replication" th:attr="aria-current=${active == 'replication'} ? 'page' : null">Репликация</a>
+  <a href="/clickhouse/replicated-tests" th:attr="aria-current=${active == 'replicated'} ? 'page' : null">Replicated tests</a>
+  <a href="/clickhouse/failover-tests" th:attr="aria-current=${active == 'failover'} ? 'page' : null">Failover</a>
+  <a href="/clickhouse/ha" th:attr="aria-current=${active == 'ha'} ? 'page' : null">HA dashboard</a>
+  <a href="/settings/clickhouse-profiles" data-min-role="ADMIN" th:attr="aria-current=${active == 'profiles'} ? 'page' : null">Профили</a>
+</nav>
+
+<nav th:fragment="kafkaNav(active)" class="corporate-nav section-nav" aria-label="Разделы Kafka">
+  <a href="/kafka" th:attr="aria-current=${active == 'producer'} ? 'page' : null">Producer</a>
+  <a href="/kafka/m2" th:attr="aria-current=${active == 'consumer'} ? 'page' : null">Consumer / Throughput</a>
+  <a href="/kafka/m3" th:attr="aria-current=${active == 'replication'} ? 'page' : null">Replication / KRaft</a>
+  <a href="/kafka/m4" th:attr="aria-current=${active == 'failover'} ? 'page' : null">Failover / Resilience</a>
+  <a href="/settings/kafka-profiles" data-min-role="ADMIN" th:attr="aria-current=${active == 'profiles'} ? 'page' : null">Профили</a>
+</nav>
+
+<nav th:fragment="settingsNav(active)" class="corporate-nav section-nav" aria-label="Разделы настроек" data-min-role="ADMIN">
+  <a href="/settings" th:attr="aria-current=${active == 'overview'} ? 'page' : null">Обзор</a>
+  <a href="/settings/keycloak" th:attr="aria-current=${active == 'keycloak'} ? 'page' : null">Keycloak</a>
+  <a href="/settings/configuration" th:attr="aria-current=${active == 'configuration'} ? 'page' : null">Импорт / экспорт</a>
+  <a href="/system" th:attr="aria-current=${active == 'system'} ? 'page' : null">Состояние системы</a>
+  <a href="/audit" th:attr="aria-current=${active == 'audit'} ? 'page' : null">Аудит</a>
+</nav>
+
+<footer th:fragment="footer" class="app-footer">
+  <span>ЭВО.СНТ</span>
+  <span id="build-info" class="footer-version">Версия определяется…</span>
+</footer>
+
+<th:block th:fragment="commonScripts">
+  <script src="/app-ui.js?v=20261109.1"></script>
+</th:block>
+</body>
+</html>
