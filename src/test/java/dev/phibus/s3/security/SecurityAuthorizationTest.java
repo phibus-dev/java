@@ -1,6 +1,7 @@
 package dev.phibus.s3.security;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.http.MediaType.TEXT_HTML;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -55,7 +56,7 @@ class SecurityAuthorizationTest {
 
     @Test
     void settingsPageRequiresAuthenticationWhenSecurityIsEnabled() throws Exception {
-        mvc.perform(get("/settings")).andExpect(status().is3xxRedirection());
+        mvc.perform(get("/settings").accept(TEXT_HTML)).andExpect(status().is3xxRedirection());
     }
 
     @Test
@@ -86,12 +87,12 @@ class SecurityAuthorizationTest {
     }
 
     @RestController
-    static class ProbeController {
+    public static class ProbeController {
         @GetMapping({"/settings", "/api/read"})
-        String read() { return "ok"; }
+        public String read() { return "ok"; }
 
         @PostMapping({"/api/agents/register", "/api/agents/{id}/heartbeat", "/api/agents/{id}/enabled",
                 "/api/tests", "/api/history/{id}/rerun", "/api/settings", "/api/config/import"})
-        String write() { return "ok"; }
+        public String write() { return "ok"; }
     }
 }
