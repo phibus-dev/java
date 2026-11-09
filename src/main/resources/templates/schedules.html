@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
-  <title>ЭВО.СНТ</title><link rel="stylesheet" href="/app.css">
+  <title>Расписания S3 — ЭВО.СНТ</title><th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body><main class="container">
-<header><div><h1>Расписания тестов</h1><p>Планирование автоматических запусков S3-тестов.</p></div><nav><a href="/tasks">Задания</a> · <a href="/history">История</a> · <a href="/agents">Агенты</a> · <a href="/distributed-tests">Распределённые тесты</a> · <a href="/settings">Настройки</a></nav></header>
+<header th:replace="~{fragments/layout :: header(title='Расписания S3', subtitle='Планирование автоматических запусков S3-тестов.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='s3')}"></nav>
+<nav th:replace="~{fragments/layout :: s3Nav(active='schedules')}"></nav>
 <section class="panel">
 <p>Используется шестипольное Spring cron-выражение: секунды, минуты, часы, день месяца, месяц, день недели.</p>
 <div class="grid two">
@@ -16,7 +18,7 @@
 <label class="check"><input id="enabled" type="checkbox" checked> Включено</label>
 </div>
 <label>Параметры теста<textarea id="request" rows="12">{"endpoint":"http://localhost:9000","bucket":"test","region":"us-east-1","pathStyleAccess":true,"objectKey":"scheduled/test.bin","objectSizeMiB":64,"partSizeMiB":16,"parallelism":4,"objectCount":1,"deleteAfterTest":true,"operation":"UPLOAD","executionMode":"OBJECT_COUNT","durationSeconds":60,"warmupSeconds":0,"workloadProfile":"CUSTOM","workloadWeights":{},"targetOperationsPerSecond":0,"operationThreads":{}}</textarea></label>
-<div class="actions"><button id="create-schedule" type="button">Создать расписание</button><span id="message"></span></div>
+<div class="actions"><button id="create-schedule" type="button" data-min-role="OPERATOR">Создать расписание</button><span id="message" role="status" aria-live="polite"></span></div>
 </section>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Название</th><th>Cron</th><th>Часовой пояс</th><th>Статус</th><th>Следующий запуск</th><th>Последний запуск</th><th>Действия</th></tr></thead><tbody id="rows"></tbody></table></div></section>
-</main><script src="/csrf-fetch.js"></script><script src="/schedules.js"></script></body></html>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block><script src="/csrf-fetch.js"></script><script src="/schedules.js"></script></body></html>

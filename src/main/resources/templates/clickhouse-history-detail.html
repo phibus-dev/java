@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClickHouse history — ЭВО.СНТ</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/app-ui.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Результат ClickHouse — ЭВО.СНТ</title><th:block th:replace="~{fragments/layout :: headAssets}"></th:block></head>
 <body><main class="container">
-<header class="brand-header"><div class="brand-title"><h1>Результат ClickHouse</h1><p th:text="${run.id}"></p></div><span class="badge" th:text="${'Версия '+applicationVersion}"></span></header>
-<nav class="corporate-nav"><a href="/clickhouse">← Тесты и история</a><a href="/settings">Настройки</a></nav>
+<header th:replace="~{fragments/layout :: header(title='Результат ClickHouse', subtitle=${run.id})}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='clickhouse')}"></nav>
+<nav th:replace="~{fragments/layout :: clickHouseNav(active='tests')}"></nav>
 
 <section class="panel"><h2>Выполнение задания</h2><div class="system-grid">
 <div><span>Статус</span><strong th:text="${run.status}"></strong></div>
@@ -39,9 +40,10 @@
 <div><span>Concurrency</span><strong th:text="${run.concurrency}"></strong></div>
 <div><span>Batch size</span><strong th:text="${run.batchSize}"></strong></div>
 <div><span>Requested rows</span><strong th:text="${run.requestedRows}"></strong></div>
+<div><span>Requested queries</span><strong th:text="${run.requestedQueries}"></strong></div>
 <div><span>Заданный Duration</span><strong th:text="${run.durationSeconds + ' s'}"></strong></div>
 <div><span>Warm-up</span><strong th:text="${run.warmupSeconds + ' s'}"></strong></div>
 <div><span>Payload</span><strong th:text="${run.payloadBytes + ' bytes'}"></strong></div>
 <div><span>Auto create table</span><strong th:text="${run.autoCreateTable ? 'Да' : 'Нет'}"></strong></div>
 </div></section>
-</main><script src="/app-ui.js"></script></body></html>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block></body></html>

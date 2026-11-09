@@ -48,9 +48,9 @@
         <td>${esc(p.endpoint)}</td><td>${esc(p.region)}</td><td>${esc(p.bucket || '—')}</td>
         <td>${esc(p.credentialsSource)}</td><td>${esc(p.vaultSecretPath || '—')}</td>
         <td><div class="actions compact">
-          ${p.defaultProfile ? '' : '<button type="button" class="secondary make-default">Сделать основным</button>'}
-          <button type="button" class="secondary clone-profile">Клонировать</button>
-          ${p.defaultProfile ? '' : '<button type="button" class="danger delete-profile">Удалить</button>'}
+          ${p.defaultProfile ? '' : '<button type="button" class="secondary make-default" data-min-role="ADMIN">Сделать основным</button>'}
+          <button type="button" class="secondary clone-profile" data-min-role="ADMIN">Клонировать</button>
+          ${p.defaultProfile ? '' : '<button type="button" class="danger delete-profile" data-min-role="ADMIN">Удалить</button>'}
         </div></td></tr>`).join('');
     } catch (error) {
       tbody.innerHTML = `<tr><td colspan="7" class="error">Не удалось загрузить профили: ${esc(error.message)}</td></tr>`;

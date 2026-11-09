@@ -6,10 +6,12 @@
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <title>Профили ClickHouse — ЭВО.СНТ</title>
-  <link rel="stylesheet" href="/app.css">
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body><main class="container">
-<header><div><h1>Профили ClickHouse</h1><p>Подключения к ClickHouse для локальных и распределённых нагрузочных тестов.</p></div><nav><a href="/settings">← Настройки</a></nav></header>
+<header th:replace="~{fragments/layout :: header(title='Профили ClickHouse', subtitle='Подключения для локальных и распределённых нагрузочных тестов.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='clickhouse')}"></nav>
+<nav th:replace="~{fragments/layout :: clickHouseNav(active='profiles')}"></nav>
 <section class="panel">
   <h2 id="ch-form-title">Новый профиль</h2>
   <div class="grid two">
@@ -22,7 +24,7 @@
     <label>Query timeout, sec<input id="ch-query-timeout" type="number" min="1" max="3600" value="30"></label>
     <label class="check"><input id="ch-default" type="checkbox"> Профиль по умолчанию</label>
   </div>
-  <div class="actions"><button type="button" id="ch-test" class="secondary">Проверить подключение</button><button type="button" id="ch-save">Создать профиль</button><button type="button" id="ch-cancel-edit" class="secondary" hidden>Отменить редактирование</button></div>
+  <div class="actions"><button type="button" id="ch-test" class="secondary" data-min-role="ADMIN">Проверить подключение</button><button type="button" id="ch-save" data-min-role="ADMIN">Создать профиль</button><button type="button" id="ch-cancel-edit" class="secondary" data-min-role="ADMIN" hidden>Отменить редактирование</button></div>
   <pre id="ch-test-result" class="diagnostic-output" aria-live="polite"></pre>
 </section>
 <section class="panel">
@@ -32,10 +34,10 @@
       <div class="title-row"><div><h3 th:text="${profile.name}"></h3><p th:text="${profile.database + ' · ' + profile.username}"></p></div><span class="badge" th:if="${profile.defaultProfile}">По умолчанию</span></div>
       <p><b>Endpoints:</b> <span th:text="${#strings.listJoin(profile.endpoints, ', ')}"></span></p>
       <p><b>Timeout:</b> <span th:text="${profile.connectionTimeoutMs + ' ms / ' + profile.queryTimeoutSeconds + ' s'}"></span></p>
-      <div class="actions"><button type="button" class="secondary ch-edit">Редактировать</button><button type="button" class="secondary ch-discover">Discovery</button><button type="button" class="secondary ch-make-default" th:unless="${profile.defaultProfile}">Сделать основным</button><button type="button" class="danger ch-delete" th:unless="${profile.defaultProfile}">Удалить</button></div>
+      <div class="actions"><button type="button" class="secondary ch-edit" data-min-role="ADMIN">Редактировать</button><button type="button" class="secondary ch-discover" data-min-role="ADMIN">Discovery</button><button type="button" class="secondary ch-make-default" data-min-role="ADMIN" th:unless="${profile.defaultProfile}">Сделать основным</button><button type="button" class="danger ch-delete" data-min-role="ADMIN" th:unless="${profile.defaultProfile}">Удалить</button></div>
       <pre class="diagnostic-output ch-discovery-result"></pre>
     </article>
   </div>
 </section>
-</main><script src="/clickhouse-profiles.js"></script></body>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block><script src="/clickhouse-profiles.js"></script></body>
 </html>

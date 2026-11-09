@@ -15,6 +15,11 @@ public class UiRouteController {
         return "schedules";
     }
 
+    @GetMapping("/audit")
+    public String audit() {
+        return "audit";
+    }
+
     @GetMapping("/index.html")
     public String legacyIndex() {
         return "redirect:/";
@@ -38,5 +43,10 @@ public class UiRouteController {
     @GetMapping("/schedules.html")
     public String legacySchedules() {
         return "redirect:/schedules";
+    }
+
+    @GetMapping("/audit.html")
+    public String legacyAudit() {
+        return "redirect:/audit";
     }
 }

@@ -54,7 +54,7 @@ public class HistoryReportExportService {
         card(out, "Создан", format(run.createdAt()));
         card(out, "Средняя скорость", number(run.averageSpeedMiBps()) + " MiB/s");
         card(out, "p50 / p95 / p99", number(run.p50LatencyMs()) + " / " + number(run.p95LatencyMs()) + " / " + number(run.p99LatencyMs()) + " ms");
-        card(out, "Ошибки", Integer.toString(run.failedParts()));
+        card(out, "Ошибки", Long.toString(run.failedParts()));
         card(out, "Передано", number(run.bytesTransferred() / 1048576.0) + " MiB");
         card(out, "Продолжительность", duration(run));
         card(out, "Очистка", run.cleanupSuccessful() ? "Успешно" : "Не выполнена / ошибка");

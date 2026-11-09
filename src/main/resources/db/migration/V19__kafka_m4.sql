@@ -1,0 +1,28 @@
+CREATE TABLE IF NOT EXISTS kafka_m4_failover_run (
+    id UUID PRIMARY KEY,
+    profile_id UUID REFERENCES kafka_profile(id) ON DELETE SET NULL,
+    topic VARCHAR(249) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMPTZ,
+    duration_ms BIGINT,
+    baseline_controller_id INTEGER,
+    final_controller_id INTEGER,
+    controller_changes BIGINT NOT NULL DEFAULT 0,
+    leader_changes BIGINT NOT NULL DEFAULT 0,
+    failure_detected_at TIMESTAMPTZ,
+    recovered_at TIMESTAMPTZ,
+    recovery_time_ms BIGINT,
+    sent_messages BIGINT NOT NULL DEFAULT 0,
+    sent_bytes BIGINT NOT NULL DEFAULT 0,
+    producer_errors BIGINT NOT NULL DEFAULT 0,
+    avg_messages_sec DOUBLE PRECISION,
+    min_messages_sec DOUBLE PRECISION,
+    max_under_replicated BIGINT NOT NULL DEFAULT 0,
+    max_offline_partitions BIGINT NOT NULL DEFAULT 0,
+    consistency_status VARCHAR(32),
+    error_message TEXT,
+    config_json TEXT,
+    initiator VARCHAR(256)
+);
+CREATE INDEX IF NOT EXISTS ix_kafka_m4_failover_started_at ON kafka_m4_failover_run(started_at DESC);

@@ -33,7 +33,7 @@
             request: {
                 profileId: '00000000-0000-0000-0000-000000000000', endpoint: '', table: 'evo_snt_perf_load', operation: 'INSERT',
                 concurrency: 8, batchSize: 10000, rowCount: 1000000, durationSeconds: 0, warmupSeconds: 0,
-                payloadBytes: 128, autoCreateTable: true
+                payloadBytes: 128, queryCount: 1, autoCreateTable: true
             }
         }
     };

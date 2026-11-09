@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.phibus.s3.settings.ApplicationStateService;
 import dev.phibus.s3.test.TestRequest;
 import dev.phibus.s3.test.TestRun;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import dev.phibus.s3.test.TestRunService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -37,6 +40,7 @@ public class TestScheduleService {
     }
 
     public ScheduleView create(CreateScheduleRequest request) {
+        validateCreateRequest(request);
         CronExpression cron = CronExpression.parse(request.cronExpression());
         ZoneId zone = zone(request.timeZone());
         Instant now = Instant.now();
@@ -57,7 +61,7 @@ public class TestScheduleService {
                        created_at, last_run_at, next_run_at, last_test_run_id, last_error
                   FROM test_schedule
                  ORDER BY name, id
-                """, this::map);
+                """, this::map).stream().map(TestScheduleService::view).toList();
     }
 
     public ScheduleView setEnabled(UUID id, boolean enabled) {
@@ -78,7 +82,7 @@ public class TestScheduleService {
     }
 
     public ScheduleView runNow(UUID id) {
-        execute(require(id), Instant.now());
+        execute(requireRecord(id), Instant.now());
         return require(id);
     }
 
@@ -97,7 +101,7 @@ public class TestScheduleService {
                 """, UUID.class, timestamp(now));
         for (UUID id : due) {
             if (claim(id, now)) {
-                execute(require(id), now);
+                execute(requireRecord(id), now);
             }
         }
     }
@@ -110,7 +114,7 @@ public class TestScheduleService {
                 """, timestamp(now.plusSeconds(CLAIM_SECONDS)), id, timestamp(now)) == 1;
     }
 
-    private void execute(ScheduleView record, Instant now) {
+    private void execute(ScheduleRecord record, Instant now) {
         UUID runId = null;
         String error = null;
         try {
@@ -129,7 +133,11 @@ public class TestScheduleService {
     }
 
     private ScheduleView require(UUID id) {
-        List<ScheduleView> records = jdbc.query("""
+        return view(requireRecord(id));
+    }
+
+    private ScheduleRecord requireRecord(UUID id) {
+        List<ScheduleRecord> records = jdbc.query("""
                 SELECT id, name, enabled, cron_expression, time_zone, test_request_json,
                        created_at, last_run_at, next_run_at, last_test_run_id, last_error
                   FROM test_schedule WHERE id = ?
@@ -138,14 +146,42 @@ public class TestScheduleService {
         return records.getFirst();
     }
 
-    private ScheduleView map(ResultSet rs, int rowNum) throws SQLException {
-        return new ScheduleView(
+    private ScheduleRecord map(ResultSet rs, int rowNum) throws SQLException {
+        return new ScheduleRecord(
                 rs.getObject("id", UUID.class), rs.getString("name"), rs.getBoolean("enabled"),
                 rs.getString("cron_expression"), rs.getString("time_zone"), instant(rs, "created_at"),
                 instant(rs, "last_run_at"), instant(rs, "next_run_at"),
                 rs.getObject("last_test_run_id", UUID.class), rs.getString("last_error"),
                 readRequest(rs.getString("test_request_json")));
     }
+
+    private static ScheduleView view(ScheduleRecord record) {
+        return new ScheduleView(record.id(), record.name(), record.enabled(), record.cronExpression(),
+                record.timeZone(), record.createdAt(), record.lastRunAt(), record.nextRunAt(),
+                record.lastTestRunId(), record.lastError(), redact(record.testRequest()));
+    }
+
+    static TestRequest redact(TestRequest request) {
+        return new TestRequest(request.endpoint(), request.bucket(), request.region(), null, null,
+                request.pathStyleAccess(), request.objectKey(), request.objectSizeMiB(), request.partSizeMiB(),
+                request.parallelism(), request.objectCount(), request.deleteAfterTest(), request.operation(),
+                request.executionMode(), request.durationSeconds(), request.warmupSeconds(), request.workloadProfile(),
+                request.workloadWeights(), request.targetOperationsPerSecond(), request.operationThreads(),
+                request.profileId());
+    }
+
+    private static void validateCreateRequest(CreateScheduleRequest request) {
+        if (request == null) throw new IllegalArgumentException("Schedule request is required");
+        if (request.name() == null || request.name().isBlank())
+            throw new IllegalArgumentException("Schedule name is required");
+        if (request.testRequest() == null) throw new IllegalArgumentException("Scheduled test request is required");
+        if (notBlank(request.testRequest().accessKey()) || notBlank(request.testRequest().secretKey())) {
+            throw new IllegalArgumentException(
+                    "Scheduled tests must use an S3 profile; accessKey and secretKey are not stored in schedules");
+        }
+    }
+
+    private static boolean notBlank(String value) { return value != null && !value.isBlank(); }
 
     private String writeRequest(TestRequest request) {
         try {
@@ -191,9 +227,13 @@ public class TestScheduleService {
         return message.length() <= 4000 ? message : message.substring(0, 4000);
     }
 
-    public record CreateScheduleRequest(String name, boolean enabled, String cronExpression,
-                                        String timeZone, TestRequest testRequest) { }
+    public record CreateScheduleRequest(@NotBlank String name, boolean enabled,
+                                        @NotBlank String cronExpression, String timeZone,
+                                        @NotNull @Valid TestRequest testRequest) { }
     public record ScheduleView(UUID id, String name, boolean enabled, String cronExpression, String timeZone,
                                Instant createdAt, Instant lastRunAt, Instant nextRunAt, UUID lastTestRunId,
                                String lastError, TestRequest testRequest) { }
+    private record ScheduleRecord(UUID id, String name, boolean enabled, String cronExpression, String timeZone,
+                                  Instant createdAt, Instant lastRunAt, Instant nextRunAt, UUID lastTestRunId,
+                                  String lastError, TestRequest testRequest) { }
 }

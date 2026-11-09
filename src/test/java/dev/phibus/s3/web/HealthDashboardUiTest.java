@@ -15,7 +15,7 @@ class HealthDashboardUiTest {
         String script = resource("/static/monitoring.js");
 
         assertThat(template)
-                .contains("href=\"/monitoring\"")
+                .contains("primaryNav(active='monitoring')")
                 .contains("id=\"health-components\"")
                 .contains("src=\"/monitoring.js\"")
                 .doesNotContain("<script>")

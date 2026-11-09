@@ -25,7 +25,7 @@ public class PerformanceMetrics {
     void register() {
         Gauge.builder("s3_test_active", testRuns, service -> countStatus(service, TestStatus.RUNNING))
                 .description("Number of currently running local S3 tests").register(registry);
-        Gauge.builder("s3_test_runs", testRuns, service -> service.list().size())
+        Gauge.builder("s3_test_runs", testRuns, service -> service.summaries().size())
                 .description("Number of local S3 test runs held by the application").register(registry);
         Gauge.builder("s3_test_transferred_bytes", testRuns, PerformanceMetrics::sumTransferredBytes)
                 .baseUnit("bytes").description("Bytes transferred by local S3 test runs").register(registry);
@@ -46,29 +46,29 @@ public class PerformanceMetrics {
     }
 
     private static double countStatus(TestRunService service, TestStatus status) {
-        return service.list().stream().filter(run -> run.status() == status).count();
+        return service.summaries().stream().filter(run -> run.status() == status).count();
     }
 
     private static double sumTransferredBytes(TestRunService service) {
-        return service.list().stream().mapToDouble(TestRun.Snapshot::bytesTransferred).sum();
+        return service.summaries().stream().mapToDouble(TestRun.Snapshot::bytesTransferred).sum();
     }
 
     private static double sumActiveThroughput(TestRunService service) {
-        return service.list().stream().filter(PerformanceMetrics::active)
+        return service.summaries().stream().filter(PerformanceMetrics::active)
                 .mapToDouble(TestRun.Snapshot::averageSpeedMiBps).sum();
     }
 
     private static double sumActiveOperations(TestRunService service) {
-        return service.list().stream().filter(PerformanceMetrics::active)
+        return service.summaries().stream().filter(PerformanceMetrics::active)
                 .mapToDouble(TestRun.Snapshot::operationsPerSecond).sum();
     }
 
     private static double sumErrors(TestRunService service) {
-        return service.list().stream().mapToDouble(TestRun.Snapshot::failedParts).sum();
+        return service.summaries().stream().mapToDouble(TestRun.Snapshot::failedParts).sum();
     }
 
     private static double maxActiveP95(TestRunService service) {
-        return service.list().stream().filter(PerformanceMetrics::active)
+        return service.summaries().stream().filter(PerformanceMetrics::active)
                 .mapToDouble(TestRun.Snapshot::p95LatencyMs).max().orElse(0);
     }
 

@@ -1,6 +1,7 @@
 package dev.phibus.s3.web;
 
 import dev.phibus.s3.schedule.TestScheduleService;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -30,7 +31,8 @@ public class ScheduleController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public TestScheduleService.ScheduleView create(@RequestBody TestScheduleService.CreateScheduleRequest request) {
+    public TestScheduleService.ScheduleView create(
+            @Valid @RequestBody TestScheduleService.CreateScheduleRequest request) {
         return schedules.create(request);
     }
 

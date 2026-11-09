@@ -6,16 +6,12 @@
     <meta name="_csrf" th:content="${_csrf.token}">
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Распределённые тесты — ЭВО.СНТ</title>
-    <link rel="stylesheet" href="/app.css">
-    <link rel="stylesheet" href="/app-ui.css">
+    <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body>
 <main class="container">
-    <header class="brand-header">
-        <div class="brand-title"><h1>Распределённые тесты</h1><p>Запуск S3 и ClickHouse заданий на выбранных агентах.</p></div>
-        <div class="corporate-brand"><img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo"><div class="platform-name">ТПП ЭВОПЛАТФОРМА</div></div><span class="badge">Distributed</span>
-    </header>
-    <nav class="corporate-nav" aria-label="Основная навигация"><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/distributed-tests" aria-current="page">Распределённые тесты</a><a href="/agents">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
+    <header th:replace="~{fragments/layout :: header(title='Распределённые тесты', subtitle='Запуск S3 и ClickHouse заданий на выбранных агентах.')}"></header>
+    <nav th:replace="~{fragments/layout :: primaryNav(active='distributed')}"></nav>
 
     <section class="panel">
         <h2>Новый запуск</h2>
@@ -28,15 +24,16 @@
         <div id="agent-list" class="grid two" aria-live="polite">Получение списка агентов…</div>
         <label>Параметры задания, JSON<textarea id="request" rows="18"></textarea></label>
         <label id="endpoint-map-field" hidden>Endpoint по Agent ID, JSON<textarea id="endpoint-map" rows="5">{}</textarea><small class="muted">Необязательно. Позволяет направить каждый агент на отдельную ClickHouse-ноду.</small></label>
-        <div class="actions"><button id="start" type="button">Запустить</button><span id="message" class="muted" aria-live="polite"></span></div>
+        <div class="actions"><button id="start" type="button" data-min-role="OPERATOR">Запустить</button><span id="message" class="muted" aria-live="polite"></span></div>
     </section>
 
     <section class="panel">
         <div class="title-row"><div><h2>Текущие распределённые запуски</h2><p class="muted">Включает S3 и ClickHouse. ClickHouse дополнительно показывает rows/s.</p></div><button id="refresh" type="button" class="secondary">Обновить</button></div>
         <div id="runs" aria-live="polite">Получение распределённых запусков…</div>
     </section>
+<footer th:replace="~{fragments/layout :: footer}"></footer>
 </main>
-<script src="/app-ui.js"></script>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
 <script src="/csrf-fetch.js"></script>
 <script src="/distributed-tests.js"></script>
 </body>

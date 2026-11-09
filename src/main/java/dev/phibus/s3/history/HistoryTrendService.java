@@ -78,12 +78,12 @@ public class HistoryTrendService {
 
     public record TrendReport(List<TrendPoint> points, Grouping grouping,
                               double throughputChangePercent, double operationsChangePercent,
-                              double p95ChangePercent, double p99ChangePercent, int errorDifference) { }
+                              double p95ChangePercent, double p99ChangePercent, long errorDifference) { }
 
     public record TrendPoint(UUID id, Instant createdAt, String endpoint, String bucket, String operation,
                              String status, double throughputMiBps, double operationsPerSecond,
                              double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
-                             int errors, long durationMs) { }
+                             long errors, long durationMs) { }
 
     public record Grouping(List<String> endpoints, List<String> buckets, List<String> operations,
                            boolean homogeneous) { }

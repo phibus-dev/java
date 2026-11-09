@@ -23,9 +23,9 @@
           <td>${escapeHtml(schedule.nextRunAt || '—')}</td>
           <td>${escapeHtml(schedule.lastRunAt || '—')}${schedule.lastError ? `<div class="error">${escapeHtml(schedule.lastError)}</div>` : ''}</td>
           <td>
-            <button type="button" data-action="run" data-id="${schedule.id}">Запустить</button>
-            <button type="button" class="secondary" data-action="toggle" data-id="${schedule.id}" data-enabled="${!schedule.enabled}">${schedule.enabled ? 'Отключить' : 'Включить'}</button>
-            <button type="button" class="danger" data-action="delete" data-id="${schedule.id}">Удалить</button>
+            <button type="button" data-min-role="OPERATOR" data-action="run" data-id="${schedule.id}">Запустить</button>
+            <button type="button" class="secondary" data-min-role="OPERATOR" data-action="toggle" data-id="${schedule.id}" data-enabled="${!schedule.enabled}">${schedule.enabled ? 'Отключить' : 'Включить'}</button>
+            <button type="button" class="danger" data-min-role="OPERATOR" data-action="delete" data-id="${schedule.id}">Удалить</button>
           </td>
         </tr>`).join('') : '<tr><td colspan="7">Расписания не созданы</td></tr>';
     } catch (error) {

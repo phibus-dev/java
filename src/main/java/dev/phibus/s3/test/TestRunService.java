@@ -24,12 +24,14 @@ public class TestRunService {
     private final HistoryRequestMetadataUpdater metadataUpdater;
     private final S3ProfileService profileService;
     private final ApplicationMode applicationMode;
+    private final int maxRetainedRuns;
 
     public TestRunService(LoadTestEngineRegistry engineRegistry, S3LoadTestEngine s3Engine,
                           @Qualifier("testExecutor") Executor testExecutor,
                           TestHistoryStore historyStore, HistoryRequestMetadataUpdater metadataUpdater,
                           S3ProfileService profileService,
-                          @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
+                          @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode,
+                          @Value("${s3perf.runtime.max-retained-runs:200}") int maxRetainedRuns) {
         this.engineRegistry = engineRegistry;
         this.s3Engine = s3Engine;
         this.testExecutor = testExecutor;
@@ -37,6 +39,7 @@ public class TestRunService {
         this.metadataUpdater = metadataUpdater;
         this.profileService = profileService;
         this.applicationMode = ApplicationMode.from(applicationMode);
+        this.maxRetainedRuns = Math.max(1, maxRetainedRuns);
     }
 
     /**
@@ -55,7 +58,13 @@ public class TestRunService {
                 ? resolveProfile(request) : request;
         TestRun run = new TestRun(effectiveRequest);
         runs.put(run.id(), run);
-        testExecutor.execute(() -> execute(testType, run));
+        try {
+            testExecutor.execute(() -> execute(testType, run));
+        } catch (RuntimeException e) {
+            run.fail(rootMessage(e));
+            persist(run);
+        }
+        evictCompletedRuns();
         return run;
     }
 
@@ -79,12 +88,40 @@ public class TestRunService {
     private void execute(TestType testType, TestRun run) {
         try {
             engineRegistry.require(testType).execute(run);
-        } finally {
-            if (applicationMode != ApplicationMode.AGENT) {
-                historyStore.save(run.snapshot());
-                metadataUpdater.update(run.id(), run.request());
+        } catch (RuntimeException e) {
+            if (run.snapshot().status() != TestStatus.FAILED && !run.isCancelled()) {
+                run.fail(rootMessage(e));
             }
+        } finally {
+            persist(run);
+            evictCompletedRuns();
         }
+    }
+
+    private void persist(TestRun run) {
+        if (applicationMode == ApplicationMode.AGENT) return;
+        historyStore.save(run.snapshot());
+        metadataUpdater.update(run.id(), run.request());
+    }
+
+    private void evictCompletedRuns() {
+        int excess = runs.size() - maxRetainedRuns;
+        if (excess <= 0) return;
+        runs.values().stream()
+                .filter(run -> {
+                    TestStatus state = run.summary().status();
+                    return state == TestStatus.COMPLETED || state == TestStatus.FAILED || state == TestStatus.CANCELLED;
+                })
+                .sorted(Comparator.comparing(run -> run.summary().createdAt()))
+                .limit(excess)
+                .map(TestRun::id)
+                .forEach(runs::remove);
+    }
+
+    private static String rootMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
     public TestRun get(UUID id) {
@@ -95,6 +132,11 @@ public class TestRunService {
 
     public List<TestRun.Snapshot> list() {
         return runs.values().stream().map(TestRun::snapshot)
+                .sorted(Comparator.comparing(TestRun.Snapshot::createdAt).reversed()).toList();
+    }
+
+    public List<TestRun.Snapshot> summaries() {
+        return runs.values().stream().map(TestRun::summary)
                 .sorted(Comparator.comparing(TestRun.Snapshot::createdAt).reversed()).toList();
     }
 

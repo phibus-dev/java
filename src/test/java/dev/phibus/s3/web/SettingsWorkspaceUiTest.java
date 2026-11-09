@@ -14,7 +14,8 @@ class SettingsWorkspaceUiTest {
         String template = resource("/templates/settings.html");
 
         assertThat(template)
-                .contains("class=\"brand-header\"")
+                .contains("fragments/layout :: header")
+                .contains("settingsNav(active='overview')")
                 .contains("href=\"/settings/keycloak\"")
                 .contains("href=\"/settings/s3-profiles\"")
                 .contains("href=\"/settings/configuration\"")

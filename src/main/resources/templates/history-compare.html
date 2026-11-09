@@ -3,18 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ЭВО.СНТ — сравнение запусков</title>
-  <link rel="stylesheet" href="/app.css">
-  <style>
-    .compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
-    .delta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
-    .delta-grid article{padding:14px;background:#f4f7fa;border-top:4px solid #64748b}
-    .delta-grid span,.delta-grid strong{display:block}.delta-grid strong{margin-top:5px;font-size:1.15rem}
-    @media(max-width:760px){.compare-grid{grid-template-columns:1fr}}
-  </style>
+  <title>Сравнение запусков S3 — ЭВО.СНТ</title>
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body><main class="container">
-<header><div><h1>Сравнение запусков</h1><p>Сопоставление сохранённых результатов тестирования.</p></div><nav><a href="/history">← История</a></nav></header>
+<header th:replace="~{fragments/layout :: header(title='Сравнение запусков S3', subtitle='Сопоставление сохранённых результатов тестирования.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='s3')}"></nav>
+<nav th:replace="~{fragments/layout :: s3Nav(active='history')}"></nav>
 <section class="panel">
   <div class="delta-grid">
     <article><span>Throughput</span><strong th:text="${#numbers.formatDecimal(comparison.speedChangePercent,1,1) + '%'}"></strong></article>
@@ -46,4 +41,4 @@
     <p><b>Ошибки:</b> <span th:text="${comparison.right.failedParts}"></span></p>
   </article>
 </section>
-</main></body></html>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block></body></html>

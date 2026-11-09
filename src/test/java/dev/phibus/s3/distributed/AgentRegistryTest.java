@@ -1,6 +1,7 @@
 package dev.phibus.s3.distributed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -50,5 +51,50 @@ class AgentRegistryTest {
         AgentRegistry registry = new AgentRegistry("expected");
         assertThrows(SecurityException.class, () -> registry.register(
                 new AgentRegistry.RegistrationRequest("agent", "host", "http://agent", "1", 1, 1, Map.of()), "wrong"));
+    }
+
+    @Test
+    void repeatedRegistrationReusesIdentityAndRotatesToken() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationRequest firstRequest = new AgentRegistry.RegistrationRequest(
+                "agent-1", "host-1", "https://agent-1:8080", "2.4.0-rc13", 8, 1024, Map.of("dc", "dc1"));
+        AgentRegistry.RegistrationResult first = registry.register(firstRequest, "registration-secret");
+
+        AgentRegistry.RegistrationResult repeated = registry.register(
+                new AgentRegistry.RegistrationRequest("agent-1", "host-1", "https://agent-1:8080",
+                        "2.4.0-rc14", 12, 2048, Map.of("dc", "dc1")), "registration-secret");
+
+        assertEquals(first.agentId(), repeated.agentId());
+        assertNotEquals(first.agentToken(), repeated.agentToken());
+        assertThrows(SecurityException.class,
+                () -> registry.authenticate(first.agentId(), first.agentToken()));
+        registry.authenticate(repeated.agentId(), repeated.agentToken());
+        assertEquals(1, registry.list().size());
+        assertEquals("2.4.0-rc14", registry.list().getFirst().version());
+        assertEquals(12, registry.list().getFirst().cpuCount());
+    }
+
+    @Test
+    void insecureDefaultRegistrationTokenDisablesEnrollment() {
+        AgentRegistry registry = new AgentRegistry("change-me");
+
+        assertThrows(IllegalStateException.class, () -> registry.register(
+                new AgentRegistry.RegistrationRequest("agent", "host", "http://agent", "1", 1, 1, Map.of()),
+                "change-me"));
+    }
+
+    @Test
+    void cannotReserveBusyAgentTwice() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationResult registration = registry.register(
+                new AgentRegistry.RegistrationRequest("agent", "host", "http://agent", "1", 1, 1,
+                        Map.of("capabilities", "S3")), "registration-secret");
+
+        registry.reserve(registration.agentId(), "S3");
+
+        assertThrows(IllegalStateException.class,
+                () -> registry.reserve(registration.agentId(), "S3"));
+        registry.release(registration.agentId());
+        registry.reserve(registration.agentId(), "S3");
     }
 }
