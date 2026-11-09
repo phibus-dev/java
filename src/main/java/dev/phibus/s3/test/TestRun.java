@@ -58,7 +58,8 @@ public final class TestRun {
     public TestRequest request() { return request; }
     public boolean isCancelled() { return cancelled.get(); }
 
-    public void cancel() {
+    public synchronized void cancel() {
+        if (status == TestStatus.COMPLETED || status == TestStatus.FAILED || status == TestStatus.CANCELLED) return;
         cancelled.set(true);
         status = TestStatus.CANCELLED;
         finishedAt = Instant.now();
@@ -68,6 +69,7 @@ public final class TestRun {
     }
 
     public synchronized void start(int requestedParts) {
+        if (cancelled.get()) return;
         if (startedAt == null) {
             startedAt = Instant.now();
             startedNanos = System.nanoTime();
@@ -92,7 +94,8 @@ public final class TestRun {
         return measurementStartedAt != null && System.nanoTime() < measurementStartedNanos;
     }
 
-    public void partCompleted(PartResult result) {
+    public synchronized void partCompleted(PartResult result) {
+        if (terminal()) return;
         if (warmingUp()) {
             message = "Warm-up: operation completed";
             return;
@@ -100,8 +103,9 @@ public final class TestRun {
         record(result);
     }
 
-    public void operationFailed(int objectNumber, int partNumber, String operation,
-                                long durationMillis, String error) {
+    public synchronized void operationFailed(int objectNumber, int partNumber, String operation,
+                                             long durationMillis, String error) {
+        if (terminal()) return;
         record(new PartResult(objectNumber, partNumber, 0, Math.max(0, durationMillis), 0,
                 operation, "FAILED", error));
     }
@@ -151,8 +155,8 @@ public final class TestRun {
 
     public void cleanupSuccessful() { cleanupSuccessful = true; }
 
-    public void complete() {
-        if (cancelled.get()) return;
+    public synchronized void complete() {
+        if (terminal()) return;
         status = TestStatus.COMPLETED;
         finishedAt = Instant.now();
         finishedNanos = System.nanoTime();
@@ -160,8 +164,8 @@ public final class TestRun {
         message = "Test completed";
     }
 
-    public void fail(String error) {
-        if (cancelled.get()) return;
+    public synchronized void fail(String error) {
+        if (terminal()) return;
         if (failedParts.get() == 0) {
             operationFailed(0, 0, request.normalizedOperation(), 0, error);
         }
@@ -172,7 +176,19 @@ public final class TestRun {
         message = error;
     }
 
+    private boolean terminal() {
+        return status == TestStatus.COMPLETED || status == TestStatus.FAILED || status == TestStatus.CANCELLED;
+    }
+
     public Snapshot snapshot() {
+        return snapshot(true);
+    }
+
+    Snapshot summary() {
+        return snapshot(false);
+    }
+
+    private Snapshot snapshot(boolean includeDetails) {
         long total = request.totalBytes();
         long transferred = bytesTransferred.get();
         long completed = completedParts.get();
@@ -192,7 +208,7 @@ public final class TestRun {
         double average = measurementSeconds <= 0 ? 0 : (transferred / 1024.0 / 1024.0) / measurementSeconds;
         double operationsPerSecond = measurementSeconds <= 0 ? 0 : completed / measurementSeconds;
         List<PartResult> copy;
-        synchronized (parts) { copy = List.copyOf(parts); }
+        synchronized (parts) { copy = includeDetails ? List.copyOf(parts) : List.of(); }
         List<Long> window;
         synchronized (recentLatenciesMs) { window = new ArrayList<>(recentLatenciesMs); }
         window.sort(Comparator.naturalOrder());

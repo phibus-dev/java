@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.mockito.Mockito.when;
 
 import dev.phibus.s3.settings.ApplicationStateService;
+import dev.phibus.s3.web.ApplicationVersionProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,9 @@ class SecurityAuthorizationTest {
 
     @MockBean
     private ApplicationStateService applicationStateService;
+
+    @MockBean
+    private ApplicationVersionProvider applicationVersionProvider;
 
     @BeforeEach
     void applicationIsReady() {

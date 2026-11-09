@@ -62,6 +62,31 @@ class ClickHouseTestRunTest {
     }
 
     @Test
+    void cancelledRunCannotRestartOrAcceptLateResults() {
+        ClickHouseTestRun run = new ClickHouseTestRun(request("INSERT", 100, 0), "http://clickhouse:8123");
+        run.cancel();
+
+        run.start();
+        run.operationCompleted(100, 12_800, 10);
+
+        assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.CANCELLED);
+        assertThat(run.snapshot().queries()).isZero();
+    }
+
+    @Test
+    void completedRunCannotBeCancelledOrAcceptLateResults() {
+        ClickHouseTestRun run = new ClickHouseTestRun(request("INSERT", 100, 0), "http://clickhouse:8123");
+        run.start();
+        run.complete();
+
+        run.cancel();
+        run.operationCompleted(100, 12_800, 10);
+
+        assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.COMPLETED);
+        assertThat(run.snapshot().queries()).isZero();
+    }
+
+    @Test
     void selectProgressUsesRequestedQueriesInsteadOfReturnedRows() {
         ClickHouseTestRequest request = new ClickHouseTestRequest(UUID.randomUUID(), null,
                 "evo_snt_perf_load", "SELECT", 1, 100, 1_000_000, 0, 0, 128, 3L, true);

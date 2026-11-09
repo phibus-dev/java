@@ -34,6 +34,7 @@ public class ClickHouseLoadTestEngine {
 
     private void execute(ClickHouseTestRun run, ConnectionFactory connectionFactory, int queryTimeoutSeconds) {
         ClickHouseTestRequest request = run.request();
+        if (run.isCancelled()) return;
         try {
             run.start();
             if (request.autoCreateTable()) createTable(run, connectionFactory, queryTimeoutSeconds);

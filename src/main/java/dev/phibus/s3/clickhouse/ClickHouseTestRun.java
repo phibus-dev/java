@@ -44,7 +44,8 @@ public final class ClickHouseTestRun {
     public ClickHouseTestRequest request() { return request; }
     public boolean isCancelled() { return cancelled.get(); }
 
-    public void cancel() {
+    public synchronized void cancel() {
+        if (status == Status.COMPLETED || status == Status.FAILED || status == Status.CANCELLED) return;
         cancelled.set(true);
         status = Status.CANCELLED;
         finishedAt = Instant.now();
@@ -53,7 +54,7 @@ public final class ClickHouseTestRun {
     }
 
     public synchronized void start() {
-        if (startedAt != null) return;
+        if (startedAt != null || cancelled.get()) return;
         startedAt = Instant.now();
         startedNanos = System.nanoTime();
         measurementStartedAt = startedAt.plusSeconds(request.warmupSeconds());
@@ -72,8 +73,8 @@ public final class ClickHouseTestRun {
         return System.nanoTime() - startedNanos >= configuredNanos;
     }
 
-    public void operationCompleted(long affectedRows, long transferredBytes, long latencyMs) {
-        if (warmingUp()) return;
+    public synchronized void operationCompleted(long affectedRows, long transferredBytes, long latencyMs) {
+        if (terminal() || warmingUp()) return;
         rows.addAndGet(Math.max(0, affectedRows));
         bytes.addAndGet(Math.max(0, transferredBytes));
         long completed = queries.incrementAndGet();
@@ -87,29 +88,32 @@ public final class ClickHouseTestRun {
         selectQueriesStartedAt.compareAndSet(-1, queries.get());
     }
 
-    public void operationFailed(String error) {
+    public synchronized void operationFailed(String error) {
+        if (terminal()) return;
         errors.incrementAndGet();
         rememberError(error);
     }
 
-    public void complete() {
-        if (!cancelled.get()) {
-            status = Status.COMPLETED;
-            finishedAt = Instant.now();
-            finishedNanos = System.nanoTime();
-            message = "Test completed";
-        }
+    public synchronized void complete() {
+        if (terminal()) return;
+        status = Status.COMPLETED;
+        finishedAt = Instant.now();
+        finishedNanos = System.nanoTime();
+        message = "Test completed";
     }
 
-    public void fail(String error) {
-        if (!cancelled.get()) {
-            if (errors.get() == 0) errors.incrementAndGet();
-            rememberError(error);
-            status = Status.FAILED;
-            finishedAt = Instant.now();
-            finishedNanos = System.nanoTime();
-            message = joinedErrors();
-        }
+    public synchronized void fail(String error) {
+        if (terminal()) return;
+        if (errors.get() == 0) errors.incrementAndGet();
+        rememberError(error);
+        status = Status.FAILED;
+        finishedAt = Instant.now();
+        finishedNanos = System.nanoTime();
+        message = joinedErrors();
+    }
+
+    private boolean terminal() {
+        return status == Status.COMPLETED || status == Status.FAILED || status == Status.CANCELLED;
     }
 
     public Snapshot snapshot() {

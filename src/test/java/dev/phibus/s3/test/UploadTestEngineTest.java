@@ -12,9 +12,17 @@ import dev.phibus.s3.workload.WorkloadProfileCatalog;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.core.sync.RequestBody;
+import static org.mockito.Mockito.times;
 
 class UploadTestEngineTest {
     @Test
@@ -46,6 +54,32 @@ class UploadTestEngineTest {
         assertEquals("FAILED", snapshot.parts().getFirst().status());
         assertTrue(snapshot.parts().getFirst().error().contains("object is unavailable"));
         verify(client).close();
+    }
+
+    @Test
+    void multipartUploadCountsEachUploadedPartAsOneOperation() {
+        S3Client client = mock(S3Client.class);
+        when(client.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
+                .thenReturn(CreateMultipartUploadResponse.builder().uploadId("upload-1").build());
+        when(client.uploadPart(any(UploadPartRequest.class), any(RequestBody.class)))
+                .thenAnswer(invocation -> UploadPartResponse.builder()
+                        .eTag("etag-" + invocation.<UploadPartRequest>getArgument(0).partNumber()).build());
+        when(client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
+                .thenReturn(CompleteMultipartUploadResponse.builder().build());
+        UploadTestEngine engine = new UploadTestEngine(mock(CredentialProvider.class),
+                mock(WorkloadProfileCatalog.class), request -> client);
+        TestRequest request = new TestRequest("http://localhost:9000", "bucket", "us-east-1", "key", "secret",
+                true, "test.bin", 160, 32, 4, 1, false, "UPLOAD");
+        TestRun run = new TestRun(request);
+
+        engine.execute(run);
+
+        TestRun.Snapshot snapshot = run.snapshot();
+        assertEquals(TestStatus.COMPLETED, snapshot.status());
+        assertEquals(5, snapshot.completedParts());
+        assertEquals(5, snapshot.successfulParts());
+        assertEquals(160L * 1024 * 1024, snapshot.bytesTransferred());
+        verify(client, times(5)).uploadPart(any(UploadPartRequest.class), any(RequestBody.class));
     }
 
     private static TestRequest request(String operation) {

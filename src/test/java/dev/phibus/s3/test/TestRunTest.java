@@ -32,8 +32,24 @@ class TestRunTest {
     void supportsCancellation() {
         TestRun run = new TestRun(request());
         run.cancel();
+        run.start(1);
+        run.partCompleted(new PartResult(1, 1, 1024, 10, 1, "late", "SUCCESS", null));
         assertTrue(run.isCancelled());
         assertEquals(TestStatus.CANCELLED, run.snapshot().status());
+        assertEquals(0, run.snapshot().completedParts());
+    }
+
+    @Test
+    void completedRunCannotBeChangedToCancelled() {
+        TestRun run = new TestRun(request());
+        run.start(0);
+        run.complete();
+
+        run.cancel();
+        run.partCompleted(new PartResult(1, 1, 1024, 10, 1, "late", "SUCCESS", null));
+
+        assertEquals(TestStatus.COMPLETED, run.snapshot().status());
+        assertEquals(0, run.snapshot().completedParts());
     }
 
     @Test
@@ -69,5 +85,7 @@ class TestRunTest {
         assertTrue(snapshot.detailsTruncated());
         assertEquals(30.0, snapshot.p50LatencyMs(), 1.0);
         assertFalse(snapshot.parts().isEmpty());
+        assertTrue(run.summary().parts().isEmpty());
+        assertEquals(5, run.summary().successfulParts());
     }
 }

@@ -109,10 +109,10 @@ public class TestRunService {
         if (excess <= 0) return;
         runs.values().stream()
                 .filter(run -> {
-                    TestStatus state = run.snapshot().status();
+                    TestStatus state = run.summary().status();
                     return state == TestStatus.COMPLETED || state == TestStatus.FAILED || state == TestStatus.CANCELLED;
                 })
-                .sorted(Comparator.comparing(run -> run.snapshot().createdAt()))
+                .sorted(Comparator.comparing(run -> run.summary().createdAt()))
                 .limit(excess)
                 .map(TestRun::id)
                 .forEach(runs::remove);
@@ -132,6 +132,11 @@ public class TestRunService {
 
     public List<TestRun.Snapshot> list() {
         return runs.values().stream().map(TestRun::snapshot)
+                .sorted(Comparator.comparing(TestRun.Snapshot::createdAt).reversed()).toList();
+    }
+
+    public List<TestRun.Snapshot> summaries() {
+        return runs.values().stream().map(TestRun::summary)
                 .sorted(Comparator.comparing(TestRun.Snapshot::createdAt).reversed()).toList();
     }
 

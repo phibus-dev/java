@@ -52,6 +52,7 @@ public class UploadTestEngine {
 
     public void execute(TestRun run) {
         TestRequest request = run.request();
+        if (run.isCancelled()) return;
         try (S3Client client = client(request)) {
             if (request.mixedWorkload()) executeMixed(client, run, request);
             else if (request.durationMode()) executeDuration(client, run, request);
