@@ -6,13 +6,12 @@
     <meta name="_csrf" th:content="${_csrf.token}">
     <meta name="_csrf_header" th:content="${_csrf.headerName}">
     <title>Агенты — ЭВО.СНТ</title>
-    <link rel="stylesheet" href="/app.css">
-    <link rel="stylesheet" href="/app-ui.css?v=20260825.3">
+    <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body>
 <main class="container">
-    <header class="brand-header"><div class="brand-title"><h1>Агенты нагрузки</h1><p>Регистрация, состояние, блокировка identity и управление обновлением исполнителей.</p></div><div class="corporate-brand"><img src="/transneft-logo.svg" alt="ПАО Транснефть" class="corporate-logo"><div class="platform-name">ТПП ЭВОПЛАТФОРМА</div></div><span class="badge">Агенты</span></header>
-    <nav class="corporate-nav"><a href="/tasks">Задания</a><a href="/distributed-tests">Распределённые тесты</a><a href="/agents" aria-current="page">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings">Настройки</a></nav>
+    <header th:replace="~{fragments/layout :: header(title='Агенты нагрузки', subtitle='Регистрация, состояние, блокировка identity и управление обновлением исполнителей.')}"></header>
+    <nav th:replace="~{fragments/layout :: primaryNav(active='agents')}"></nav>
 
     <section class="panel">
         <div class="title-row">
@@ -40,8 +39,9 @@
         </div>
         <pre id="result" aria-live="polite"></pre>
     </section>
+<footer th:replace="~{fragments/layout :: footer}"></footer>
 </main>
-<script src="/app-ui.js?v=20260825.3"></script>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
 <script src="/csrf-fetch.js"></script>
 <script src="/agents.js"></script>
 </body>

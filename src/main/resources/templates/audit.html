@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Аудит безопасности — ЭВО.СНТ</title>
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
+</head>
+<body><main class="container">
+<header th:replace="~{fragments/layout :: header(title='Аудит безопасности', subtitle='События доступа и изменения конфигурации.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='settings')}"></nav>
+<nav th:replace="~{fragments/layout :: settingsNav(active='audit')}"></nav>
+
+<section class="audit-summary" aria-label="Сводка аудита">
+  <article class="card">Всего событий: <strong id="total">0</strong></article>
+  <article class="card">Ошибки HTTP: <strong id="errors">0</strong></article>
+</section>
+
+<section class="panel">
+  <h2>Фильтры</h2>
+  <div class="audit-filters">
+    <label>Пользователь<input id="username"></label>
+    <label>Метод<select id="method"><option value="">Все методы</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label>
+    <label>HTTP status<input id="status" type="number"></label>
+    <label>С<input id="from" type="datetime-local"></label>
+    <label>По<input id="to" type="datetime-local"></label>
+    <button id="apply-filters" type="button">Применить</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>События</h2>
+  <div class="table-wrap"><table>
+    <caption class="sr-only">События аудита безопасности</caption>
+    <thead><tr><th scope="col">Время</th><th scope="col">Пользователь</th><th scope="col">Действие</th><th scope="col">Метод</th><th scope="col">Путь</th><th scope="col">Статус</th><th scope="col">IP</th><th scope="col">мс</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p id="audit-message" class="muted" role="status" aria-live="polite"></p>
+</section>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</main>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
+<script src="/audit.js?v=20261109.1"></script>
+</body></html>

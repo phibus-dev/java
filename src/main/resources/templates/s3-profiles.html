@@ -6,17 +6,13 @@
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <title>Профили S3 — ЭВО.СНТ</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/app-ui.css?v=20260825.3">
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
 </head>
 <body>
 <main class="container">
-  <header class="brand-header">
-    <div class="brand-title"><h1>Профили подключений S3</h1><p>Управление подключениями к S3-совместимым хранилищам и ссылками на секреты в Vault.</p></div>
-  </header>
-  <nav class="corporate-nav"><a href="/">Главная</a><a href="/tasks">S3</a><a href="/clickhouse">ClickHouse</a><a href="/history">История</a><a href="/agents">Агенты</a><a href="/monitoring">Мониторинг</a><a href="/settings" aria-current="page">Настройки</a></nav>
+  <header th:replace="~{fragments/layout :: header(title='Профили подключений S3', subtitle='Подключения к S3-совместимым хранилищам и ссылки на секреты в Vault.')}"></header>
+  <nav th:replace="~{fragments/layout :: primaryNav(active='s3')}"></nav>
+  <nav th:replace="~{fragments/layout :: s3Nav(active='profiles')}"></nav>
 
   <section class="panel">
     <div class="section-heading"><div><h2>Новый профиль</h2><p class="muted">Секретные ключи не сохраняются в PostgreSQL. Профиль содержит параметры подключения и путь к секрету в Vault.</p></div><a href="/settings">← К настройкам</a></div>
@@ -30,7 +26,7 @@
       <label>CA certificate<input id="caCertificatePath" placeholder="Путь к CA certificate"></label>
       <div class="form-options"><label class="check"><input id="pathStyleAccess" type="checkbox" checked> Path-style access</label><label class="check"><input id="defaultProfile" type="checkbox"> Профиль по умолчанию</label></div>
     </div>
-    <div class="actions"><button type="button" id="create-profile">Создать профиль</button></div>
+    <div class="actions"><button type="button" id="create-profile" data-min-role="ADMIN">Создать профиль</button></div>
     <div id="message" class="diagnostic-output" aria-live="polite"></div>
   </section>
 
@@ -43,8 +39,9 @@
       </table>
     </div>
   </section>
+<footer th:replace="~{fragments/layout :: footer}"></footer>
 </main>
-<script src="/app-ui.js?v=20260825.3"></script>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
 <script src="/s3-profiles.js"></script>
 </body>
 </html>
