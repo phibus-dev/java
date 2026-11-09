@@ -41,20 +41,40 @@ public class KafkaProducerRunService {
         validate(request);
         KafkaProfileService.Profile profile = request.profileId() == null ? profiles.defaultProfile() : profiles.get(request.profileId());
         if (profile == null) throw new IllegalArgumentException("Kafka profile is required");
+        return start(request, initiator, profile, true);
+    }
+
+    public Snapshot startDistributed(ProducerRequest request, KafkaProfileService.Profile profile, String initiator) {
+        validate(request);
+        if (profile == null) throw new IllegalArgumentException("Kafka runtime profile is required");
+        if ("PLAIN".equalsIgnoreCase(profile.credentialsSource())
+                || "PROFILE".equalsIgnoreCase(profile.credentialsSource())) {
+            throw new IllegalArgumentException(
+                    "Distributed Kafka tests require agent-local VAULT or ENVIRONMENT credentials");
+        }
+        return start(request, initiator, profile, false);
+    }
+
+    private Snapshot start(ProducerRequest request, String initiator,
+                           KafkaProfileService.Profile profile, boolean persist) {
         String topic = request.topic() == null || request.topic().isBlank() ? profile.defaultTopic() : request.topic().trim();
         if (topic == null || topic.isBlank()) throw new IllegalArgumentException("Kafka topic is required");
         UUID id = UUID.randomUUID();
-        RuntimeState state = new RuntimeState(id, profile.id(), topic, request, Instant.now());
+        RuntimeState state = new RuntimeState(id, profile.id(), topic, request, Instant.now(), persist);
         active.put(id, state);
-        jdbc.update("""
-                INSERT INTO kafka_test_run(id, profile_id, topic, status, requested_messages, producer_threads,
-                    message_size_bytes, initiator, config_json)
-                VALUES (?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?)
-                """, id, profile.id(), topic, request.messageCount(), request.producerThreads(), request.messageSizeBytes(),
-                initiator, configText(request));
+        if (persist) {
+            jdbc.update("""
+                    INSERT INTO kafka_test_run(id, profile_id, topic, status, requested_messages, producer_threads,
+                        message_size_bytes, initiator, config_json)
+                    VALUES (?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?)
+                    """, id, profile.id(), topic, request.messageCount(), request.producerThreads(), request.messageSizeBytes(),
+                    initiator, configText(request));
+        }
         Thread.ofVirtual().name("kafka-producer-run-" + id).start(() -> execute(profile, state));
         return state.snapshot();
     }
+
+    public void removeRuntime(UUID id) { active.remove(id); }
 
     public Snapshot get(UUID id) {
         RuntimeState state = active.get(id);
@@ -102,24 +122,17 @@ public class KafkaProducerRunService {
         byte[] payload = payload(request.messageSizeBytes());
         int maxInFlight = effectiveMaxInFlight(request);
         Semaphore inFlight = new Semaphore(maxInFlight);
+        GlobalRateLimiter rateLimiter = new GlobalRateLimiter(request.targetMessagesPerSec());
 
         try (KafkaProducer<byte[], byte[]> producer = producer(profile, request, state.id)) {
             for (int worker = 0; worker < request.producerThreads(); worker++) {
                 final int workerId = worker;
                 Thread.ofVirtual().name("kafka-producer-" + workerId).start(() -> {
-                    long perThreadRate = request.targetMessagesPerSec() > 0
-                            ? Math.max(1, request.targetMessagesPerSec() / request.producerThreads()) : 0;
-                    long intervalNanos = perThreadRate > 0 ? 1_000_000_000L / perThreadRate : 0;
-                    long nextSend = System.nanoTime();
                     try {
                         while (true) {
                             long index = sequence.getAndIncrement();
                             if (index >= request.messageCount()) break;
-                            if (intervalNanos > 0) {
-                                long delay = nextSend - System.nanoTime();
-                                if (delay > 0) LockSupport.parkNanos(delay);
-                                nextSend += intervalNanos;
-                            }
+                            rateLimiter.acquire();
                             byte[] key = Long.toString(index).getBytes(StandardCharsets.UTF_8);
                             inFlight.acquire();
                             state.inFlight.incrementAndGet();
@@ -154,6 +167,7 @@ public class KafkaProducerRunService {
             }
             workers.await();
             producer.flush();
+            state.retries.set(retryCount(producer));
             state.finish(state.errors.get() == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -163,9 +177,21 @@ public class KafkaProducerRunService {
             state.recordError(rootMessage(e));
             state.finish("FAILED");
         } finally {
-            persistFinal(state);
-            active.remove(state.id);
+            if (state.persist) {
+                persistFinal(state);
+                active.remove(state.id);
+            }
         }
+    }
+
+    private static long retryCount(KafkaProducer<?, ?> producer) {
+        return producer.metrics().entrySet().stream()
+                .filter(entry -> "record-retry-total".equals(entry.getKey().name()))
+                .map(entry -> entry.getValue().metricValue())
+                .filter(Number.class::isInstance)
+                .map(Number.class::cast)
+                .mapToLong(value -> Math.round(value.doubleValue()))
+                .sum();
     }
 
     private KafkaProducer<byte[], byte[]> producer(KafkaProfileService.Profile profile, ProducerRequest request, UUID runId) {
@@ -203,6 +229,7 @@ public class KafkaProducerRunService {
         if (r.messageSizeBytes() < 1 || r.messageSizeBytes() > 100 * 1024 * 1024) throw new IllegalArgumentException("messageSizeBytes must be 1..104857600");
         if (r.messageCount() < 1) throw new IllegalArgumentException("messageCount must be positive");
         if (r.producerThreads() < 1 || r.producerThreads() > 256) throw new IllegalArgumentException("producerThreads must be 1..256");
+        if (r.targetMessagesPerSec() < 0) throw new IllegalArgumentException("targetMessagesPerSec must not be negative");
         if (r.maxInFlightMessages() < 0 || r.maxInFlightMessages() > 1_000_000) throw new IllegalArgumentException("maxInFlightMessages must be 0..1000000");
     }
 
@@ -223,6 +250,25 @@ public class KafkaProducerRunService {
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
+    static final class GlobalRateLimiter {
+        private final long intervalNanos;
+        private final AtomicLong nextPermitNanos;
+
+        GlobalRateLimiter(long permitsPerSecond) {
+            intervalNanos = permitsPerSecond <= 0 ? 0 : Math.max(1, 1_000_000_000L / permitsPerSecond);
+            nextPermitNanos = new AtomicLong(System.nanoTime());
+        }
+
+        void acquire() {
+            if (intervalNanos == 0) return;
+            long permit = nextPermitNanos.getAndAdd(intervalNanos);
+            long delay = permit - System.nanoTime();
+            if (delay > 0) LockSupport.parkNanos(delay);
+        }
+
+        long intervalNanos() { return intervalNanos; }
+    }
+
     public record ProducerRequest(UUID profileId, String topic, int messageSizeBytes, long messageCount,
                                   int producerThreads, String acks, String compressionType, int batchSize,
                                   long lingerMs, boolean enableIdempotence, long targetMessagesPerSec,
@@ -240,6 +286,7 @@ public class KafkaProducerRunService {
         final String topic;
         final ProducerRequest request;
         final Instant startedAt;
+        final boolean persist;
         final AtomicLong sent = new AtomicLong();
         final AtomicLong bytes = new AtomicLong();
         final AtomicLong errors = new AtomicLong();
@@ -254,8 +301,10 @@ public class KafkaProducerRunService {
         volatile Snapshot cachedSnapshot;
         volatile long cachedSnapshotAtNanos;
 
-        RuntimeState(UUID id, UUID profileId, String topic, ProducerRequest request, Instant startedAt) {
-            this.id=id; this.profileId=profileId; this.topic=topic; this.request=request; this.startedAt=startedAt;
+        RuntimeState(UUID id, UUID profileId, String topic, ProducerRequest request, Instant startedAt,
+                     boolean persist) {
+            this.id=id; this.profileId=profileId; this.topic=topic; this.request=request;
+            this.startedAt=startedAt; this.persist=persist;
         }
         void recordSuccess(long size, long latencyNanos) {
             sent.incrementAndGet();

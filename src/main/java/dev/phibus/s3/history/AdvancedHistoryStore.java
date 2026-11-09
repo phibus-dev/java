@@ -1,5 +1,7 @@
 package dev.phibus.s3.history;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.phibus.s3.settings.BootstrapSecretCodec;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.SettingsService;
@@ -14,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Repository;
 
@@ -21,10 +24,13 @@ import org.springframework.stereotype.Repository;
 public class AdvancedHistoryStore {
     private final SettingsService settingsService;
     private final BootstrapSecretCodec codec;
+    private final ObjectMapper objectMapper;
 
-    public AdvancedHistoryStore(SettingsService settingsService, BootstrapSecretCodec codec) {
+    public AdvancedHistoryStore(SettingsService settingsService, BootstrapSecretCodec codec,
+                                ObjectMapper objectMapper) {
         this.settingsService = settingsService;
         this.codec = codec;
+        this.objectMapper = objectMapper;
     }
 
     public Page search(Filter filter) {
@@ -37,7 +43,10 @@ public class AdvancedHistoryStore {
                        operation,total_bytes,bytes_transferred,average_speed_mibps,p50_latency_ms,
                        p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,cleanup_successful,
                        message,baseline,baseline_name,path_style_access,object_size_mib,part_size_mib,
-                       parallelism,object_count,delete_after_test,initiator
+                       parallelism,object_count,delete_after_test,execution_mode,
+                       configured_duration_seconds,warmup_seconds,workload_profile,
+                       workload_weights_json,target_operations_per_second,operation_threads_json,
+                       profile_id,initiator
                   from test_run
                 """ + where + " order by created_at desc limit ? offset ?";
         String count = "select count(*) from test_run " + where;
@@ -68,7 +77,10 @@ public class AdvancedHistoryStore {
                        operation,total_bytes,bytes_transferred,average_speed_mibps,p50_latency_ms,
                        p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,cleanup_successful,
                        message,baseline,baseline_name,path_style_access,object_size_mib,part_size_mib,
-                       parallelism,object_count,delete_after_test,initiator
+                       parallelism,object_count,delete_after_test,execution_mode,
+                       configured_duration_seconds,warmup_seconds,workload_profile,
+                       workload_weights_json,target_operations_per_second,operation_threads_json,
+                       profile_id,initiator
                   from test_run where id=?
                 """;
         try (Connection connection = connection(); PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -96,7 +108,8 @@ public class AdvancedHistoryStore {
     }
 
     private List<PartResult> parts(Connection connection, UUID id) throws SQLException {
-        String sql = "select object_number,part_number,bytes,duration_ms,speed_mibps,etag,status,error_message from part_result where test_run_id=? order by object_number,part_number";
+        String sql = "select object_number,part_number,bytes,duration_ms,speed_mibps,etag,status,error_message "
+                + "from part_result where test_run_id=? order by sequence_no";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setObject(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -111,7 +124,9 @@ public class AdvancedHistoryStore {
     private static TestRequest toRequest(RunRow row) {
         return new TestRequest(row.endpoint(), row.bucket(), row.region(), null, null, row.pathStyleAccess(),
                 row.objectKey(), row.objectSizeMiB(), row.partSizeMiB(), row.parallelism(), row.objectCount(),
-                row.deleteAfterTest(), row.operation());
+                row.deleteAfterTest(), row.operation(), row.executionMode(), row.configuredDurationSeconds(),
+                row.warmupSeconds(), row.workloadProfile(), row.workloadWeights(),
+                row.targetOperationsPerSecond(), row.operationThreads(), row.profileId());
     }
 
     private static String where(Filter filter, List<Object> parameters) {
@@ -140,17 +155,29 @@ public class AdvancedHistoryStore {
         int i = 1; for (Object value : values) ps.setObject(i++, value); return i - 1;
     }
 
-    private static RunRow mapRun(ResultSet rs) throws SQLException {
+    private RunRow mapRun(ResultSet rs) throws SQLException {
         return new RunRow(rs.getObject("id", UUID.class), rs.getString("status"), instant(rs, "created_at"),
                 instant(rs, "started_at"), instant(rs, "finished_at"), rs.getString("endpoint"),
                 rs.getString("bucket"), rs.getString("region"), rs.getString("object_key"),
                 rs.getString("operation"), rs.getLong("total_bytes"), rs.getLong("bytes_transferred"),
                 rs.getDouble("average_speed_mibps"), rs.getDouble("p50_latency_ms"), rs.getDouble("p95_latency_ms"),
-                rs.getDouble("p99_latency_ms"), rs.getInt("successful_parts"), rs.getInt("failed_parts"),
+                rs.getDouble("p99_latency_ms"), rs.getLong("successful_parts"), rs.getLong("failed_parts"),
                 rs.getBoolean("cleanup_successful"), rs.getString("message"), rs.getBoolean("baseline"),
                 rs.getString("baseline_name"), rs.getBoolean("path_style_access"), rs.getLong("object_size_mib"),
                 rs.getLong("part_size_mib"), rs.getInt("parallelism"), rs.getInt("object_count"),
-                rs.getBoolean("delete_after_test"), normalizeInitiator(rs.getString("initiator")));
+                rs.getBoolean("delete_after_test"), rs.getString("execution_mode"),
+                rs.getLong("configured_duration_seconds"), rs.getLong("warmup_seconds"),
+                rs.getString("workload_profile"), readIntegerMap(rs.getString("workload_weights_json")),
+                rs.getInt("target_operations_per_second"), readIntegerMap(rs.getString("operation_threads_json")),
+                rs.getObject("profile_id", UUID.class), normalizeInitiator(rs.getString("initiator")));
+    }
+    private Map<String,Integer> readIntegerMap(String json) throws SQLException {
+        if (json == null || json.isBlank()) return Map.of();
+        try {
+            return Map.copyOf(objectMapper.readValue(json, new TypeReference<Map<String,Integer>>() { }));
+        } catch (Exception e) {
+            throw new SQLException("Cannot read test request map metadata", e);
+        }
     }
     private static Instant instant(ResultSet rs, String name) throws SQLException {
         Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toInstant();
@@ -176,12 +203,15 @@ public class AdvancedHistoryStore {
     public record Page(List<RunRow> items, int page, int size, long totalElements, int totalPages) { }
     public record Detail(RunRow run, List<PartResult> parts, TestRequest repeatRequest) { }
     public record Comparison(RunRow left, RunRow right, double speedChangePercent, double p95ChangePercent,
-                             double p99ChangePercent, int errorDifference, double durationChangePercent) { }
+                             double p99ChangePercent, long errorDifference, double durationChangePercent) { }
     public record RunRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                          String endpoint, String bucket, String region, String objectKey, String operation,
                          long totalBytes, long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
-                         double p95LatencyMs, double p99LatencyMs, int successfulParts, int failedParts,
+                         double p95LatencyMs, double p99LatencyMs, long successfulParts, long failedParts,
                          boolean cleanupSuccessful, String message, boolean baseline, String baselineName,
                          boolean pathStyleAccess, long objectSizeMiB, long partSizeMiB, int parallelism,
-                         int objectCount, boolean deleteAfterTest, String initiator) { }
+                         int objectCount, boolean deleteAfterTest, String executionMode,
+                         long configuredDurationSeconds, long warmupSeconds, String workloadProfile,
+                         Map<String,Integer> workloadWeights, int targetOperationsPerSecond,
+                         Map<String,Integer> operationThreads, UUID profileId, String initiator) { }
 }

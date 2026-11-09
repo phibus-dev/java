@@ -123,11 +123,16 @@ public class ClickHouseTestRunService {
         if (!table.matches("[A-Za-z_][A-Za-z0-9_]*")) throw new IllegalArgumentException("Invalid ClickHouse table name");
         if (!List.of("INSERT", "SELECT", "INSERT_SELECT").contains(request.normalizedOperation()))
             throw new IllegalArgumentException("Unsupported ClickHouse operation: " + request.operation());
+        if (request.durationMode() && "INSERT_SELECT".equals(request.normalizedOperation()))
+            throw new IllegalArgumentException(
+                    "INSERT_SELECT requires fixed row and query counts; duration mode is ambiguous");
         if (request.concurrency() < 1 || request.concurrency() > 64)
             throw new IllegalArgumentException("Concurrency must be 1..64");
         if (request.batchSize() < 1 || request.batchSize() > 100000)
             throw new IllegalArgumentException("Batch size must be 1..100000");
         if (request.rowCount() < 1) throw new IllegalArgumentException("Row count must be positive");
+        if (request.effectiveQueryCount() < 1 || request.effectiveQueryCount() > 10_000_000)
+            throw new IllegalArgumentException("Query count must be 1..10000000");
         if (request.durationSeconds() < 0 || request.durationSeconds() > 86400)
             throw new IllegalArgumentException("Duration must be 0..86400 seconds");
         if (request.warmupSeconds() < 0 || request.warmupSeconds() > 3600)
