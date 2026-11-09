@@ -34,6 +34,7 @@
       statusCard('Keycloak', keycloak, keycloak === 'ENABLED' ? 'ok' : 'neutral', '/settings/keycloak'),
       statusCard('S3', 'Профили и тесты', 'neutral', '/tasks'),
       statusCard('ClickHouse', 'Профили и HA', 'neutral', '/clickhouse'),
+      statusCard('Kafka', 'Профили и тесты', 'neutral', '/kafka'),
       statusCard('Агенты', 'Открыть состояние', 'neutral', '/agents')
     ].join('');
   }
@@ -52,7 +53,7 @@
   if (searchForm) searchForm.addEventListener('submit', event => {
     event.preventDefault();
     const q = searchInput.value.trim();
-    if (q) location.href = `/history?search=${encodeURIComponent(q)}`;
+    if (q) location.href = `/history?q=${encodeURIComponent(q)}`;
   });
 
   loadHealth();

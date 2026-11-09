@@ -22,7 +22,7 @@ class HistoryPaginationUiTest {
                 .contains("tbody[data-history-page]")
                 .contains("refreshHistoryPagination")
                 .contains("classList.add('history-row-hidden')");
-        assertThat(styles).contains(".history-row-hidden{display:none!important}");
+        assertThat(styles).contains(".history-row-hidden { display: none !important; }");
     }
 
     @Test
@@ -41,15 +41,8 @@ class HistoryPaginationUiTest {
     }
 
     @Test
-    void commonUiScriptIsCacheBustedInEveryTemplate() throws IOException {
-        try (var paths = Files.list(TEMPLATES)) {
-            for (Path template : paths.filter(path -> path.toString().endsWith(".html")).toList()) {
-                String html = Files.readString(template);
-                if (html.contains("/app-ui.js")) {
-                    assertThat(html).as(template.getFileName().toString())
-                            .contains("/app-ui.js?v=20260825.3");
-                }
-            }
-        }
+    void commonUiScriptIsCacheBustedInSharedLayout() throws IOException {
+        String layout = Files.readString(Path.of("src/main/resources/templates/fragments/layout.html"));
+        assertThat(layout).contains("/app-ui.js?v=20261109.1");
     }
 }

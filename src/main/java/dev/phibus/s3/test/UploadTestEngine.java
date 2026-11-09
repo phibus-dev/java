@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -39,6 +40,7 @@ public class UploadTestEngine {
     private final WorkloadProfileCatalog workloadProfiles;
     private final Function<TestRequest, S3Client> clientFactory;
 
+    @Autowired
     public UploadTestEngine(CredentialProvider credentialProvider, WorkloadProfileCatalog workloadProfiles) {
         this(credentialProvider, workloadProfiles, null);
     }

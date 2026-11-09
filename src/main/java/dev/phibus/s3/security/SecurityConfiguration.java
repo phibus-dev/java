@@ -65,7 +65,7 @@ public class SecurityConfiguration {
                         .requestMatchers("/api/kafka/profiles/*/check").hasAnyRole("ADMIN","OPERATOR")
                         .requestMatchers("/api/settings/**","/api/config/**","/api/s3-profiles/**",
                                 "/api/kafka/profiles/**","/api/agents/**","/api/audit/**",
-                                "/settings","/settings/**","/audit.html").hasRole("ADMIN")
+                                "/settings","/settings/**","/audit","/audit.html").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET,"/api/**").hasAnyRole("ADMIN","OPERATOR","VIEWER")
                         .requestMatchers("/api/**").hasAnyRole("ADMIN","OPERATOR")
                         .anyRequest().hasAnyRole("ADMIN","OPERATOR","VIEWER"))

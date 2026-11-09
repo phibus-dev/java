@@ -42,11 +42,20 @@ class UiRouteControllerTest {
     }
 
     @Test
+    void exposesCanonicalAuditRoute() throws Exception {
+        mvc.perform(get("/audit"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("audit"))
+                .andExpect(forwardedUrl("/templates/audit.html"));
+    }
+
+    @Test
     void redirectsLegacyHtmlRoutes() throws Exception {
         mvc.perform(get("/index.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/"));
         mvc.perform(get("/history.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/history"));
         mvc.perform(get("/agents.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/agents"));
         mvc.perform(get("/distributed-tests.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/distributed-tests"));
         mvc.perform(get("/schedules.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/schedules"));
+        mvc.perform(get("/audit.html")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/audit"));
     }
 }

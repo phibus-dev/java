@@ -36,7 +36,7 @@
   }
   function addCustomProperty(key='',value=''){
     const row=document.createElement('div'); row.className='grid two kafka-property-row';
-    row.innerHTML=`<label>Параметр<input class="kafka-property-key" placeholder="fetch.min.bytes" value="${esc(key)}"></label><label>Значение<div class="inline-field"><input class="kafka-property-value" placeholder="1" value="${esc(value)}"><button type="button" class="secondary remove-kafka-property">Удалить</button></div></label>`;
+    row.innerHTML=`<label>Параметр<input class="kafka-property-key" placeholder="fetch.min.bytes" value="${esc(key)}"></label><label>Значение<div class="inline-field"><input class="kafka-property-value" placeholder="1" value="${esc(value)}"><button type="button" class="secondary remove-kafka-property" data-min-role="ADMIN">Удалить</button></div></label>`;
     $('customProperties').appendChild(row);
   }
   function renderCustomProperties(values={}){
@@ -98,7 +98,7 @@
   }
   async function load(){
     items=await request('/api/kafka/profiles'); const body=$('profiles'); body.innerHTML='';
-    items.forEach(p=>{ const tr=document.createElement('tr'); const source=(p.credentialsSource==='PROFILE'?'PLAIN':p.credentialsSource); tr.innerHTML=`<td>${esc(p.name)}</td><td>${esc(p.bootstrapServers)}</td><td>${esc(p.securityProtocol)}${p.saslMechanism?` / ${esc(p.saslMechanism)}`:''}</td><td>${esc(source)}</td><td>${esc(p.defaultTopic||'—')}</td><td>${esc(p.sessionTimeoutMs)} мс</td><td>${p.defaultProfile?'Да':'Нет'}</td><td><button type="button" data-edit="${p.id}" class="secondary">Изменить</button> <button type="button" data-default="${p.id}" class="secondary">По умолчанию</button> <button type="button" data-delete="${p.id}" class="danger">Удалить</button></td>`; body.appendChild(tr); });
+    items.forEach(p=>{ const tr=document.createElement('tr'); const source=(p.credentialsSource==='PROFILE'?'PLAIN':p.credentialsSource); tr.innerHTML=`<td>${esc(p.name)}</td><td>${esc(p.bootstrapServers)}</td><td>${esc(p.securityProtocol)}${p.saslMechanism?` / ${esc(p.saslMechanism)}`:''}</td><td>${esc(source)}</td><td>${esc(p.defaultTopic||'—')}</td><td>${esc(p.sessionTimeoutMs)} мс</td><td>${p.defaultProfile?'Да':'Нет'}</td><td><button type="button" data-edit="${p.id}" class="secondary" data-min-role="ADMIN">Изменить</button> <button type="button" data-default="${p.id}" class="secondary" data-min-role="ADMIN">По умолчанию</button> <button type="button" data-delete="${p.id}" class="danger" data-min-role="ADMIN">Удалить</button></td>`; body.appendChild(tr); });
   }
   async function save(){
     try{ validateForm(); const id=$('id').value; const saved=await request(id?`/api/kafka/profiles/${id}`:'/api/kafka/profiles',{method:id?'PUT':'POST',body:JSON.stringify(payload())}); selectedProfileId=saved?.id||id||selectedProfileId; EvoUI?.notify('Профиль Kafka сохранён','success'); await load(); const savedProfile=items.find(p=>p.id===selectedProfileId); if(savedProfile){edit(savedProfile);} }

@@ -42,9 +42,9 @@
             <td>${update}</td>
             <td>${formatDate(agent.lastSeenAt)}</td>
             <td>
-                <button type="button" class="secondary" data-action="toggle" data-id="${escapeHtml(agent.id)}" data-enabled="${String(!agent.enabled)}">${agent.enabled ? 'Отключить' : 'Включить'}</button>
-                <button type="button" class="secondary" data-action="update" data-id="${escapeHtml(agent.id)}" data-version="${escapeHtml(agent.version || '')}">Обновить</button>
-                <button type="button" class="danger" data-action="revoke" data-id="${escapeHtml(agent.id)}">Отозвать identity</button>
+                <button type="button" class="secondary" data-min-role="ADMIN" data-action="toggle" data-id="${escapeHtml(agent.id)}" data-enabled="${String(!agent.enabled)}">${agent.enabled ? 'Отключить' : 'Включить'}</button>
+                <button type="button" class="secondary" data-min-role="ADMIN" data-action="update" data-id="${escapeHtml(agent.id)}" data-version="${escapeHtml(agent.version || '')}">Обновить</button>
+                <button type="button" class="danger" data-min-role="ADMIN" data-action="revoke" data-id="${escapeHtml(agent.id)}">Отозвать identity</button>
             </td>
         </tr>`;
     }

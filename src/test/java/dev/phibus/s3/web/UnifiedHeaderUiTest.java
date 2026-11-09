@@ -11,30 +11,41 @@ import org.junit.jupiter.api.Test;
 class UnifiedHeaderUiTest {
 
     @Test
-    void sharedUiNormalizesHeaderAndDisplaysVersion() throws IOException {
+    void sharedLayoutOwnsHeaderNavigationFooterAndVersion() throws IOException {
         String js = Files.readString(Path.of("src/main/resources/static/app-ui.js"));
         String css = Files.readString(Path.of("src/main/resources/static/app-ui.css"));
+        String layout = Files.readString(Path.of("src/main/resources/templates/fragments/layout.html"));
 
         assertThat(js)
                 .contains("header-version")
-                .contains("version.textContent=`Версия ${resolvedVersion}`")
-                .contains("brand-home-link");
+                .contains("footer-version")
+                .contains("aria-expanded")
+                .doesNotContain("ensureBrandHeader");
         assertThat(css)
-                .contains(".brand-header{display:grid!important")
-                .contains(".brand-home-link{flex-direction:column")
-                .contains(".header-version{justify-self:center!important");
+                .contains(".brand-header {")
+                .contains(".brand-home-link {")
+                .contains(".header-version {");
+        assertThat(layout)
+                .contains("th:fragment=\"header(title, subtitle)\"")
+                .contains("th:fragment=\"primaryNav(active)\"")
+                .contains("th:fragment=\"footer\"")
+                .contains("brand-home-link");
     }
 
     @Test
-    void everyTemplateUsesSameCacheBustedHeaderAssets() throws IOException {
+    void everyPageTemplateUsesSharedShell() throws IOException {
         try (Stream<Path> templates = Files.list(Path.of("src/main/resources/templates"))) {
             for (Path template : templates.filter(path -> path.toString().endsWith(".html")).toList()) {
                 String html = Files.readString(template);
-                if (html.contains("/app-ui.js")) {
-                    assertThat(html).as(template.toString())
-                            .contains("/app-ui.css?v=20260825.3")
-                            .contains("/app-ui.js?v=20260825.3");
-                }
+                assertThat(html).as(template.toString())
+                        .contains("fragments/layout :: headAssets")
+                        .contains("fragments/layout :: header")
+                        .contains("fragments/layout :: primaryNav")
+                        .contains("fragments/layout :: footer")
+                        .contains("fragments/layout :: commonScripts")
+                        .doesNotContain("href=\"/app.css\"")
+                        .doesNotContain("href=\"/app-ui.css")
+                        .doesNotContain("src=\"/app-ui.js");
             }
         }
     }
