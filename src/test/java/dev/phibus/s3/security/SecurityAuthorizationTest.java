@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest(controllers = SecurityAuthorizationTest.ProbeController.class,
         properties = {"s3perf.security.enabled=true", "s3perf.security.audit-enabled=false"})
-@Import(SecurityConfiguration.class)
+@Import({SecurityConfiguration.class, SecurityAuthorizationTest.ProbeController.class})
 class SecurityAuthorizationTest {
     @Autowired
     private MockMvc mvc;
