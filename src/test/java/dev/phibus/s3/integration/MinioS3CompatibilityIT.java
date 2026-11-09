@@ -32,7 +32,8 @@ class MinioS3CompatibilityIT {
 
     @Container
     private static final GenericContainer<?> MINIO = new GenericContainer<>(
-            DockerImageName.parse("minio/minio:RELEASE.2025-04-22T22-12-26Z"))
+            // The upstream Docker Hub repository was withdrawn; Silo preserves the MinIO/S3 protocol surface.
+            DockerImageName.parse("pgsty/silo:RELEASE.2026-10-26T00-00-00Z"))
             .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
             .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
             .withCommand("server", "/data", "--address", ":9000")
