@@ -63,8 +63,8 @@ public class TestHistoryStore {
                     failed_parts=excluded.failed_parts, message=excluded.message, initiator=excluded.initiator
                 """;
         TestRequest request = result.request();
-        int completed = safeInt(result.completedOperations());
-        int failed = safeInt(result.errors());
+        long completed = Math.max(0, result.completedOperations());
+        long failed = Math.max(0, result.errors());
         try (Connection connection = connection(); PreparedStatement ps = connection.prepareStatement(sql)) {
             int i = 1;
             ps.setObject(i++, result.id());
@@ -83,14 +83,14 @@ public class TestHistoryStore {
             ps.setString(i++, "FAILED".equals(result.status()) ? "ERROR" : "NORMAL");
             ps.setLong(i++, request.totalBytes());
             ps.setLong(i++, result.bytesTransferred());
-            ps.setInt(i++, completed);
-            ps.setInt(i++, completed);
+            ps.setLong(i++, completed);
+            ps.setLong(i++, completed);
             ps.setDouble(i++, result.throughputMiBps());
             ps.setDouble(i++, result.p50LatencyMs());
             ps.setDouble(i++, result.p95LatencyMs());
             ps.setDouble(i++, result.p99LatencyMs());
-            ps.setInt(i++, Math.max(0, completed - failed));
-            ps.setInt(i++, failed);
+            ps.setLong(i++, Math.max(0, completed - failed));
+            ps.setLong(i++, failed);
             ps.setBoolean(i++, request.deleteAfterTest());
             ps.setBoolean(i++, false);
             ps.setString(i++, result.message());
@@ -199,14 +199,14 @@ public class TestHistoryStore {
             ps.setString(i++, run.objectKey());
             ps.setLong(i++, run.totalBytes());
             ps.setLong(i++, run.bytesTransferred());
-            ps.setInt(i++, run.completedParts());
-            ps.setInt(i++, run.totalParts());
+            ps.setLong(i++, run.completedParts());
+            ps.setLong(i++, run.totalParts());
             ps.setDouble(i++, run.averageSpeedMiBps());
             ps.setDouble(i++, run.p50LatencyMs());
             ps.setDouble(i++, run.p95LatencyMs());
             ps.setDouble(i++, run.p99LatencyMs());
-            ps.setInt(i++, run.successfulParts());
-            ps.setInt(i++, run.failedParts());
+            ps.setLong(i++, run.successfulParts());
+            ps.setLong(i++, run.failedParts());
             ps.setBoolean(i++, run.deleteAfterTest());
             ps.setBoolean(i++, run.cleanupSuccessful());
             ps.setString(i, run.message());
@@ -249,14 +249,13 @@ public class TestHistoryStore {
                 rs.getString("region"), rs.getString("object_key"), rs.getLong("total_bytes"),
                 rs.getLong("bytes_transferred"), rs.getDouble("average_speed_mibps"),
                 rs.getDouble("p50_latency_ms"), rs.getDouble("p95_latency_ms"),
-                rs.getDouble("p99_latency_ms"), rs.getInt("successful_parts"), rs.getInt("failed_parts"),
+                rs.getDouble("p99_latency_ms"), rs.getLong("successful_parts"), rs.getLong("failed_parts"),
                 rs.getBoolean("cleanup_successful"), rs.getString("message"),
                 normalizeInitiator(rs.getString("initiator")));
     }
 
     private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }
     private static Instant instant(Timestamp value) { return value == null ? null : value.toInstant(); }
-    private static int safeInt(long value) { return (int) Math.max(0, Math.min(Integer.MAX_VALUE, value)); }
     private static String normalizeInitiator(String value) {
         return value == null || value.isBlank() ? "local" : value.trim();
     }
@@ -264,7 +263,7 @@ public class TestHistoryStore {
     public record HistoryRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                              String endpoint, String bucket, String region, String objectKey, long totalBytes,
                              long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
-                             double p95LatencyMs, double p99LatencyMs, int successfulParts, int failedParts,
+                             double p95LatencyMs, double p99LatencyMs, long successfulParts, long failedParts,
                              boolean cleanupSuccessful, String message, String initiator) { }
 
     public record DistributedHistoryResult(UUID id, TestRequest request, String initiator, String status,

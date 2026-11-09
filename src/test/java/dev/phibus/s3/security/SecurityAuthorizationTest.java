@@ -4,7 +4,10 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.settings.ApplicationStateService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -30,6 +33,14 @@ class SecurityAuthorizationTest {
 
     @MockBean
     private ClientRegistrationRepository clientRegistrationRepository;
+
+    @MockBean
+    private ApplicationStateService applicationStateService;
+
+    @BeforeEach
+    void applicationIsReady() {
+        when(applicationStateService.current()).thenReturn(ApplicationStateService.State.READY);
+    }
 
     @Test
     void healthAndAgentProtocolRemainPublic() throws Exception {

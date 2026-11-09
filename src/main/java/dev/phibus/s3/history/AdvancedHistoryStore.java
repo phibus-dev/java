@@ -161,7 +161,7 @@ public class AdvancedHistoryStore {
                 rs.getString("bucket"), rs.getString("region"), rs.getString("object_key"),
                 rs.getString("operation"), rs.getLong("total_bytes"), rs.getLong("bytes_transferred"),
                 rs.getDouble("average_speed_mibps"), rs.getDouble("p50_latency_ms"), rs.getDouble("p95_latency_ms"),
-                rs.getDouble("p99_latency_ms"), rs.getInt("successful_parts"), rs.getInt("failed_parts"),
+                rs.getDouble("p99_latency_ms"), rs.getLong("successful_parts"), rs.getLong("failed_parts"),
                 rs.getBoolean("cleanup_successful"), rs.getString("message"), rs.getBoolean("baseline"),
                 rs.getString("baseline_name"), rs.getBoolean("path_style_access"), rs.getLong("object_size_mib"),
                 rs.getLong("part_size_mib"), rs.getInt("parallelism"), rs.getInt("object_count"),
@@ -203,11 +203,11 @@ public class AdvancedHistoryStore {
     public record Page(List<RunRow> items, int page, int size, long totalElements, int totalPages) { }
     public record Detail(RunRow run, List<PartResult> parts, TestRequest repeatRequest) { }
     public record Comparison(RunRow left, RunRow right, double speedChangePercent, double p95ChangePercent,
-                             double p99ChangePercent, int errorDifference, double durationChangePercent) { }
+                             double p99ChangePercent, long errorDifference, double durationChangePercent) { }
     public record RunRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                          String endpoint, String bucket, String region, String objectKey, String operation,
                          long totalBytes, long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
-                         double p95LatencyMs, double p99LatencyMs, int successfulParts, int failedParts,
+                         double p95LatencyMs, double p99LatencyMs, long successfulParts, long failedParts,
                          boolean cleanupSuccessful, String message, boolean baseline, String baselineName,
                          boolean pathStyleAccess, long objectSizeMiB, long partSizeMiB, int parallelism,
                          int objectCount, boolean deleteAfterTest, String executionMode,

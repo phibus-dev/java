@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.HdrHistogram.ConcurrentHistogram;
 
@@ -25,9 +24,9 @@ public final class TestRun {
     private final int maxRetainedDetails;
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final AtomicLong bytesTransferred = new AtomicLong();
-    private final AtomicInteger completedParts = new AtomicInteger();
-    private final AtomicInteger successfulParts = new AtomicInteger();
-    private final AtomicInteger failedParts = new AtomicInteger();
+    private final AtomicLong completedParts = new AtomicLong();
+    private final AtomicLong successfulParts = new AtomicLong();
+    private final AtomicLong failedParts = new AtomicLong();
     private final Deque<PartResult> parts = new ArrayDeque<>();
     private final Deque<Long> recentLatenciesMs = new ArrayDeque<>();
     private final Deque<TransferSample> transferWindow = new ArrayDeque<>();
@@ -40,7 +39,7 @@ public final class TestRun {
     private volatile long startedNanos;
     private volatile long measurementStartedNanos;
     private volatile long finishedNanos;
-    private volatile int totalParts;
+    private volatile long totalParts;
     private volatile String message = "Queued";
     private volatile boolean cleanupSuccessful;
     private volatile boolean detailsTruncated;
@@ -129,7 +128,7 @@ public final class TestRun {
         } else {
             failedParts.incrementAndGet();
         }
-        int done = completedParts.incrementAndGet();
+        long done = completedParts.incrementAndGet();
         message = request.durationMode()
                 ? "Operation " + done + " completed"
                 : "Operation " + done + " of " + totalParts + " completed";
@@ -176,7 +175,7 @@ public final class TestRun {
     public Snapshot snapshot() {
         long total = request.totalBytes();
         long transferred = bytesTransferred.get();
-        int completed = completedParts.get();
+        long completed = completedParts.get();
         long nowNanos = finishedNanos == 0 ? System.nanoTime() : finishedNanos;
         long elapsedNanos = startedAt == null ? 0 : Math.max(0, nowNanos - startedNanos);
         long measurementNanos = measurementStartedAt == null || nowNanos < measurementStartedNanos
@@ -234,11 +233,11 @@ public final class TestRun {
                            String endpoint, String bucket, String region, String objectKey, String operation,
                            String executionMode, long configuredDurationSeconds, long warmupSeconds,
                            long elapsedMillis, long remainingMillis, boolean warmingUp, String stopReason,
-                           long totalBytes, long bytesTransferred, int completedParts, int totalParts, double percent,
+                           long totalBytes, long bytesTransferred, long completedParts, long totalParts, double percent,
                            double currentSpeedMiBps, double averageSpeedMiBps, double operationsPerSecond,
                            double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
                            double windowP50LatencyMs, double windowP95LatencyMs, double windowP99LatencyMs,
-                           int successfulParts, int failedParts, boolean deleteAfterTest,
+                           long successfulParts, long failedParts, boolean deleteAfterTest,
                            boolean cleanupSuccessful, boolean detailsTruncated,
                            String message, List<PartResult> parts) { }
 }
