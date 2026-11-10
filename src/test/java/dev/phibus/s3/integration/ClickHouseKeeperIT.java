@@ -62,6 +62,8 @@ class ClickHouseKeeperIT {
             statement.execute("CREATE TABLE " + replicatedTable
                     + " (id UInt64, payload String) ENGINE=ReplicatedMergeTree('" + keeperPath
                     + "', 'replica1') ORDER BY id");
+            awaitWritableReplica(statement, replicatedTable);
+            statement.execute("SET insert_keeper_max_retries=10");
             statement.execute("INSERT INTO " + replicatedTable + " VALUES (1, 'keeper-ok')");
             try (ResultSet result = statement.executeQuery("SELECT count() FROM " + replicatedTable)) {
                 assertThat(result.next()).isTrue();
@@ -86,5 +88,25 @@ class ClickHouseKeeperIT {
         assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.COMPLETED);
         assertThat(run.snapshot().rows()).isGreaterThanOrEqualTo(100);
         assertThat(run.snapshot().queries()).isGreaterThanOrEqualTo(2);
+    }
+
+    private static void awaitWritableReplica(Statement statement, String table) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        String diagnostic = "replica row is not visible";
+        while (System.nanoTime() < deadline) {
+            try (ResultSet result = statement.executeQuery(
+                    "SELECT is_readonly, is_session_expired, zookeeper_exception "
+                            + "FROM system.replicas WHERE database=currentDatabase() AND table='" + table + "'")) {
+                if (result.next()) {
+                    boolean readOnly = result.getBoolean(1);
+                    boolean sessionExpired = result.getBoolean(2);
+                    diagnostic = "is_readonly=" + readOnly + ", is_session_expired=" + sessionExpired
+                            + ", zookeeper_exception=" + result.getString(3);
+                    if (!readOnly && !sessionExpired) return;
+                }
+            }
+            Thread.sleep(250);
+        }
+        throw new IllegalStateException("ClickHouse replica did not become writable: " + diagnostic);
     }
 }
