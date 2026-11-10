@@ -1,6 +1,6 @@
 # Мониторинг ЭВО.СНТ
 
-Документ актуален для версии `2.4.0-rc17`. Поставляемые dashboards покрывают S3, распределённые агенты, HTTP и JVM. Состояние ClickHouse replication/Keeper доступно в Web UI `/clickhouse/replication` и `/clickhouse/ha`; отдельный Grafana dashboard для ClickHouse пока не поставляется.
+Документ актуален для версии `2.4.0-rc18`. Поставляемые dashboards покрывают S3, распределённые агенты, HTTP, JVM, общую runtime-ёмкость и HikariCP. Состояние ClickHouse replication/Keeper доступно в Web UI `/clickhouse/replication` и `/clickhouse/ha`; отдельный Grafana dashboard для ClickHouse пока не поставляется.
 
 ## Dashboards
 
@@ -58,4 +58,4 @@ curl -X POST http://localhost:9090/-/reload
 
 ## Проверка после обновления
 
-После перехода на 2.4.0-rc17 убедитесь, что Prometheus продолжает собирать `/actuator/prometheus`, а переменные `job` и `instance` соответствуют scrape-конфигурации. Обновление не переименовывает существующие `s3_*` метрики и dashboards можно импортировать поверх прежних копий.
+После перехода на 2.4.0-rc18 убедитесь, что Prometheus продолжает собирать `/actuator/prometheus`, а переменные `job` и `instance` соответствуют scrape-конфигурации. Обновление не переименовывает существующие `s3_*` метрики и добавляет `s3perf_runtime_*` и `hikaricp_*`; dashboards можно импортировать поверх прежних копий.

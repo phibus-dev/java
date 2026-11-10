@@ -6,11 +6,13 @@ import static org.mockito.Mockito.mock;
 
 import dev.phibus.s3.history.HistoryRequestMetadataUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.settings.S3ProfileService;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class TestRunServiceTest {
     @Test
@@ -20,15 +22,18 @@ class TestRunServiceTest {
             @Override public void execute(TestRun run) { run.complete(); }
         };
         Executor rejecting = command -> { throw new RejectedExecutionException("test queue is full"); };
-        TestRunService service = new TestRunService(new LoadTestEngineRegistry(List.of(engine)),
-                mock(S3LoadTestEngine.class), rejecting, mock(TestHistoryStore.class),
-                mock(HistoryRequestMetadataUpdater.class), mock(S3ProfileService.class), "AGENT", 10);
+        try (RuntimeResourceManager resources = new RuntimeResourceManager(2, 8, 60,
+                new SimpleMeterRegistry())) {
+            TestRunService service = new TestRunService(new LoadTestEngineRegistry(List.of(engine)),
+                    mock(S3LoadTestEngine.class), rejecting, mock(TestHistoryStore.class),
+                    mock(HistoryRequestMetadataUpdater.class), mock(S3ProfileService.class), resources, "AGENT", 10);
 
-        TestRun.Snapshot snapshot = service.create(request()).snapshot();
+            TestRun.Snapshot snapshot = service.create(request()).snapshot();
 
-        assertEquals(TestStatus.FAILED, snapshot.status());
-        assertEquals(1, snapshot.failedParts());
-        assertTrue(snapshot.message().contains("test queue is full"));
+            assertEquals(TestStatus.FAILED, snapshot.status());
+            assertEquals(1, snapshot.failedParts());
+            assertTrue(snapshot.message().contains("test queue is full"));
+        }
     }
 
     private static TestRequest request() {

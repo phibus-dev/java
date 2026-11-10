@@ -1,5 +1,6 @@
 package dev.phibus.s3.clickhouse;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -27,16 +28,19 @@ public class ClickHouseReplicaFailoverService {
     private final ClickHouseReplicationObservabilityService observability;
     private final JdbcTemplate jdbc;
     private final Executor executor;
+    private final RuntimeResourceManager resources;
     private final Map<UUID, Run> active = new ConcurrentHashMap<>();
 
     public ClickHouseReplicaFailoverService(ClickHouseProfileService profiles,
                                             ClickHouseReplicationObservabilityService observability,
                                             JdbcTemplate jdbc,
-                                            @Qualifier("clickHouseWorkflowExecutor") Executor executor) {
+                                            @Qualifier("clickHouseWorkflowExecutor") Executor executor,
+                                            RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.observability = observability;
         this.jdbc = jdbc;
         this.executor = executor;
+        this.resources = resources;
     }
 
     public Snapshot create(Request request) {
@@ -49,7 +53,8 @@ public class ClickHouseReplicaFailoverService {
         persist(run.snapshot());
         active.put(run.id, run);
         try {
-            executor.execute(() -> execute(run));
+            resources.submit(executor, "CLICKHOUSE_FAILOVER", run.id,
+                    () -> deadlineExceeded(run), () -> execute(run));
         } catch (RuntimeException e) {
             active.remove(run.id);
             run.status = "FAILED";
@@ -59,6 +64,16 @@ public class ClickHouseReplicaFailoverService {
             throw e;
         }
         return run.snapshot();
+    }
+
+    private void deadlineExceeded(Run run) {
+        if (!run.cancelled.compareAndSet(false, true)) return;
+        run.stop.set(true);
+        run.status = "CANCELLED";
+        run.message = "Runtime deadline exceeded";
+        run.finishedAt = Instant.now();
+        persist(run.snapshot());
+        active.remove(run.id);
     }
 
     public Snapshot confirmFault(UUID id) {
@@ -96,6 +111,7 @@ public class ClickHouseReplicaFailoverService {
     }
 
     private void execute(Run run) {
+        if (run.cancelled.get()) return;
         run.startedAt = Instant.now();
         run.status = "RUNNING_BASELINE";
         run.message = "Baseline workload is running";
@@ -132,15 +148,19 @@ public class ClickHouseReplicaFailoverService {
             run.serviceInterruptionMs = run.firstFailureAt == null ? 0
                     : Duration.between(run.firstFailureAt, run.lastFailureAt == null ? run.firstFailureAt : run.lastFailureAt).toMillis();
             consistency(run);
-            run.status = run.consistencyPassed ? "COMPLETED" : "FAILED";
-            run.message = run.consistencyPassed ? "Failover scenario completed" : "Replica consistency check failed after recovery";
+            if (!run.cancelled.get()) {
+                run.status = run.consistencyPassed ? "COMPLETED" : "FAILED";
+                run.message = run.consistencyPassed ? "Failover scenario completed" : "Replica consistency check failed after recovery";
+            }
         } catch (Exception e) {
-            run.status = "FAILED";
-            run.message = rootMessage(e);
+            if (!run.cancelled.get()) {
+                run.status = "FAILED";
+                run.message = rootMessage(e);
+            }
         } finally {
             run.stop.set(true);
             try { workload.join(5000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            run.finishedAt = Instant.now();
+            if (run.finishedAt == null) run.finishedAt = Instant.now();
             persist(run.snapshot());
             active.remove(run.id);
         }
@@ -261,6 +281,7 @@ public class ClickHouseReplicaFailoverService {
     private static final class Run {
         final UUID id; final Request request; final String sourceEndpoint; final Instant createdAt;
         final AtomicBoolean stop=new AtomicBoolean(); final AtomicBoolean faultConfirmed=new AtomicBoolean(); final AtomicBoolean recoveryConfirmed=new AtomicBoolean();
+        final AtomicBoolean cancelled=new AtomicBoolean();
         final AtomicLong rowsWritten=new AtomicLong(); final AtomicLong failedOperations=new AtomicLong();
         volatile String status="QUEUED"; volatile Instant startedAt; volatile Instant faultConfirmedAt; volatile Instant recoveryStartedAt; volatile Instant finishedAt;
         volatile Instant firstFailureAt; volatile Instant lastFailureAt; volatile long maxReplicationDelaySeconds; volatile long maxReplicationQueue; volatile long maxLogLag;

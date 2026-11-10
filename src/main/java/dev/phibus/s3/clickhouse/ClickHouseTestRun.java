@@ -55,6 +55,15 @@ public final class ClickHouseTestRun {
         message = "Cancellation requested";
     }
 
+    public synchronized void deadlineExceeded() {
+        if (terminal()) return;
+        cancelled.set(true);
+        status = Status.CANCELLED;
+        finishedAt = Instant.now();
+        finishedNanos = System.nanoTime();
+        message = "Runtime deadline exceeded";
+    }
+
     public synchronized void start() {
         if (startedAt != null || cancelled.get()) return;
         startedAt = Instant.now();

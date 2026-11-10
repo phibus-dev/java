@@ -1,5 +1,6 @@
 package dev.phibus.s3.kafka;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,14 +45,17 @@ public class KafkaM2RunService {
     private final KafkaConnectionService connections;
     private final JdbcTemplate jdbc;
     private final Executor executor;
+    private final RuntimeResourceManager resources;
     private final Map<UUID, Snapshot> runtime = new ConcurrentHashMap<>();
 
     public KafkaM2RunService(KafkaProfileService profiles, KafkaConnectionService connections,
-                             JdbcTemplate jdbc, @Qualifier("testExecutor") Executor executor) {
+                             JdbcTemplate jdbc, @Qualifier("testExecutor") Executor executor,
+                             RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.connections = connections;
         this.jdbc = jdbc;
         this.executor = executor;
+        this.resources = resources;
     }
 
     public Snapshot startConsumer(ConsumerRequest request, String initiator) {
@@ -66,7 +70,7 @@ public class KafkaM2RunService {
             VALUES (?,?, 'KAFKA_CONSUMER', ?, 'RUNNING', ?, ?, ?, 0, ?, ?)
             """, id, profile.id(), topic, defaultValue(request.groupId(), "evo-snt-consumer-" + id),
                 Math.max(1, request.consumerThreads()), request.targetMessages(), initiator, request.toString());
-        executor.execute(() -> runConsumer(initial, request, profile));
+        submit(initial, () -> runConsumer(initial, request, profile));
         return initial;
     }
 
@@ -84,8 +88,36 @@ public class KafkaM2RunService {
             VALUES (?,?, 'KAFKA_E2E', ?, 'RUNNING', ?, 1, ?, ?, 1, ?, ?)
             """, id, profile.id(), topic, "evo-snt-e2e-" + id, request.messageCount(),
                 Math.max(32, request.messageSizeBytes()), initiator, request.toString());
-        executor.execute(() -> runE2e(initial, request, profile));
+        submit(initial, () -> runE2e(initial, request, profile));
         return initial;
+    }
+
+    private void submit(Snapshot initial, Runnable task) {
+        try {
+            resources.submit(executor, initial.testType(), initial.id(),
+                    () -> deadlineExceeded(initial.id()), task);
+        } catch (RuntimeException error) {
+            Snapshot failed = initial.failed("Cannot schedule Kafka test: " + rootMessage(error));
+            runtime.put(initial.id(), failed);
+            persist(failed);
+            throw error;
+        }
+    }
+
+    private void deadlineExceeded(UUID id) {
+        Snapshot cancelled = runtime.compute(id, (ignored, current) ->
+                current == null || current.finishedAt() != null ? current : current.cancelled());
+        if (cancelled != null && "CANCELLED".equals(cancelled.status())) persist(cancelled);
+    }
+
+    private boolean cancelled(UUID id) {
+        Snapshot current = runtime.get(id);
+        return current != null && "CANCELLED".equals(current.status());
+    }
+
+    private Snapshot updateUnlessCancelled(UUID id, Snapshot next) {
+        return runtime.compute(id, (ignored, current) ->
+                current != null && "CANCELLED".equals(current.status()) ? current : next);
     }
 
     public Snapshot get(UUID id) {
@@ -118,7 +150,9 @@ public class KafkaM2RunService {
         try (KafkaConsumer<byte[],byte[]> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(List.of(initial.topic()));
             long deadline = System.nanoTime() + Duration.ofSeconds(Math.max(1, request.durationSeconds())).toNanos();
-            while (System.nanoTime() < deadline && (request.targetMessages() <= 0 || consumed.get() < request.targetMessages())) {
+            while (!Thread.currentThread().isInterrupted() && !cancelled(id)
+                    && System.nanoTime() < deadline
+                    && (request.targetMessages() <= 0 || consumed.get() < request.targetMessages())) {
                 var records = consumer.poll(Duration.ofMillis(500));
                 for (ConsumerRecord<byte[],byte[]> record : records) {
                     consumed.incrementAndGet(); bytes.addAndGet(record.serializedValueSize());
@@ -130,13 +164,16 @@ public class KafkaM2RunService {
                     }
                 }
                 double seconds = Math.max(0.001, (System.nanoTime() - startedNanos) / 1_000_000_000d);
-                runtime.put(id, initial.withProgress("RUNNING", consumed.get(), bytes.get(), consumed.get()/seconds, totalLag, maxLag));
+                updateUnlessCancelled(id, initial.withProgress(
+                        "RUNNING", consumed.get(), bytes.get(), consumed.get()/seconds, totalLag, maxLag));
             }
         } catch (Exception e) { errors = 1; error = rootMessage(e); }
+        if (cancelled(id)) return;
         double seconds = Math.max(0.001, (System.nanoTime() - startedNanos) / 1_000_000_000d);
         String status = errors == 0 ? "COMPLETED" : "FAILED"; Instant finished = Instant.now();
         Snapshot done = initial.finishConsumer(status, finished, consumed.get(), bytes.get(), consumed.get()/seconds, totalLag, maxLag, errors, error);
-        runtime.put(id, done); persist(done);
+        Snapshot stored = updateUnlessCancelled(id, done);
+        if (!"CANCELLED".equals(stored.status())) persist(stored);
     }
 
     private void runE2e(Snapshot initial, E2eRequest request, KafkaProfileService.Profile profile) {
@@ -159,7 +196,7 @@ public class KafkaM2RunService {
                 consumer.seekToEnd(consumer.assignment());
                 for (TopicPartition partition : consumer.assignment()) consumer.position(partition);
                 consumerReady.countDown();
-                while (!producerFinished.get() || consumed.get() < produced.get()) {
+                while (!cancelled(id) && (!producerFinished.get() || consumed.get() < produced.get())) {
                     if (producerFinished.get() && System.nanoTime() - producerFinishedNanos.get() >= Duration.ofSeconds(Math.max(5, request.consumeTimeoutSeconds())).toNanos()) break;
                     for (ConsumerRecord<byte[],byte[]> record : consumer.poll(Duration.ofMillis(100))) {
                         Header rh = record.headers().lastHeader(RUN_HEADER); if (rh == null || !runMarker.equals(new String(rh.value(), java.nio.charset.StandardCharsets.UTF_8))) continue;
@@ -176,7 +213,7 @@ public class KafkaM2RunService {
                     long measurementStart = producerStartedNanos.get();
                     if (measurementStart > 0) {
                         double seconds = Math.max(0.001, (System.nanoTime() - measurementStart) / 1_000_000_000d);
-                        runtime.put(id, initial.withE2eProgress(produced.get(), consumed.get(), sentBytes.get(), consumedBytes.get(), produced.get()/seconds,
+                        updateUnlessCancelled(id, initial.withE2eProgress(produced.get(), consumed.get(), sentBytes.get(), consumedBytes.get(), produced.get()/seconds,
                                 consumed.get()/seconds, duplicates.get(), outOfOrder.get(), corrupted.get()));
                     }
                 }
@@ -191,7 +228,7 @@ public class KafkaM2RunService {
             long sendStarted = System.nanoTime(); producerStartedNanos.set(sendStarted);
             byte[] marker = runMarker.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             for (int i=0;i<total;i++) {
-                if (error.get() != null) break;
+                if (error.get() != null || cancelled(id) || Thread.currentThread().isInterrupted()) break;
                 byte[] payload = payload(request.messageSizeBytes(), i);
                 ProducerRecord<byte[],byte[]> rec = new ProducerRecord<>(initial.topic(), payload);
                 rec.headers().add(RUN_HEADER, marker).add(SEQ_HEADER, ByteBuffer.allocate(Long.BYTES).putLong(i).array())
@@ -208,6 +245,7 @@ public class KafkaM2RunService {
             consumerThread.interrupt(); errors.incrementAndGet(); error.compareAndSet(null, "Consumer did not stop after timeout");
             try { consumerThread.join(2_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
+        if (cancelled(id)) return;
         long missing = Math.max(0, produced.get() - consumed.get()); String consistency = missing==0 && duplicates.get()==0 && corrupted.get()==0 ? "PASS" : "FAIL";
         if (missing > 0 && error.compareAndSet(null, "Consumer timeout: produced=" + produced.get() + ", consumed=" + consumed.get() + ", missing=" + missing)) errors.incrementAndGet();
         double avg=latencies.getTotalCount()==0?0:latencies.getMean()/1_000_000d;
@@ -217,7 +255,9 @@ public class KafkaM2RunService {
         double producerRate=producerSeconds==0?0:produced.get()/producerSeconds; double consumerRate=consumerSeconds==0?0:consumed.get()/consumerSeconds;
         String status = errors.get()>0 || "FAIL".equals(consistency) ? "FAILED" : "COMPLETED"; Instant finished=Instant.now();
         Snapshot done=initial.finishE2e(status,finished,produced.get(),consumed.get(),sentBytes.get(),consumedBytes.get(),producerRate,consumerRate,missing,
-                duplicates.get(),outOfOrder.get(),corrupted.get(),consistency,avg,p50,p95,p99,max,errors.get(),error.get()); runtime.put(id,done); persist(done);
+                duplicates.get(),outOfOrder.get(),corrupted.get(),consistency,avg,p50,p95,p99,max,errors.get(),error.get());
+        Snapshot stored = updateUnlessCancelled(id, done);
+        if (!"CANCELLED".equals(stored.status())) persist(stored);
     }
 
     private Properties consumerProperties(KafkaProfileService.Profile profile, String group, ConsumerRequest request) {
@@ -268,5 +308,7 @@ public class KafkaM2RunService {
         Snapshot finishConsumer(String st,Instant f,long consumed,long bytes,double rate,long lag,long maxLag,long errors,String error){return new Snapshot(id,profileId,testType,topic,st,startedAt,f,0,consumed,0,bytes,0,rate,lag,maxLag,0,0,0,0,null,0,0,0,0,0,errors,error);}
         Snapshot withE2eProgress(long sent,long consumed,long sb,long cb,double producerRate,double consumerRate,long dup,long oo,long corr){return new Snapshot(id,profileId,testType,topic,"RUNNING",startedAt,null,sent,consumed,sb,cb,producerRate,consumerRate,0,0,Math.max(0,sent-consumed),dup,oo,corr,"PENDING",0,0,0,0,0,0,null);}
         Snapshot finishE2e(String st,Instant f,long sent,long consumed,long sb,long cb,double producerRate,double consumerRate,long missing,long dup,long oo,long corr,String consistency,double avg,double p50,double p95,double p99,double max,long errors,String error){return new Snapshot(id,profileId,testType,topic,st,startedAt,f,sent,consumed,sb,cb,producerRate,consumerRate,0,0,missing,dup,oo,corr,consistency,avg,p50,p95,p99,max,errors,error);}
+        Snapshot cancelled(){return new Snapshot(id,profileId,testType,topic,"CANCELLED",startedAt,Instant.now(),sentMessages,consumedMessages,sentBytes,consumedBytes,producerMessagesPerSec,consumerMessagesPerSec,consumerLag,maxPartitionLag,missingMessages,duplicateMessages,outOfOrderMessages,corruptedMessages,consistencyStatus,e2eLatencyAvgMs,e2eLatencyP50Ms,e2eLatencyP95Ms,e2eLatencyP99Ms,e2eLatencyMaxMs,errorCount,"Runtime deadline exceeded");}
+        Snapshot failed(String error){return new Snapshot(id,profileId,testType,topic,"FAILED",startedAt,Instant.now(),sentMessages,consumedMessages,sentBytes,consumedBytes,producerMessagesPerSec,consumerMessagesPerSec,consumerLag,maxPartitionLag,missingMessages,duplicateMessages,outOfOrderMessages,corruptedMessages,consistencyStatus,e2eLatencyAvgMs,e2eLatencyP50Ms,e2eLatencyP95Ms,e2eLatencyP99Ms,e2eLatencyMaxMs,errorCount+1,error);}
     }
 }

@@ -1,5 +1,6 @@
 package dev.phibus.s3.kafka;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -31,14 +32,17 @@ public class KafkaM4FailoverService {
     private final KafkaConnectionService connections;
     private final JdbcTemplate jdbc;
     private final Executor executor;
+    private final RuntimeResourceManager resources;
     private final Map<UUID, FailoverRun> runtime = new ConcurrentHashMap<>();
 
     public KafkaM4FailoverService(KafkaProfileService profiles, KafkaConnectionService connections,
-                                  JdbcTemplate jdbc, @Qualifier("testExecutor") Executor executor) {
+                                  JdbcTemplate jdbc, @Qualifier("testExecutor") Executor executor,
+                                  RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.connections = connections;
         this.jdbc = jdbc;
         this.executor = executor;
+        this.resources = resources;
     }
 
     public FailoverRun start(FailoverRequest request, String initiator) {
@@ -54,8 +58,32 @@ public class KafkaM4FailoverService {
         runtime.put(id, run);
         jdbc.update("INSERT INTO kafka_m4_failover_run(id,profile_id,topic,status,started_at,config_json,initiator) VALUES (?,?,?,?,?,?,?)",
                 id, profile.id(), topic, "RUNNING", toOffsetDateTime(started), request.toString(), initiator);
-        executor.execute(() -> execute(run, profile, request, size, warmup, observe));
+        try {
+            resources.submit(executor, "KAFKA_FAILOVER", id,
+                    () -> deadlineExceeded(id), () -> execute(run, profile, request, size, warmup, observe));
+        } catch (RuntimeException error) {
+            FailoverRun failed = run.failed("Cannot schedule Kafka failover test: " + rootMessage(error));
+            runtime.put(id, failed);
+            persist(failed);
+            throw error;
+        }
         return run;
+    }
+
+    private void deadlineExceeded(UUID id) {
+        FailoverRun cancelled = runtime.compute(id, (ignored, current) ->
+                current == null || current.finishedAt() != null ? current : current.cancelled());
+        if (cancelled != null && "CANCELLED".equals(cancelled.status())) persist(cancelled);
+    }
+
+    private boolean cancelled(UUID id) {
+        FailoverRun current = runtime.get(id);
+        return current != null && "CANCELLED".equals(current.status());
+    }
+
+    private FailoverRun updateUnlessCancelled(FailoverRun next) {
+        return runtime.compute(next.id(), (ignored, current) ->
+                current != null && "CANCELLED".equals(current.status()) ? current : next);
     }
 
     public FailoverRun get(UUID id) {
@@ -91,7 +119,8 @@ public class KafkaM4FailoverService {
             long deadline = System.nanoTime()+Duration.ofSeconds(warmup+observe).toNanos();
             long warmupEnd = System.nanoTime()+Duration.ofSeconds(warmup).toNanos();
             byte[] payload=new byte[messageSize];
-            while(System.nanoTime()<deadline){
+            while(!cancelled(initial.id()) && !Thread.currentThread().isInterrupted()
+                    && System.nanoTime()<deadline){
                 long batch=Math.max(1, request.targetMessagesPerSec()<=0?1000:Math.round(request.targetMessagesPerSec()/5d));
                 for(long i=0;i<batch;i++) producer.send(new ProducerRecord<>(initial.topic(),payload),(m,e)->{if(e==null){sent.incrementAndGet();bytes.addAndGet(messageSize);}else errors.incrementAndGet();});
                 producer.flush();
@@ -106,15 +135,16 @@ public class KafkaM4FailoverService {
                 boolean healthy=s.underReplicated()==0&&s.offline()==0&&c!=null&&rate>0;
                 if(failureAt!=null){healthyStreak=healthy?healthyStreak+1:0;if(healthyStreak>=3&&recoveredAt==null) recoveredAt=Instant.now();}
                 double avg=sent.get()/Math.max(.001,(now-startNanos)/1_000_000_000d);
-                runtime.put(initial.id(),initial.progress(baselineController,c,controllerChanges,leaderChanges,failureAt,recoveredAt,sent.get(),bytes.get(),errors.get(),avg,minRate==Double.MAX_VALUE?0:minRate,maxUrp,maxOffline));
+                updateUnlessCancelled(initial.progress(baselineController,c,controllerChanges,leaderChanges,failureAt,recoveredAt,sent.get(),bytes.get(),errors.get(),avg,minRate==Double.MAX_VALUE?0:minRate,maxUrp,maxOffline));
                 if(request.targetMessagesPerSec()>0) sleepForRate(batch,request.targetMessagesPerSec()); else Thread.sleep(200);
             }
+            if (cancelled(initial.id())) return;
             double avg=sent.get()/Math.max(.001,(System.nanoTime()-startNanos)/1_000_000_000d);
             String consistency=errors.get()==0&&maxOffline==0?"PASS":"FAIL";
             String status=failureAt==null?"COMPLETED_NO_FAILURE":recoveredAt==null?"COMPLETED_NOT_RECOVERED":"COMPLETED";
             FailoverRun done=initial.complete(status,baselineController,previousController,controllerChanges,leaderChanges,failureAt,recoveredAt,sent.get(),bytes.get(),errors.get(),avg,minRate==Double.MAX_VALUE?0:minRate,maxUrp,maxOffline,consistency);
-            runtime.put(initial.id(),done); persist(done);
-        } catch(Exception e){FailoverRun failed=initial.failed(rootMessage(e));runtime.put(initial.id(),failed);persist(failed);}
+            FailoverRun stored=updateUnlessCancelled(done);if(!"CANCELLED".equals(stored.status()))persist(stored);
+        } catch(Exception e){if(cancelled(initial.id()))return;FailoverRun failed=initial.failed(rootMessage(e));runtime.put(initial.id(),failed);persist(failed);}
     }
 
     private Sample sample(AdminClient admin,String topic) throws Exception {
@@ -141,6 +171,7 @@ public class KafkaM4FailoverService {
         FailoverRun progress(Integer bc,Integer fc,long cc,long lc,Instant f,Instant r,long sent,long bytes,long errors,double avg,double min,long urp,long off){return new FailoverRun(id,profileId,topic,"RUNNING",startedAt,null,warmupSeconds,observationSeconds,bc,fc,cc,lc,f,r,recovery(f,r),sent,bytes,errors,avg,min,urp,off,"PENDING",null);}
         FailoverRun complete(String st,Integer bc,Integer fc,long cc,long lc,Instant f,Instant r,long sent,long bytes,long errors,double avg,double min,long urp,long off,String consistency){return new FailoverRun(id,profileId,topic,st,startedAt,Instant.now(),warmupSeconds,observationSeconds,bc,fc,cc,lc,f,r,recovery(f,r),sent,bytes,errors,avg,min,urp,off,consistency,null);}
         FailoverRun failed(String e){return new FailoverRun(id,profileId,topic,"FAILED",startedAt,Instant.now(),warmupSeconds,observationSeconds,baselineControllerId,finalControllerId,controllerChanges,leaderChanges,failureDetectedAt,recoveredAt,recoveryTimeMs,sentMessages,sentBytes,producerErrors,avgMessagesPerSec,minMessagesPerSec,maxUnderReplicated,maxOfflinePartitions,"FAIL",e);}
+        FailoverRun cancelled(){return new FailoverRun(id,profileId,topic,"CANCELLED",startedAt,Instant.now(),warmupSeconds,observationSeconds,baselineControllerId,finalControllerId,controllerChanges,leaderChanges,failureDetectedAt,recoveredAt,recoveryTimeMs,sentMessages,sentBytes,producerErrors,avgMessagesPerSec,minMessagesPerSec,maxUnderReplicated,maxOfflinePartitions,"CANCELLED","Runtime deadline exceeded");}
         private static Long recovery(Instant f,Instant r){return f==null||r==null?null:Duration.between(f,r).toMillis();}
     }
 }

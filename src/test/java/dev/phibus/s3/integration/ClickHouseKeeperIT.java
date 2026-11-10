@@ -1,0 +1,90 @@
+package dev.phibus.s3.integration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+
+import dev.phibus.s3.clickhouse.ClickHouseConnectionProvider;
+import dev.phibus.s3.clickhouse.ClickHouseConnectionSpec;
+import dev.phibus.s3.clickhouse.ClickHouseLoadTestEngine;
+import dev.phibus.s3.clickhouse.ClickHouseTestRequest;
+import dev.phibus.s3.clickhouse.ClickHouseTestRun;
+import dev.phibus.s3.runtime.RuntimeResourceManager;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.time.Duration;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.testcontainers.clickhouse.ClickHouseContainer;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.MountableFile;
+
+@Testcontainers(disabledWithoutDocker = true)
+class ClickHouseKeeperIT {
+    private static final Network NETWORK = Network.SHARED;
+
+    @Container
+    private static final GenericContainer<?> KEEPER = new GenericContainer<>("clickhouse/clickhouse-keeper:25.8-alpine")
+            .withNetwork(NETWORK)
+            .withNetworkAliases("keeper")
+            .withExposedPorts(9181)
+            .waitingFor(Wait.forListeningPort())
+            .withStartupTimeout(Duration.ofMinutes(2));
+
+    @Container
+    private static final ClickHouseContainer CLICKHOUSE = new ClickHouseContainer("clickhouse/clickhouse-server:25.8-alpine")
+            .withNetwork(NETWORK)
+            .dependsOn(KEEPER)
+            .withCopyFileToContainer(MountableFile.forClasspathResource("clickhouse/keeper.xml"),
+                    "/etc/clickhouse-server/config.d/keeper.xml")
+            .withStartupTimeoutSeconds(120);
+
+    @Test
+    void loadEngineUsesRealClickHouseAndReplicatedTableUsesKeeper() throws Exception {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<dev.phibus.s3.clickhouse.ClickHouseProfileService> profiles = mock(ObjectProvider.class);
+        ClickHouseConnectionProvider connections = new ClickHouseConnectionProvider(profiles);
+        String endpoint = "http://" + CLICKHOUSE.getHost() + ":" + CLICKHOUSE.getMappedPort(8123);
+        ClickHouseConnectionSpec spec = new ClickHouseConnectionSpec(endpoint, CLICKHOUSE.getDatabaseName(),
+                CLICKHOUSE.getUsername(), CLICKHOUSE.getPassword(), 10_000, 30);
+
+        String replicatedTable = "rc18_keeper_" + UUID.randomUUID().toString().replace("-", "");
+        String keeperPath = "/clickhouse/tables/01/" + replicatedTable;
+        try (Connection connection = connections.open(spec); Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE " + replicatedTable
+                    + " (id UInt64, payload String) ENGINE=ReplicatedMergeTree('" + keeperPath
+                    + "', 'replica1') ORDER BY id");
+            statement.execute("INSERT INTO " + replicatedTable + " VALUES (1, 'keeper-ok')");
+            try (ResultSet result = statement.executeQuery("SELECT count() FROM " + replicatedTable)) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getLong(1)).isEqualTo(1);
+            }
+            try (ResultSet result = statement.executeQuery("SELECT count() FROM system.zookeeper WHERE path='/'")) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getLong(1)).isGreaterThan(0);
+            }
+        }
+
+        UUID profileId = UUID.randomUUID();
+        ClickHouseTestRequest request = new ClickHouseTestRequest(profileId, endpoint, "rc18_load",
+                "INSERT_SELECT", 2, 10, 100, 0, 0, 32, 2L, true);
+        ClickHouseTestRun run = new ClickHouseTestRun(request, endpoint);
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+             RuntimeResourceManager resources = new RuntimeResourceManager(2, 8, 60,
+                     new SimpleMeterRegistry())) {
+            new ClickHouseLoadTestEngine(connections, executor, resources).execute(run, spec);
+        }
+
+        assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.COMPLETED);
+        assertThat(run.snapshot().rows()).isGreaterThanOrEqualTo(100);
+        assertThat(run.snapshot().queries()).isGreaterThanOrEqualTo(2);
+    }
+}

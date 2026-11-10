@@ -2,6 +2,7 @@ package dev.phibus.s3.kafka;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -39,18 +40,21 @@ public class KafkaM3Service {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final Executor executor;
+    private final RuntimeResourceManager resources;
     private final Map<UUID, M3Run> runtime = new ConcurrentHashMap<>();
 
     public KafkaM3Service(KafkaProfileService profiles,
                           KafkaConnectionService connections,
                           JdbcTemplate jdbc,
                           ObjectMapper objectMapper,
-                          @Qualifier("testExecutor") Executor executor) {
+                          @Qualifier("testExecutor") Executor executor,
+                          RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.connections = connections;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.executor = executor;
+        this.resources = resources;
     }
 
     public KraftHealth kraftHealth(UUID profileId) {
@@ -74,15 +78,7 @@ public class KafkaM3Service {
         M3Run initial = M3Run.running(id, profile.id(), "KAFKA_REPLICATION", topic, started);
         runtime.put(id, initial);
         insert(initial, initiator);
-        try {
-            executor.execute(() -> runReplication(initial, profile));
-            return initial;
-        } catch (RuntimeException error) {
-            M3Run failed = initial.failed("Cannot schedule Kafka replication test: " + rootMessage(error));
-            runtime.put(id, failed);
-            persist(failed);
-            return failed;
-        }
+        return submit(initial, () -> runReplication(initial, profile), "KAFKA_REPLICATION");
     }
 
     public M3Run startScaling(ScalingRequest request, String initiator) {
@@ -99,15 +95,41 @@ public class KafkaM3Service {
         M3Run initial = M3Run.running(id, profile.id(), "KAFKA_PARTITION_SCALING", null, started);
         runtime.put(id, initial);
         insert(initial, initiator);
+        return submit(initial, () -> runScaling(initial, profile, request, points), "KAFKA_PARTITION_SCALING");
+    }
+
+    private M3Run submit(M3Run initial, Runnable task, String workload) {
         try {
-            executor.execute(() -> runScaling(initial, profile, request, points));
+            resources.submit(executor, workload, initial.id(),
+                    () -> deadlineExceeded(initial.id()), task);
             return initial;
+        } catch (RuntimeResourceManager.RunCapacityExceededException error) {
+            M3Run failed = initial.failed("Cannot schedule Kafka test: " + rootMessage(error));
+            runtime.put(initial.id(), failed);
+            persist(failed);
+            throw error;
         } catch (RuntimeException error) {
-            M3Run failed = initial.failed("Cannot schedule Kafka partition scaling test: " + rootMessage(error));
-            runtime.put(id, failed);
+            M3Run failed = initial.failed("Cannot schedule Kafka test: " + rootMessage(error));
+            runtime.put(initial.id(), failed);
             persist(failed);
             return failed;
         }
+    }
+
+    private void deadlineExceeded(UUID id) {
+        M3Run cancelled = runtime.compute(id, (ignored, current) ->
+                current == null || current.finishedAt() != null ? current : current.cancelled());
+        if (cancelled != null && "CANCELLED".equals(cancelled.status())) persist(cancelled);
+    }
+
+    private boolean cancelled(UUID id) {
+        M3Run current = runtime.get(id);
+        return current != null && "CANCELLED".equals(current.status());
+    }
+
+    private M3Run updateUnlessCancelled(M3Run next) {
+        return runtime.compute(next.id(), (ignored, current) ->
+                current != null && "CANCELLED".equals(current.status()) ? current : next);
     }
 
     public M3Run get(UUID id) {
@@ -162,11 +184,12 @@ public class KafkaM3Service {
                 if (isrCount < minIsr) minIsrViolations++;
             }
             KafkaConnectionService.ClusterInfo cluster = connections.check(profile.id());
+            if (cancelled(initial.id())) return;
             M3Run done = initial.completed(
                     cluster.nodes().size(), cluster.controllerId(), description.partitions().size(), replicas, isr,
                     underReplicated, offline, minIsrViolations, List.of());
-            runtime.put(initial.id(), done);
-            persist(done);
+            M3Run stored = updateUnlessCancelled(done);
+            if (!"CANCELLED".equals(stored.status())) persist(stored);
         } catch (Exception e) {
             fail(initial, e);
         }
@@ -181,13 +204,14 @@ public class KafkaM3Service {
                     request.replicationFactor() <= 0 ? Math.min(3, cluster.nodes().size()) : request.replicationFactor(),
                     cluster.nodes().size()));
             for (int partitions : points) {
+                if (cancelled(initial.id()) || Thread.currentThread().isInterrupted()) return;
                 String topic = "evo-m3-" + initial.id().toString().substring(0, 8) + "-p" + partitions;
                 try {
                     admin.createTopics(List.of(new NewTopic(topic, partitions, replicationFactor)))
                             .all().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     ScalingPoint point = benchmarkTopic(profile, topic, partitions, replicationFactor, request);
                     results.add(point);
-                    runtime.put(initial.id(), initial.withScaling(results));
+                    updateUnlessCancelled(initial.withScaling(results));
                 } finally {
                     try {
                         admin.deleteTopics(List.of(topic)).all().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -196,10 +220,11 @@ public class KafkaM3Service {
                     }
                 }
             }
+            if (cancelled(initial.id())) return;
             M3Run done = initial.completed(cluster.nodes().size(), cluster.controllerId(), null,
                     0, 0, 0, 0, 0, results);
-            runtime.put(initial.id(), done);
-            persist(done);
+            M3Run stored = updateUnlessCancelled(done);
+            if (!"CANCELLED".equals(stored.status())) persist(stored);
         } catch (Exception e) {
             fail(initial.withScaling(results), e);
         }
@@ -221,6 +246,7 @@ public class KafkaM3Service {
         long started = System.nanoTime();
         try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
             for (long i = 0; i < request.messagesPerPoint(); i++) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Kafka scaling run interrupted");
                 producer.send(new ProducerRecord<>(topic, payload), (metadata, exception) -> {
                     if (exception == null) completed.incrementAndGet();
                     else errors.incrementAndGet();
@@ -264,6 +290,7 @@ public class KafkaM3Service {
     }
 
     private void fail(M3Run run, Exception e) {
+        if (cancelled(run.id())) return;
         String message = rootMessage(e);
         M3Run failed = run.failed(message);
         runtime.put(run.id(), failed);
@@ -351,6 +378,12 @@ public class KafkaM3Service {
             return new M3Run(id, profileId, testType, topic, "FAILED", startedAt, Instant.now(), brokerCount,
                     controllerId, partitionCount, replicaCount, isrCount, underReplicatedPartitions,
                     offlinePartitions, minIsrViolations, scalingPoints, error);
+        }
+
+        M3Run cancelled() {
+            return new M3Run(id, profileId, testType, topic, "CANCELLED", startedAt, Instant.now(), brokerCount,
+                    controllerId, partitionCount, replicaCount, isrCount, underReplicatedPartitions,
+                    offlinePartitions, minIsrViolations, scalingPoints, "Runtime deadline exceeded");
         }
     }
 }

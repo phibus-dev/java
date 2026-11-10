@@ -1,5 +1,6 @@
 package dev.phibus.s3.clickhouse;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -21,15 +22,18 @@ public class ClickHouseTestRunService {
     private final ClickHouseConnectionProvider connections;
     private final ObjectProvider<ClickHouseHistoryStore> history;
     private final Executor testExecutor;
+    private final RuntimeResourceManager resources;
 
     public ClickHouseTestRunService(ClickHouseLoadTestEngine engine,
                                     ClickHouseConnectionProvider connections,
                                     ObjectProvider<ClickHouseHistoryStore> history,
-                                    @Qualifier("testExecutor") Executor testExecutor) {
+                                    @Qualifier("testExecutor") Executor testExecutor,
+                                    RuntimeResourceManager resources) {
         this.engine = engine;
         this.connections = connections;
         this.history = history;
         this.testExecutor = testExecutor;
+        this.resources = resources;
     }
 
     public ClickHouseTestRun create(ClickHouseTestRequest request) {
@@ -58,10 +62,16 @@ public class ClickHouseTestRunService {
         }
         runs.put(run.id(), run);
         try {
-            testExecutor.execute(() -> {
+            resources.submit(testExecutor, "CLICKHOUSE", run.id(), run::deadlineExceeded, () -> {
                 engine.execute(run);
                 persistFinal(store, run, request);
             });
+        } catch (RuntimeResourceManager.RunCapacityExceededException e) {
+            run.start();
+            run.fail(rootMessage(e));
+            persistFinal(store, run, request);
+            runs.remove(run.id());
+            throw e;
         } catch (RuntimeException e) {
             run.start();
             run.fail(rootMessage(e));
@@ -76,7 +86,11 @@ public class ClickHouseTestRunService {
         ClickHouseTestRun run = new ClickHouseTestRun(request, connectionSpec.endpoint());
         runs.put(run.id(), run);
         try {
-            testExecutor.execute(() -> engine.execute(run, connectionSpec));
+            resources.submit(testExecutor, "CLICKHOUSE", run.id(), run::deadlineExceeded,
+                    () -> engine.execute(run, connectionSpec));
+        } catch (RuntimeResourceManager.RunCapacityExceededException e) {
+            runs.remove(run.id());
+            throw e;
         } catch (RuntimeException e) {
             run.start();
             run.fail(rootMessage(e));

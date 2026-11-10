@@ -74,6 +74,16 @@ public final class TestRun {
         message = "Cancellation requested";
     }
 
+    public synchronized void deadlineExceeded() {
+        if (terminal()) return;
+        cancelled.set(true);
+        status = TestStatus.CANCELLED;
+        finishedAt = Instant.now();
+        finishedNanos = System.nanoTime();
+        stopReason = "DEADLINE_EXCEEDED";
+        message = "Runtime deadline exceeded";
+    }
+
     public synchronized void start(int requestedParts) {
         if (cancelled.get()) return;
         if (startedAt == null) {

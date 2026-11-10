@@ -1,5 +1,6 @@
 package dev.phibus.s3.clickhouse;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,16 +27,19 @@ public class ClickHouseReplicatedScenarioService {
     private final ClickHouseReplicationObservabilityService observability;
     private final JdbcTemplate jdbc;
     private final Executor executor;
+    private final RuntimeResourceManager resources;
     private final Map<UUID, Run> active = new ConcurrentHashMap<>();
 
     public ClickHouseReplicatedScenarioService(ClickHouseProfileService profiles,
                                                ClickHouseReplicationObservabilityService observability,
                                                JdbcTemplate jdbc,
-                                               @Qualifier("clickHouseWorkflowExecutor") Executor executor) {
+                                               @Qualifier("clickHouseWorkflowExecutor") Executor executor,
+                                               RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.observability = observability;
         this.jdbc = jdbc;
         this.executor = executor;
+        this.resources = resources;
     }
 
     public Snapshot create(Request request) {
@@ -47,7 +52,8 @@ public class ClickHouseReplicatedScenarioService {
         persist(run.snapshot());
         active.put(run.id, run);
         try {
-            executor.execute(() -> execute(run));
+            resources.submit(executor, "CLICKHOUSE_REPLICATION", run.id,
+                    () -> deadlineExceeded(run), () -> execute(run));
         } catch (RuntimeException e) {
             active.remove(run.id);
             run.status = "FAILED";
@@ -57,6 +63,15 @@ public class ClickHouseReplicatedScenarioService {
             throw e;
         }
         return run.snapshot();
+    }
+
+    private void deadlineExceeded(Run run) {
+        if (!run.cancelled.compareAndSet(false, true)) return;
+        run.status = "CANCELLED";
+        run.message = "Runtime deadline exceeded";
+        run.finishedAt = Instant.now();
+        persist(run.snapshot());
+        active.remove(run.id);
     }
 
     public Snapshot get(UUID id) {
@@ -92,6 +107,7 @@ public class ClickHouseReplicatedScenarioService {
     }
 
     private void execute(Run run) {
+        if (run.cancelled.get()) return;
         run.status = "RUNNING";
         run.startedAt = Instant.now();
         persist(run.snapshot());
@@ -102,15 +118,19 @@ public class ClickHouseReplicatedScenarioService {
                 case "REPLICA_CONSISTENCY" -> consistency(run);
                 default -> throw new IllegalArgumentException("Unsupported scenario: " + run.request.scenario());
             }
-            run.status = "COMPLETED";
-            run.message = run.consistencyPassed == null || run.consistencyPassed
-                    ? "Scenario completed"
-                    : "Replica consistency check failed; see per-replica diagnostics";
+            if (!run.cancelled.get()) {
+                run.status = "COMPLETED";
+                run.message = run.consistencyPassed == null || run.consistencyPassed
+                        ? "Scenario completed"
+                        : "Replica consistency check failed; see per-replica diagnostics";
+            }
         } catch (Exception e) {
-            run.status = "FAILED";
-            run.message = rootMessage(e);
+            if (!run.cancelled.get()) {
+                run.status = "FAILED";
+                run.message = rootMessage(e);
+            }
         } finally {
-            run.finishedAt = Instant.now();
+            if (run.finishedAt == null) run.finishedAt = Instant.now();
             persist(run.snapshot());
             active.remove(run.id);
         }
@@ -126,7 +146,7 @@ public class ClickHouseReplicatedScenarioService {
              PreparedStatement ps = c.prepareStatement("INSERT INTO " + table(request.table()) + " (event_time, sequence, payload) VALUES (now64(3), ?, ?)")) {
             long sequence = System.currentTimeMillis() * 1000L;
             long written = 0;
-            while (written < request.rows()) {
+            while (!run.cancelled.get() && !Thread.currentThread().isInterrupted() && written < request.rows()) {
                 int batch = (int) Math.min(request.batchSize(), request.rows() - written);
                 for (int i = 0; i < batch; i++) {
                     ps.setLong(1, sequence + written + i);
@@ -140,6 +160,8 @@ public class ClickHouseReplicatedScenarioService {
                 run.rowsWritten = written;
             }
         }
+        if (run.cancelled.get() || Thread.currentThread().isInterrupted())
+            throw new InterruptedException("ClickHouse replicated scenario interrupted");
         double seconds = (System.nanoTime() - startedNs) / 1_000_000_000.0;
         run.insertRowsPerSecond = seconds <= 0 ? 0 : run.rowsWritten / seconds;
         if (waitCatchup) waitForCatchup(run);
@@ -149,7 +171,8 @@ public class ClickHouseReplicatedScenarioService {
     private void waitForCatchup(Run run) throws InterruptedException {
         Instant started = Instant.now();
         long timeout = Math.max(1, run.request.catchupTimeoutSeconds());
-        while (Duration.between(started, Instant.now()).getSeconds() <= timeout) {
+        while (!run.cancelled.get() && !Thread.currentThread().isInterrupted()
+                && Duration.between(started, Instant.now()).getSeconds() <= timeout) {
             ClickHouseReplicationObservabilityService.Snapshot snapshot = observability.snapshot(run.request.profileId());
             long maxDelay = snapshot.nodes().stream().mapToLong(n -> n.health().maxAbsoluteDelaySeconds()).max().orElse(0);
             long maxLag = snapshot.nodes().stream().mapToLong(n -> n.health().maxLogLag()).max().orElse(0);
@@ -173,6 +196,8 @@ public class ClickHouseReplicatedScenarioService {
         ClickHouseProfileService.Profile profile = profiles.get(run.request.profileId());
         List<ReplicaDigest> digests = new ArrayList<>();
         for (String endpoint : profile.endpoints()) {
+            if (run.cancelled.get() || Thread.currentThread().isInterrupted())
+                throw new InterruptedException("ClickHouse replicated scenario interrupted");
             try (Connection c = profiles.open(run.request.profileId(), endpoint)) {
                 ReplicaIdentity identity = replicaIdentity(c, run.request.table());
                 if (identity == null) {
@@ -328,6 +353,7 @@ public class ClickHouseReplicatedScenarioService {
 
     private static final class Run {
         final UUID id; final Request request; final String sourceEndpoint; final Instant createdAt;
+        final AtomicBoolean cancelled = new AtomicBoolean();
         volatile String status="QUEUED"; volatile Instant startedAt; volatile Instant finishedAt; volatile long rowsWritten;
         volatile double insertRowsPerSecond; volatile double insertLatencyMs; volatile long replicationCatchupMs;
         volatile long maxReplicationDelaySeconds; volatile long maxReplicationQueue; volatile long maxLogLag;

@@ -3,6 +3,7 @@ package dev.phibus.s3.test;
 import dev.phibus.s3.distributed.ApplicationMode;
 import dev.phibus.s3.history.HistoryRequestMetadataUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.settings.S3ProfileService;
 import java.util.Comparator;
 import java.util.List;
@@ -23,13 +24,14 @@ public class TestRunService {
     private final TestHistoryStore historyStore;
     private final HistoryRequestMetadataUpdater metadataUpdater;
     private final S3ProfileService profileService;
+    private final RuntimeResourceManager resources;
     private final ApplicationMode applicationMode;
     private final int maxRetainedRuns;
 
     public TestRunService(LoadTestEngineRegistry engineRegistry, S3LoadTestEngine s3Engine,
                           @Qualifier("testExecutor") Executor testExecutor,
                           TestHistoryStore historyStore, HistoryRequestMetadataUpdater metadataUpdater,
-                          S3ProfileService profileService,
+                          S3ProfileService profileService, RuntimeResourceManager resources,
                           @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode,
                           @Value("${s3perf.runtime.max-retained-runs:200}") int maxRetainedRuns) {
         this.engineRegistry = engineRegistry;
@@ -38,6 +40,7 @@ public class TestRunService {
         this.historyStore = historyStore;
         this.metadataUpdater = metadataUpdater;
         this.profileService = profileService;
+        this.resources = resources;
         this.applicationMode = ApplicationMode.from(applicationMode);
         this.maxRetainedRuns = Math.max(1, maxRetainedRuns);
     }
@@ -59,7 +62,11 @@ public class TestRunService {
         TestRun run = new TestRun(effectiveRequest);
         runs.put(run.id(), run);
         try {
-            testExecutor.execute(() -> execute(testType, run));
+            resources.submit(testExecutor, testType.name(), run.id(), run::deadlineExceeded,
+                    () -> execute(testType, run));
+        } catch (RuntimeResourceManager.RunCapacityExceededException e) {
+            runs.remove(run.id());
+            throw e;
         } catch (RuntimeException e) {
             run.fail(rootMessage(e));
             persist(run);

@@ -2,9 +2,21 @@ package dev.phibus.s3.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.settings.BootstrapSecretCodec;
+import dev.phibus.s3.settings.BootstrapSettings;
+import dev.phibus.s3.settings.ReloadableHikariDataSource;
 import dev.phibus.s3.settings.S3ProfileService;
+import dev.phibus.s3.settings.SettingsService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -121,6 +133,47 @@ class PostgreSqlMigrationIT {
         profiles.delete(first.id());
         profiles.delete(clone.id());
         assertThat(profiles.list()).extracting(S3ProfileService.Profile::id).containsExactly(second.id());
+    }
+
+    @Test
+    void hikariPoolReloadsAfterBootstrapConnectionSettingsChangeAndPublishesMetrics() throws Exception {
+        String reloadUser = "rc18_reload";
+        String reloadPassword = "rc18-reload-password";
+        jdbc.execute("CREATE ROLE " + reloadUser + " LOGIN PASSWORD '" + reloadPassword + "'");
+
+        AtomicReference<BootstrapSettings.PostgreSqlSettings> configured = new AtomicReference<>(
+                new BootstrapSettings.PostgreSqlSettings(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        SettingsService settings = mock(SettingsService.class);
+        when(settings.load()).thenAnswer(ignored -> new BootstrapSettings(
+                configured.get(), null, null, null));
+        BootstrapSecretCodec codec = mock(BootstrapSecretCodec.class);
+        when(codec.decrypt(anyString())).thenAnswer(invocation -> invocation.getArgument(0, String.class));
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        try (ReloadableHikariDataSource dataSource = new ReloadableHikariDataSource(
+                settings, codec, registry, 4, 0, 5_000, 1_000, 10_000, 30_000, 0)) {
+            assertThat(currentUser(dataSource)).isEqualTo(POSTGRES.getUsername());
+            String firstPool = dataSource.poolName();
+
+            configured.set(new BootstrapSettings.PostgreSqlSettings(
+                    POSTGRES.getJdbcUrl(), reloadUser, reloadPassword));
+            assertThat(currentUser(dataSource)).isEqualTo(reloadUser);
+            String secondPool = dataSource.poolName();
+
+            assertThat(secondPool).isNotEqualTo(firstPool);
+            assertThat(registry.getMeters()).anyMatch(meter -> meter.getId().getName().startsWith("hikaricp.")
+                    && secondPool.equals(meter.getId().getTag("pool")));
+        }
+    }
+
+    private static String currentUser(DataSource dataSource) throws Exception {
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("SELECT current_user")) {
+            assertThat(result.next()).isTrue();
+            return result.getString(1);
+        }
     }
 
     private static S3ProfileService.ProfileRequest request(String name, String endpoint, boolean defaultProfile) {
