@@ -274,6 +274,9 @@ docker rm -f "$COORDINATOR_CONTAINER" >/dev/null
 start_coordinator
 wait_for_readiness
 wait_for_agent
+AGENT_ID_AFTER_COORDINATOR_RESTART="$(curl -fsS "$COORDINATOR_URL/api/agents" \
+  | jq -er '.[] | select(.name == "release-smoke-agent") | .id')"
+[[ "$AGENT_ID_AFTER_COORDINATOR_RESTART" != "$AGENT_ID" ]]
 SESSION="$(curl -fsS "$COORDINATOR_URL/api/session")"
 SECOND_STARTED_AT="$(jq -er '.startedAt' <<<"$SESSION")"
 [[ "$FIRST_STARTED_AT" != "$SECOND_STARTED_AT" ]]
@@ -289,7 +292,7 @@ start_agent
 wait_for_agent
 AGENT_ID_AFTER_RESTART="$(curl -fsS "$COORDINATOR_URL/api/agents" \
   | jq -er '.[] | select(.name == "release-smoke-agent") | .id')"
-[[ "$AGENT_ID_AFTER_RESTART" == "$AGENT_ID" ]]
+[[ "$AGENT_ID_AFTER_RESTART" == "$AGENT_ID_AFTER_COORDINATOR_RESTART" ]]
 
 log "Running ${SOAK_SECONDS}s readiness and heartbeat soak"
 SOAK_DEADLINE=$((SECONDS + SOAK_SECONDS))
