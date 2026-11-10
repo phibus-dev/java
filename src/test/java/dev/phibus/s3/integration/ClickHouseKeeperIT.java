@@ -104,6 +104,8 @@ class ClickHouseKeeperIT {
                             + ", zookeeper_exception=" + result.getString(3);
                     if (!readOnly && !sessionExpired) return;
                 }
+            } catch (java.sql.SQLException error) {
+                diagnostic = error.getMessage();
             }
             Thread.sleep(250);
         }
