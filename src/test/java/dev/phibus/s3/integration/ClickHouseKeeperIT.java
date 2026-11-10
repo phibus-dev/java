@@ -37,6 +37,8 @@ class ClickHouseKeeperIT {
             .withNetwork(NETWORK)
             .withNetworkAliases("keeper")
             .withExposedPorts(9181)
+            .withCopyFileToContainer(MountableFile.forClasspathResource("clickhouse/keeper-server.xml"),
+                    "/etc/clickhouse-keeper/keeper_config.xml")
             .waitingFor(Wait.forListeningPort())
             .withStartupTimeout(Duration.ofMinutes(2));
 
