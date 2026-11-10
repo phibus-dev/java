@@ -2,12 +2,12 @@
 
 Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ, ClickHouse и Kafka.
 
-> **Текущая версия:** `2.4.0-rc18`<br>
-> **Статус:** Release Candidate<br>
-> **Релизный тег:** `v2.4.0-rc18`<br>
-> **Последний стабильный релиз:** `2.3.0`
+> **Текущая версия:** `2.4.0`<br>
+> **Статус:** стабильный выпуск<br>
+> **Релизный тег:** `v2.4.0`<br>
+> **Последний стабильный релиз:** `2.4.0`
 
-## Что нового в 2.4.0-rc18
+## Что нового в 2.4.0
 
 - общий admission control ограничивает число одновременных прогонов и суммарное число S3/ClickHouse/Kafka worker-задач;
 - не принятый из-за перегрузки запуск возвращает HTTP 429, а превышение глобального дедлайна завершает прогон как `CANCELLED`;
@@ -82,7 +82,7 @@ PostgreSQL, Vault, Keycloak, S3, ClickHouse и Kafka являются внешн
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.4.0-rc18.jar
+java -jar evo-snt-s3-2.4.0.jar
 ```
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
@@ -137,10 +137,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.4.0-rc18
+  ghcr.io/phibus-dev/s3-performance-test-web:2.4.0
 ```
 
-Для проверки RC используйте фиксированный тег `2.4.0-rc18`. Для production без RC-функций используйте последний стабильный тег `2.3.0`.
+Для production рекомендуется фиксированный тег `2.4.0`. Теги `2.4` и `latest` публикуются тем же стабильным release workflow, но фиксированная версия обеспечивает воспроизводимое развёртывание.
 
 ## ClickHouse
 
@@ -216,20 +216,19 @@ Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Акту
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.4.0-rc18.jar
+java -jar target/s3-multipart-uploader-2.4.0.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.
 
-## Обновление с 2.4.0-rc17
+## Обновление с 2.3.0 или 2.4.0-rcN
 
-См. `UPGRADE_2.4.0-rc18.md`. Новых миграций схемы после V24 нет. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL; Coordinator и Agent рекомендуется обновлять одновременно, затем подобрать лимиты по ресурсам узлов.
+См. `UPGRADE_2.4.0.md`. Стабильный выпуск использует ту же схему V24, что и rc18. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL; Coordinator и Agent рекомендуется обновлять одновременно, затем подобрать лимиты по ресурсам узлов.
 
 ## Релиз
 
 ```bash
-git tag -a v2.4.0-rc18 -m "ЭВО.СНТ 2.4.0-rc18"
-git push origin v2.4.0-rc18
+gh workflow run release.yml --ref main -f version=v2.4.0
 ```
 
-Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker image.
+Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker images с тегами `2.4.0`, `2.4` и `latest`.
