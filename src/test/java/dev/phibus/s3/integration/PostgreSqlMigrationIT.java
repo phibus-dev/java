@@ -52,7 +52,7 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(25);
+        assertThat(applied).isGreaterThanOrEqualTo(26);
 
         for (String table : new String[]{"agent", "test_run", "test_schedule", "security_audit_event", "s3_profile",
                 "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
@@ -79,6 +79,23 @@ class PostgreSqlMigrationIT {
                        'update_completed_at','management_changed_at')
                 """, Integer.class);
         assertThat(durableAgentColumns).isEqualTo(6);
+
+        Integer durableDistributedRunColumns = jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='distributed_test'
+                   AND column_name IN ('name','test_type','request_json','primary_endpoint','stop_reason',
+                       'message','updated_at')
+                """, Integer.class);
+        assertThat(durableDistributedRunColumns).isEqualTo(7);
+
+        Integer durableAssignmentColumns = jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='distributed_test_agent'
+                   AND column_name IN ('assignment_json','rows_processed','operations_per_second',
+                       'throughput_mibps','p50_latency_ms','p95_latency_ms','p99_latency_ms','message',
+                       'latency_histogram','updated_at')
+                """, Integer.class);
+        assertThat(durableAssignmentColumns).isEqualTo(10);
 
         DataSource dataSource = jdbc.getDataSource();
         assertThat(dataSource).isNotNull();
