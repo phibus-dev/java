@@ -12,6 +12,7 @@ import dev.phibus.s3.runtime.RuntimeResourceManager;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.UUID;
@@ -59,12 +60,14 @@ class ClickHouseKeeperIT {
         String replicatedTable = "rc18_keeper_" + UUID.randomUUID().toString().replace("-", "");
         String keeperPath = "/clickhouse/tables/01/" + replicatedTable;
         try (Connection connection = connections.open(spec); Statement statement = connection.createStatement()) {
-            statement.execute("CREATE TABLE " + replicatedTable
+            awaitKeeperReady(statement);
+            executeWithKeeperRetry(statement, "CREATE TABLE IF NOT EXISTS " + replicatedTable
                     + " (id UInt64, payload String) ENGINE=ReplicatedMergeTree('" + keeperPath
                     + "', 'replica1') ORDER BY id");
             awaitWritableReplica(statement, replicatedTable);
             statement.execute("SET insert_keeper_max_retries=10");
-            statement.execute("INSERT INTO " + replicatedTable + " VALUES (1, 'keeper-ok')");
+            executeWithKeeperRetry(statement,
+                    "INSERT INTO " + replicatedTable + " VALUES (1, 'keeper-ok')");
             try (ResultSet result = statement.executeQuery("SELECT count() FROM " + replicatedTable)) {
                 assertThat(result.next()).isTrue();
                 assertThat(result.getLong(1)).isEqualTo(1);
@@ -90,6 +93,40 @@ class ClickHouseKeeperIT {
         assertThat(run.snapshot().queries()).isGreaterThanOrEqualTo(2);
     }
 
+    private static void awaitKeeperReady(Statement statement) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        SQLException lastError = null;
+        while (System.nanoTime() < deadline) {
+            try (ResultSet result = statement.executeQuery("SELECT count() FROM system.zookeeper WHERE path='/'")) {
+                if (result.next()) return;
+            } catch (SQLException error) {
+                lastError = error;
+            }
+            Thread.sleep(250);
+        }
+        throw new IllegalStateException("ClickHouse did not establish a Keeper session", lastError);
+    }
+
+    private static void executeWithKeeperRetry(Statement statement, String sql) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (true) {
+            try {
+                statement.execute(sql);
+                return;
+            } catch (SQLException error) {
+                if (!isKeeperStartupError(error) || System.nanoTime() >= deadline) throw error;
+                Thread.sleep(250);
+            }
+        }
+    }
+
+    private static boolean isKeeperStartupError(SQLException error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && current.getMessage().contains("Code: 999")) return true;
+        }
+        return error.getErrorCode() == 999;
+    }
+
     private static void awaitWritableReplica(Statement statement, String table) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         String diagnostic = "replica row is not visible";
@@ -104,7 +141,7 @@ class ClickHouseKeeperIT {
                             + ", zookeeper_exception=" + result.getString(3);
                     if (!readOnly && !sessionExpired) return;
                 }
-            } catch (java.sql.SQLException error) {
+            } catch (SQLException error) {
                 diagnostic = error.getMessage();
             }
             Thread.sleep(250);
