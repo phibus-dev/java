@@ -36,7 +36,17 @@ jobs:
         id: version
         shell: bash
         run: |
-          PROJECT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          PROJECT_VERSION=$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("pom.xml").getroot()
+          namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+          version = root.findtext("m:version", namespaces=namespace)
+          if not version:
+              raise SystemExit("Project version is missing from pom.xml")
+          print(version)
+          PY
+          )
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then RELEASE_TAG="${{ inputs.version }}"; elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then RELEASE_TAG="${GITHUB_REF_NAME}"; else RELEASE_TAG="v${PROJECT_VERSION}"; fi
           test "$RELEASE_TAG" = "v${PROJECT_VERSION}"
           echo "project=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"

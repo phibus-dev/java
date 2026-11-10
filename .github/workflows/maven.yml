@@ -32,7 +32,19 @@ jobs:
       - name: Resolve project version
         id: project
         shell: bash
-        run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> "$GITHUB_OUTPUT"
+        run: |
+          PROJECT_VERSION=$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("pom.xml").getroot()
+          namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+          version = root.findtext("m:version", namespaces=namespace)
+          if not version:
+              raise SystemExit("Project version is missing from pom.xml")
+          print(version)
+          PY
+          )
+          printf 'version=%s\n' "$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Verify Docker runtime for integration tests
         run: docker info
