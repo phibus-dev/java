@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Repository;
 
@@ -46,7 +47,9 @@ public class AdvancedHistoryStore {
                        parallelism,object_count,delete_after_test,execution_mode,
                        configured_duration_seconds,warmup_seconds,workload_profile,
                        workload_weights_json,target_operations_per_second,operation_threads_json,
-                       profile_id,initiator
+                       profile_id,initiator,latency_scope,latency_sample_count,api_request_count,
+                       api_request_p50_latency_ms,api_request_p95_latency_ms,api_request_p99_latency_ms,
+                       object_operation_count,object_p50_latency_ms,object_p95_latency_ms,object_p99_latency_ms
                   from test_run
                 """ + where + " order by created_at desc limit ? offset ?";
         String count = "select count(*) from test_run " + where;
@@ -80,7 +83,9 @@ public class AdvancedHistoryStore {
                        parallelism,object_count,delete_after_test,execution_mode,
                        configured_duration_seconds,warmup_seconds,workload_profile,
                        workload_weights_json,target_operations_per_second,operation_threads_json,
-                       profile_id,initiator
+                       profile_id,initiator,latency_scope,latency_sample_count,api_request_count,
+                       api_request_p50_latency_ms,api_request_p95_latency_ms,api_request_p99_latency_ms,
+                       object_operation_count,object_p50_latency_ms,object_p95_latency_ms,object_p99_latency_ms
                   from test_run where id=?
                 """;
         try (Connection connection = connection(); PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -104,7 +109,8 @@ public class AdvancedHistoryStore {
                 change(right.run().p95LatencyMs(), left.run().p95LatencyMs()),
                 change(right.run().p99LatencyMs(), left.run().p99LatencyMs()),
                 right.run().failedParts() - left.run().failedParts(),
-                change(duration(right.run()), duration(left.run())));
+                change(duration(right.run()), duration(left.run())),
+                Objects.equals(left.run().latencyScope(), right.run().latencyScope()));
     }
 
     private List<PartResult> parts(Connection connection, UUID id) throws SQLException {
@@ -169,7 +175,12 @@ public class AdvancedHistoryStore {
                 rs.getLong("configured_duration_seconds"), rs.getLong("warmup_seconds"),
                 rs.getString("workload_profile"), readIntegerMap(rs.getString("workload_weights_json")),
                 rs.getInt("target_operations_per_second"), readIntegerMap(rs.getString("operation_threads_json")),
-                rs.getObject("profile_id", UUID.class), normalizeInitiator(rs.getString("initiator")));
+                rs.getObject("profile_id", UUID.class), normalizeInitiator(rs.getString("initiator")),
+                rs.getString("latency_scope"), rs.getLong("latency_sample_count"),
+                rs.getLong("api_request_count"), rs.getDouble("api_request_p50_latency_ms"),
+                rs.getDouble("api_request_p95_latency_ms"), rs.getDouble("api_request_p99_latency_ms"),
+                rs.getLong("object_operation_count"), rs.getDouble("object_p50_latency_ms"),
+                rs.getDouble("object_p95_latency_ms"), rs.getDouble("object_p99_latency_ms"));
     }
     private Map<String,Integer> readIntegerMap(String json) throws SQLException {
         if (json == null || json.isBlank()) return Map.of();
@@ -203,7 +214,8 @@ public class AdvancedHistoryStore {
     public record Page(List<RunRow> items, int page, int size, long totalElements, int totalPages) { }
     public record Detail(RunRow run, List<PartResult> parts, TestRequest repeatRequest) { }
     public record Comparison(RunRow left, RunRow right, double speedChangePercent, double p95ChangePercent,
-                             double p99ChangePercent, long errorDifference, double durationChangePercent) { }
+                             double p99ChangePercent, long errorDifference, double durationChangePercent,
+                             boolean latencyComparable) { }
     public record RunRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                          String endpoint, String bucket, String region, String objectKey, String operation,
                          long totalBytes, long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
@@ -213,5 +225,10 @@ public class AdvancedHistoryStore {
                          int objectCount, boolean deleteAfterTest, String executionMode,
                          long configuredDurationSeconds, long warmupSeconds, String workloadProfile,
                          Map<String,Integer> workloadWeights, int targetOperationsPerSecond,
-                         Map<String,Integer> operationThreads, UUID profileId, String initiator) { }
+                         Map<String,Integer> operationThreads, UUID profileId, String initiator,
+                         String latencyScope, long latencySampleCount, long apiRequestCount,
+                         double apiRequestP50LatencyMs, double apiRequestP95LatencyMs,
+                         double apiRequestP99LatencyMs, long objectOperationCount,
+                         double objectP50LatencyMs, double objectP95LatencyMs,
+                         double objectP99LatencyMs) { }
 }

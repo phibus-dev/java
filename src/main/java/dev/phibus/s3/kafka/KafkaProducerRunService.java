@@ -1,5 +1,6 @@
 package dev.phibus.s3.kafka;
 
+import dev.phibus.s3.test.LatencyHistogramCodec;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -95,6 +96,11 @@ public class KafkaProducerRunService {
                 rs.getLong("error_count"), rs.getLong("retry_count"), rs.getString("error_message")), id);
         if (rows.isEmpty()) throw new IllegalArgumentException("Kafka test run not found: " + id);
         return rows.getFirst();
+    }
+
+    public String encodedLatencyHistogram(UUID id) {
+        RuntimeState state = active.get(id);
+        return state == null ? null : state.encodedLatencyHistogramMillis();
     }
 
     public List<Snapshot> history(int limit) {
@@ -352,5 +358,11 @@ public class KafkaProducerRunService {
             return new Snapshot(id, profileId, topic, status, startedAt, finishedAt, durationMs,
                     request.messageCount(), count, byteCount, request.producerThreads(), request.messageSizeBytes(),
                     count/seconds, byteCount/1024d/1024d/seconds, avg, p95, p99, max, errors.get(), retries.get(), errorMessage);
+        }
+        synchronized String encodedLatencyHistogramMillis() {
+            intervalLatency = latencyRecorder.getIntervalHistogram(intervalLatency);
+            latencyTotals.add(intervalLatency);
+            return LatencyHistogramCodec.encodeScaled(latencyTotals, 1_000_000L,
+                    Duration.ofDays(7).toMillis());
         }
     }}

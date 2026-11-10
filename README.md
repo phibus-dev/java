@@ -1,36 +1,22 @@
 # ЭВО.СНТ S3
 
-Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ и ClickHouse.
+Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ, ClickHouse и Kafka.
 
-> **Текущая версия:** `2.2.3-rc4`<br>
+> **Текущая версия:** `2.4.0-rc17`<br>
 > **Статус:** Release Candidate<br>
-> **Ветка релиза:** `release/2.2.3-rc4`<br>
-> **Последний стабильный релиз:** `2.2.2`
+> **Релизный тег:** `v2.4.0-rc17`<br>
+> **Последний стабильный релиз:** `2.3.0`
 
-## Что нового в 2.2.3-rc4
+## Что нового в 2.4.0-rc17
 
-- Keeper path для ReplicatedMergeTree по умолчанию включает макрос `{shard}`.
-- Интерфейс подготовки таблицы явно поддерживает макросы `{shard}` и `{replica}`.
-
-- исправлены удаление и редактирование ClickHouse-профилей;
-- исправлена JDBC-типизация временных полей истории и workflow;
-- повторное создание ReplicatedMergeTree выполняет синхронный DROP;
-- сохранены исправления ClickHouse workflow из 2.2.3-rc2.
-
-- исправлено сохранение результатов ClickHouse-тестов после завершения;
-- устранён HTTP 500 при чтении состояния репликации из-за ошибок истории или метрик;
-- изолирован executor сценариев Replicated* и Failover;
-- API сценариев возвращает диагностируемую первопричину вместо общего Internal Server Error;
-- сохранена функциональность ClickHouse MVP из 2.2.3-rc1.
-
-- добавлен универсальный `LoadTestEngine` API с движками S3 и ClickHouse;
-- реализованы профили ClickHouse с несколькими endpoint, проверкой соединения и discovery кластера;
-- добавлены ClickHouse-нагрузки `INSERT`, `SELECT` и `INSERT_SELECT`, локальное и распределённое выполнение;
-- реализованы история ClickHouse, сравнение запусков и тренды;
-- добавлен мониторинг `Replicated*`, состояния реплик и ClickHouse Keeper;
-- реализованы сценарии `REPLICATED_INSERT`, `REPLICATION_CATCHUP` и `REPLICA_CONSISTENCY`;
-- добавлены подготовка ReplicatedMergeTree-таблиц и управляемый failover-тест с внешним внесением отказа;
-- сохранена обратная совместимость существующих S3-тестов и API.
+- S3 latency разделена на прежний записанный шаг, фактический API request и объектную end-to-end операцию;
+- UI и история явно показывают измеряемую единицу, число samples и отдельные p50/p95/p99;
+- координатор объединяет HDR-гистограммы агентов и вычисляет настоящие глобальные перцентили;
+- служебные precondition/cleanup-запросы не загрязняют метрики измеряемой нагрузки;
+- пароль экспорта конфигурации передаётся только в теле POST-запроса;
+- устранены найденные небезопасные HTML-вставки в Kafka UI;
+- release workflow запускается только по тегу или вручную из `main`, а Docker image собирается из уже проверенного JAR;
+- Dependency Review, CodeQL и Maven CI завершаются ошибкой при нарушениях и не маскируют нестабильность повторными полными сборками.
 
 ## Возможности
 
@@ -38,6 +24,7 @@ Java 21 / Spring Boot платформа для функционального, 
 - разделы «Задания», «История», «Мониторинг», «Агенты», «Расписания» и «Настройки»;
 - локальные и распределённые S3-тесты;
 - локальные и распределённые ClickHouse-тесты;
+- локальные и распределённые Kafka producer-тесты, consumer/E2E, replication, scaling и failover;
 - ClickHouse profiles, topology discovery, history, comparison и trends;
 - наблюдаемость репликации, Keeper HA и сценарии replica failover;
 - S3-профили с автоматическим применением endpoint, region, bucket и Vault path;
@@ -75,7 +62,7 @@ PostgreSQL    Vault/Keycloak   Agents 1..N
                          S3 / MinIO  ClickHouse
 ```
 
-PostgreSQL, Vault, Keycloak, S3 и ClickHouse являются внешними сервисами и не поднимаются приложением в production.
+PostgreSQL, Vault, Keycloak, S3, ClickHouse и Kafka являются внешними сервисами и не поднимаются приложением в production.
 
 ## Требования
 
@@ -86,6 +73,7 @@ PostgreSQL, Vault, Keycloak, S3 и ClickHouse являются внешними 
 | Vault Community Edition | 2.0.x |
 | Keycloak | 26+ |
 | ClickHouse | HTTP(S) endpoint; версия определяется при discovery |
+| Kafka | Доступный bootstrap servers; Kafka/KRaft topology |
 | Kubernetes | 1.28+ |
 | Linux | systemd-based |
 | S3 | AWS S3, MinIO и совместимые реализации |
@@ -95,7 +83,7 @@ PostgreSQL, Vault, Keycloak, S3 и ClickHouse являются внешними 
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.2.3-rc4.jar
+java -jar evo-snt-s3-2.4.0-rc17.jar
 ```
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
@@ -119,6 +107,11 @@ java -jar evo-snt-s3-2.2.3-rc4.jar
 /clickhouse/replicated-tests сценарии ReplicatedMergeTree
 /clickhouse/failover-tests   управляемые failover-тесты
 /clickhouse/ha               ClickHouse Keeper и HA
+/kafka                       Kafka Producer load test
+/kafka/m2                    Kafka Consumer и producer-to-consumer E2E
+/kafka/m3                    replication и partition scaling
+/kafka/m4                    failover/resilience и распределённая нагрузка
+/settings/kafka-profiles     профили Kafka
 /settings/configuration      импорт и экспорт конфигурации
 ```
 
@@ -145,10 +138,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.2.3-rc4
+  ghcr.io/phibus-dev/s3-performance-test-web:2.4.0-rc17
 ```
 
-Для проверки RC используйте фиксированный тег `2.2.3-rc4`. Для production без RC-функций используйте последний стабильный тег `2.2.2`.
+Для проверки RC используйте фиксированный тег `2.4.0-rc17`. Для production без RC-функций используйте последний стабильный тег `2.3.0`.
 
 ## ClickHouse
 
@@ -207,20 +200,20 @@ deploy/prometheus/s3-performance-alerts.yml
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.2.3-rc4.jar
+java -jar target/s3-multipart-uploader-2.4.0-rc17.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.
 
-## Обновление с 2.2.2
+## Обновление с 2.4.0-rc16
 
-См. `UPGRADE_2.2.3-rc4.md`. При старте Coordinator Flyway применяет миграции V9–V13 для профилей, истории, репликации, сценариев и failover ClickHouse. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL.
+См. `UPGRADE_2.4.0-rc17.md`. При старте Coordinator Flyway применяет миграцию V24 с новыми полями S3 latency. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL; координатор и агенты рекомендуется обновлять одновременно.
 
 ## Релиз
 
 ```bash
-git tag -a v2.2.3-rc4 -m "ЭВО.СНТ 2.2.3-rc4"
-git push origin v2.2.3-rc4
+git tag -a v2.4.0-rc17 -m "ЭВО.СНТ 2.4.0-rc17"
+git push origin v2.4.0-rc17
 ```
 
 Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker image.

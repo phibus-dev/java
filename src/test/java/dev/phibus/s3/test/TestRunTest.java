@@ -26,6 +26,38 @@ class TestRunTest {
         assertEquals(100.0, snapshot.p50LatencyMs(), 0.01);
         assertEquals(200.0, snapshot.p95LatencyMs(), 0.01);
         assertEquals("bucket", snapshot.bucket());
+        assertEquals("MULTIPART_PART", snapshot.latencyScope());
+        assertEquals(2, snapshot.latencySampleCount());
+    }
+
+    @Test
+    void keepsApiAndObjectLatencySeparateFromRecordedSteps() {
+        TestRun run = new TestRun(request());
+        run.start(1);
+        run.apiRequestCompleted(10);
+        run.apiRequestCompleted(20);
+        run.objectOperationCompleted(50);
+        run.partCompleted(new PartResult(1, 1, 1024, 20, 1, "etag", "SUCCESS", null));
+
+        TestRun.Snapshot snapshot = run.snapshot();
+
+        assertEquals(2, snapshot.apiRequestCount());
+        assertEquals(20, snapshot.apiRequestP95LatencyMs(), 0.01);
+        assertEquals(1, snapshot.objectOperationCount());
+        assertEquals(50, snapshot.objectP95LatencyMs(), 0.01);
+        assertEquals(1, snapshot.latencySampleCount());
+    }
+
+    @Test
+    void derivesLatencyScopeFromTheMeasuredS3Operation() {
+        TestRequest head = new TestRequest("http://localhost:9000", "bucket", "us-east-1", "key", "secret",
+                true, "test.bin", 100, 10, 4, 1, false, "HEAD");
+        TestRequest lifecycle = new TestRequest("http://localhost:9000", "bucket", "us-east-1", "key", "secret",
+                true, "test.bin", 100, 10, 4, 1, false, "LIFECYCLE");
+
+        assertEquals(S3LatencyScope.OBJECT_REQUEST, S3LatencyScope.forRequest(head));
+        assertEquals(S3LatencyScope.RECORDED_STEP, S3LatencyScope.forRequest(lifecycle));
+        assertEquals(S3LatencyScope.MULTIPART_PART, S3LatencyScope.forRequest(request()));
     }
 
     @Test

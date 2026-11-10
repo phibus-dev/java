@@ -11,6 +11,8 @@
 <nav th:replace="~{fragments/layout :: primaryNav(active='s3')}"></nav>
 <nav th:replace="~{fragments/layout :: s3Nav(active='history')}"></nav>
 <section class="panel">
+  <p class="warning" th:if="${!comparison.latencyComparable}"
+     th:text="${'Перцентили имеют разные scope (' + comparison.left.latencyScope + ' и ' + comparison.right.latencyScope + ') и напрямую несопоставимы.'}"></p>
   <div class="delta-grid">
     <article><span>Throughput</span><strong th:text="${#numbers.formatDecimal(comparison.speedChangePercent,1,1) + '%'}"></strong></article>
     <article><span>p95</span><strong th:text="${#numbers.formatDecimal(comparison.p95ChangePercent,1,1) + '%'}"></strong></article>
@@ -27,7 +29,7 @@
     <p><b>Статус:</b> <span th:text="${comparison.left.status}"></span></p>
     <p><b>Endpoint / Bucket:</b> <span th:text="${comparison.left.endpoint + ' / ' + comparison.left.bucket}"></span></p>
     <p><b>Throughput:</b> <span th:text="${#numbers.formatDecimal(comparison.left.averageSpeedMiBps,1,2) + ' MiB/s'}"></span></p>
-    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.left.p50LatencyMs + ' / ' + comparison.left.p95LatencyMs + ' / ' + comparison.left.p99LatencyMs + ' ms'}"></span></p>
+    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.left.p50LatencyMs + ' / ' + comparison.left.p95LatencyMs + ' / ' + comparison.left.p99LatencyMs + ' ms (' + comparison.left.latencyScope + ')'}"></span></p>
     <p><b>Ошибки:</b> <span th:text="${comparison.left.failedParts}"></span></p>
   </article>
   <article class="panel"><h2>Правый запуск</h2>
@@ -37,7 +39,7 @@
     <p><b>Статус:</b> <span th:text="${comparison.right.status}"></span></p>
     <p><b>Endpoint / Bucket:</b> <span th:text="${comparison.right.endpoint + ' / ' + comparison.right.bucket}"></span></p>
     <p><b>Throughput:</b> <span th:text="${#numbers.formatDecimal(comparison.right.averageSpeedMiBps,1,2) + ' MiB/s'}"></span></p>
-    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.right.p50LatencyMs + ' / ' + comparison.right.p95LatencyMs + ' / ' + comparison.right.p99LatencyMs + ' ms'}"></span></p>
+    <p><b>p50 / p95 / p99:</b> <span th:text="${comparison.right.p50LatencyMs + ' / ' + comparison.right.p95LatencyMs + ' / ' + comparison.right.p99LatencyMs + ' ms (' + comparison.right.latencyScope + ')'}"></span></p>
     <p><b>Ошибки:</b> <span th:text="${comparison.right.failedParts}"></span></p>
   </article>
 </section>
