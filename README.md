@@ -210,6 +210,8 @@ deploy/prometheus/s3-performance-alerts.yml
 | `S3PERF_POSTGRESQL_CONNECTION_TIMEOUT_MS` | `10000` | Ожидание JDBC connection |
 | `S3PERF_POSTGRESQL_QUERY_TIMEOUT_SECONDS` | `30` | Таймаут JdbcTemplate query |
 | `S3PERF_POSTGRESQL_TRANSACTION_TIMEOUT_SECONDS` | `60` | Таймаут Spring transaction |
+| `S3PERF_DISTRIBUTED_RECOVERY_TIMEOUT_SECONDS` | `300` | Отмена восстановленного запуска без новых отчётов Agent |
+| `S3PERF_DISTRIBUTED_RECOVERY_SCAN_INTERVAL_MS` | `30000` | Интервал reconciliation распределённых запусков |
 
 Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Актуальная ёмкость агента также доступна в его heartbeat tags.
 

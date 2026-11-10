@@ -122,6 +122,28 @@ class DistributedTestHistoryTest {
         assertThatThrownBy(() -> service.create(create)).hasMessageContaining("already busy");
     }
 
+    @Test
+    void failedAgentTakesPrecedenceOverAnEarlierCancellation() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationResult first = register(registry, "agent-a");
+        AgentRegistry.RegistrationResult second = register(registry, "agent-b");
+        DistributedTestService service = new DistributedTestService(registry, mock(ClickHouseProfileService.class),
+                mock(ClickHouseHistoryStore.class), mock(TestHistoryStore.class), mock(KafkaProfileService.class));
+        TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", null, null,
+                true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
+        DistributedTestService.DistributedRunView run = service.create(
+                new DistributedTestService.CreateDistributedTestRequest(
+                        "run", List.of(first.agentId(), second.agentId()), request));
+
+        service.report(first.agentId(), first.agentToken(),
+                terminalStatistics(run.id(), "CANCELLED", "cancelled"));
+        DistributedTestService.DistributedRunView completed = service.report(
+                second.agentId(), second.agentToken(), terminalStatistics(run.id(), "FAILED", "failed"));
+
+        assertThat(completed.status()).isEqualTo("FAILED");
+        assertThat(completed.stopReason()).isEqualTo("ERROR");
+    }
+
     private static AgentRegistry.RegistrationResult register(AgentRegistry registry, String name) {
         return registry.register(new AgentRegistry.RegistrationRequest(name, name + "-host", "http://" + name,
                 "2.4.0", 4, 1024, Map.of("capabilities", "S3")), "registration-secret");
@@ -138,5 +160,11 @@ class DistributedTestHistoryTest {
                                                                       String histogram) {
         return new DistributedTestService.AgentStatistics(runId, "COMPLETED", operations, 0, 1024,
                 1, 1, p95 / 2, p95, p95 * 2, 0, "done", histogram);
+    }
+
+    private static DistributedTestService.AgentStatistics terminalStatistics(
+            java.util.UUID runId, String status, String message) {
+        return new DistributedTestService.AgentStatistics(runId, status, 0, 0, 0,
+                0, 0, 0, 0, 0, 1, message, null);
     }
 }
