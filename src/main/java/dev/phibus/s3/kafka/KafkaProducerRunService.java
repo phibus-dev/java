@@ -202,9 +202,11 @@ public class KafkaProducerRunService {
             state.finish(state.errors.get() == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            state.cancelled.set(true);
             state.recordError("Kafka producer run interrupted");
             state.finish("FAILED");
         } catch (Exception e) {
+            state.cancelled.set(true);
             state.recordError(rootMessage(e));
             state.finish("FAILED");
         } finally {
