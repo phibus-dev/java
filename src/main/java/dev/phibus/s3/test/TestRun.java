@@ -27,10 +27,16 @@ public final class TestRun {
     private final AtomicLong completedParts = new AtomicLong();
     private final AtomicLong successfulParts = new AtomicLong();
     private final AtomicLong failedParts = new AtomicLong();
+    private final AtomicLong apiRequests = new AtomicLong();
+    private final AtomicLong objectOperations = new AtomicLong();
     private final Deque<PartResult> parts = new ArrayDeque<>();
     private final Deque<Long> recentLatenciesMs = new ArrayDeque<>();
     private final Deque<TransferSample> transferWindow = new ArrayDeque<>();
     private final ConcurrentHistogram latencyHistogram =
+            new ConcurrentHistogram(1, MAX_TRACKABLE_LATENCY_MS, 3);
+    private final ConcurrentHistogram apiRequestLatencyHistogram =
+            new ConcurrentHistogram(1, MAX_TRACKABLE_LATENCY_MS, 3);
+    private final ConcurrentHistogram objectOperationLatencyHistogram =
             new ConcurrentHistogram(1, MAX_TRACKABLE_LATENCY_MS, 3);
     private volatile TestStatus status = TestStatus.QUEUED;
     private volatile Instant startedAt;
@@ -110,9 +116,25 @@ public final class TestRun {
                 operation, "FAILED", error));
     }
 
+    public synchronized void apiRequestCompleted(long durationMillis) {
+        if (terminal() || warmingUp()) return;
+        apiRequests.incrementAndGet();
+        apiRequestLatencyHistogram.recordValue(normalizeLatency(durationMillis));
+    }
+
+    public synchronized void objectOperationCompleted(long durationMillis) {
+        if (terminal() || warmingUp()) return;
+        objectOperations.incrementAndGet();
+        objectOperationLatencyHistogram.recordValue(normalizeLatency(durationMillis));
+    }
+
+    public synchronized String encodedLatencyHistogram() {
+        return LatencyHistogramCodec.encode(latencyHistogram);
+    }
+
     private void record(PartResult result) {
         boolean success = "SUCCESS".equals(result.status());
-        long latency = Math.max(1, Math.min(MAX_TRACKABLE_LATENCY_MS, result.durationMillis()));
+        long latency = normalizeLatency(result.durationMillis());
         latencyHistogram.recordValue(latency);
         synchronized (recentLatenciesMs) {
             if (recentLatenciesMs.size() == LATENCY_WINDOW_SIZE) recentLatenciesMs.removeFirst();
@@ -219,7 +241,14 @@ public final class TestRun {
                 operationsPerSecond, histogramPercentile(50), histogramPercentile(95), histogramPercentile(99),
                 percentile(window, 50), percentile(window, 95), percentile(window, 99),
                 successfulParts.get(), failedParts.get(), request.deleteAfterTest(), cleanupSuccessful,
-                detailsTruncated, message, copy);
+                detailsTruncated, message, copy, S3LatencyScope.forRequest(request).name(),
+                latencyHistogram.getTotalCount(),
+                apiRequests.get(), histogramPercentile(apiRequestLatencyHistogram, 50),
+                histogramPercentile(apiRequestLatencyHistogram, 95),
+                histogramPercentile(apiRequestLatencyHistogram, 99), objectOperations.get(),
+                histogramPercentile(objectOperationLatencyHistogram, 50),
+                histogramPercentile(objectOperationLatencyHistogram, 95),
+                histogramPercentile(objectOperationLatencyHistogram, 99));
     }
 
     private double rollingSpeed(long nowNanos) {
@@ -234,7 +263,15 @@ public final class TestRun {
     }
 
     private double histogramPercentile(double percentile) {
-        return latencyHistogram.getTotalCount() == 0 ? 0 : latencyHistogram.getValueAtPercentile(percentile);
+        return histogramPercentile(latencyHistogram, percentile);
+    }
+
+    private static double histogramPercentile(ConcurrentHistogram histogram, double percentile) {
+        return histogram.getTotalCount() == 0 ? 0 : histogram.getValueAtPercentile(percentile);
+    }
+
+    private static long normalizeLatency(long durationMillis) {
+        return Math.max(1, Math.min(MAX_TRACKABLE_LATENCY_MS, durationMillis));
     }
 
     private static double percentile(List<Long> sorted, int percentile) {
@@ -255,5 +292,9 @@ public final class TestRun {
                            double windowP50LatencyMs, double windowP95LatencyMs, double windowP99LatencyMs,
                            long successfulParts, long failedParts, boolean deleteAfterTest,
                            boolean cleanupSuccessful, boolean detailsTruncated,
-                           String message, List<PartResult> parts) { }
+                           String message, List<PartResult> parts, String latencyScope, long latencySampleCount,
+                           long apiRequestCount, double apiRequestP50LatencyMs, double apiRequestP95LatencyMs,
+                           double apiRequestP99LatencyMs, long objectOperationCount,
+                           double objectP50LatencyMs, double objectP95LatencyMs,
+                           double objectP99LatencyMs) { }
 }

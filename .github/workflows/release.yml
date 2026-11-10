@@ -4,14 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.4.0-rc16'
+        description: 'Release tag, for example v2.4.0-rc17'
         required: true
-        default: 'v2.4.0-rc16'
+        default: 'v2.4.0-rc17'
   push:
-    branches:
-      - 'release/**'
     tags:
       - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -19,6 +21,7 @@ permissions:
 
 jobs:
   release:
+    if: ${{ github.event_name == 'push' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -71,14 +74,18 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: Dockerfile.release
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
+          build-args: JAR_FILE=dist/evo-snt-s3-${{ steps.version.outputs.project }}.jar
       - name: Build and publish stable Docker image
         if: ${{ !contains(steps.version.outputs.project, '-') }}
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: Dockerfile.release
           push: true
+          build-args: JAR_FILE=dist/evo-snt-s3-${{ steps.version.outputs.project }}.jar
           tags: |
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:${{ steps.version.outputs.project }}
             ghcr.io/${{ github.repository_owner }}/s3-performance-test-web:2.4

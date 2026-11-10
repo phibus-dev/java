@@ -26,7 +26,7 @@ public class ConfigurationTransferController {
     @GetMapping("/settings/configuration")
     public String page() { return "settings-configuration"; }
 
-    @GetMapping("/api/config/export")
+    @PostMapping(value = "/api/config/export", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<byte[]> export(@RequestParam(defaultValue = "false") boolean includeSecrets,
                                          @RequestParam(defaultValue = "false") boolean encrypted,
                                          @RequestParam(required = false) String password) {

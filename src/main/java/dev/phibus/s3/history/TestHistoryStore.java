@@ -4,6 +4,7 @@ import dev.phibus.s3.settings.BootstrapSecretCodec;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.SettingsService;
 import dev.phibus.s3.test.PartResult;
+import dev.phibus.s3.test.S3LatencyScope;
 import dev.phibus.s3.test.TestRun;
 import dev.phibus.s3.test.TestRequest;
 import java.sql.Connection;
@@ -52,15 +53,16 @@ public class TestHistoryStore {
                     total_bytes, bytes_transferred, completed_parts, total_parts, average_speed_mibps,
                     p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts, failed_parts,
                     delete_after_test, cleanup_successful, message, path_style_access, object_size_mib,
-                    part_size_mib, parallelism, object_count, initiator)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    part_size_mib, parallelism, object_count, initiator, latency_scope, latency_sample_count)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (id) do update set
                     status=excluded.status, finished_at=excluded.finished_at,
                     bytes_transferred=excluded.bytes_transferred, completed_parts=excluded.completed_parts,
                     total_parts=excluded.total_parts, average_speed_mibps=excluded.average_speed_mibps,
                     p50_latency_ms=excluded.p50_latency_ms, p95_latency_ms=excluded.p95_latency_ms,
                     p99_latency_ms=excluded.p99_latency_ms, successful_parts=excluded.successful_parts,
-                    failed_parts=excluded.failed_parts, message=excluded.message, initiator=excluded.initiator
+                    failed_parts=excluded.failed_parts, message=excluded.message, initiator=excluded.initiator,
+                    latency_scope=excluded.latency_scope, latency_sample_count=excluded.latency_sample_count
                 """;
         TestRequest request = result.request();
         long completed = Math.max(0, result.completedOperations());
@@ -99,7 +101,9 @@ public class TestHistoryStore {
             ps.setLong(i++, request.partSizeMiB());
             ps.setInt(i++, request.parallelism());
             ps.setInt(i++, request.objectCount());
-            ps.setString(i, normalizeInitiator(result.initiator()));
+            ps.setString(i++, normalizeInitiator(result.initiator()));
+            ps.setString(i++, S3LatencyScope.forRequest(request).name());
+            ps.setLong(i, completed);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new HistoryPersistenceException("Cannot save distributed test history", e);
@@ -113,7 +117,10 @@ public class TestHistoryStore {
                 select id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                        object_key, total_bytes, bytes_transferred, average_speed_mibps,
                        p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts,
-                       failed_parts, cleanup_successful, message, initiator
+                       failed_parts, cleanup_successful, message, initiator, latency_scope,
+                       latency_sample_count, api_request_count, api_request_p50_latency_ms,
+                       api_request_p95_latency_ms, api_request_p99_latency_ms, object_operation_count,
+                       object_p50_latency_ms, object_p95_latency_ms, object_p99_latency_ms
                   from test_run
                  order by created_at desc
                  limit ?
@@ -137,7 +144,10 @@ public class TestHistoryStore {
                 select id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                        object_key, total_bytes, bytes_transferred, average_speed_mibps,
                        p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts,
-                       failed_parts, cleanup_successful, message, initiator
+                       failed_parts, cleanup_successful, message, initiator, latency_scope,
+                       latency_sample_count, api_request_count, api_request_p50_latency_ms,
+                       api_request_p95_latency_ms, api_request_p99_latency_ms, object_operation_count,
+                       object_p50_latency_ms, object_p95_latency_ms, object_p99_latency_ms
                   from test_run where id = ?
                 """;
         try (Connection connection = connection(); PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -175,8 +185,11 @@ public class TestHistoryStore {
                 insert into test_run (id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                     object_key, total_bytes, bytes_transferred, completed_parts, total_parts, average_speed_mibps,
                     p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts, failed_parts,
-                    delete_after_test, cleanup_successful, message)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    delete_after_test, cleanup_successful, message, latency_scope, latency_sample_count,
+                    api_request_count, api_request_p50_latency_ms, api_request_p95_latency_ms,
+                    api_request_p99_latency_ms, object_operation_count, object_p50_latency_ms,
+                    object_p95_latency_ms, object_p99_latency_ms)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (id) do update set
                     status = excluded.status, started_at = excluded.started_at, finished_at = excluded.finished_at,
                     bytes_transferred = excluded.bytes_transferred, completed_parts = excluded.completed_parts,
@@ -184,7 +197,16 @@ public class TestHistoryStore {
                     p50_latency_ms = excluded.p50_latency_ms, p95_latency_ms = excluded.p95_latency_ms,
                     p99_latency_ms = excluded.p99_latency_ms, successful_parts = excluded.successful_parts,
                     failed_parts = excluded.failed_parts, cleanup_successful = excluded.cleanup_successful,
-                    message = excluded.message
+                    message = excluded.message, latency_scope = excluded.latency_scope,
+                    latency_sample_count = excluded.latency_sample_count,
+                    api_request_count = excluded.api_request_count,
+                    api_request_p50_latency_ms = excluded.api_request_p50_latency_ms,
+                    api_request_p95_latency_ms = excluded.api_request_p95_latency_ms,
+                    api_request_p99_latency_ms = excluded.api_request_p99_latency_ms,
+                    object_operation_count = excluded.object_operation_count,
+                    object_p50_latency_ms = excluded.object_p50_latency_ms,
+                    object_p95_latency_ms = excluded.object_p95_latency_ms,
+                    object_p99_latency_ms = excluded.object_p99_latency_ms
                 """;
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             int i = 1;
@@ -209,7 +231,17 @@ public class TestHistoryStore {
             ps.setLong(i++, run.failedParts());
             ps.setBoolean(i++, run.deleteAfterTest());
             ps.setBoolean(i++, run.cleanupSuccessful());
-            ps.setString(i, run.message());
+            ps.setString(i++, run.message());
+            ps.setString(i++, run.latencyScope());
+            ps.setLong(i++, run.latencySampleCount());
+            ps.setLong(i++, run.apiRequestCount());
+            ps.setDouble(i++, run.apiRequestP50LatencyMs());
+            ps.setDouble(i++, run.apiRequestP95LatencyMs());
+            ps.setDouble(i++, run.apiRequestP99LatencyMs());
+            ps.setLong(i++, run.objectOperationCount());
+            ps.setDouble(i++, run.objectP50LatencyMs());
+            ps.setDouble(i++, run.objectP95LatencyMs());
+            ps.setDouble(i, run.objectP99LatencyMs());
             ps.executeUpdate();
         }
     }
@@ -251,7 +283,12 @@ public class TestHistoryStore {
                 rs.getDouble("p50_latency_ms"), rs.getDouble("p95_latency_ms"),
                 rs.getDouble("p99_latency_ms"), rs.getLong("successful_parts"), rs.getLong("failed_parts"),
                 rs.getBoolean("cleanup_successful"), rs.getString("message"),
-                normalizeInitiator(rs.getString("initiator")));
+                normalizeInitiator(rs.getString("initiator")), rs.getString("latency_scope"),
+                rs.getLong("latency_sample_count"), rs.getLong("api_request_count"),
+                rs.getDouble("api_request_p50_latency_ms"), rs.getDouble("api_request_p95_latency_ms"),
+                rs.getDouble("api_request_p99_latency_ms"), rs.getLong("object_operation_count"),
+                rs.getDouble("object_p50_latency_ms"), rs.getDouble("object_p95_latency_ms"),
+                rs.getDouble("object_p99_latency_ms"));
     }
 
     private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }
@@ -264,7 +301,11 @@ public class TestHistoryStore {
                              String endpoint, String bucket, String region, String objectKey, long totalBytes,
                              long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
                              double p95LatencyMs, double p99LatencyMs, long successfulParts, long failedParts,
-                             boolean cleanupSuccessful, String message, String initiator) { }
+                             boolean cleanupSuccessful, String message, String initiator, String latencyScope,
+                             long latencySampleCount, long apiRequestCount, double apiRequestP50LatencyMs,
+                             double apiRequestP95LatencyMs, double apiRequestP99LatencyMs,
+                             long objectOperationCount, double objectP50LatencyMs,
+                             double objectP95LatencyMs, double objectP99LatencyMs) { }
 
     public record DistributedHistoryResult(UUID id, TestRequest request, String initiator, String status,
                                            Instant startedAt, Instant finishedAt, long completedOperations,

@@ -30,7 +30,7 @@ public class HistoryTrendService {
             if (detail == null) throw new IllegalArgumentException("History item not found: " + id);
             AdvancedHistoryStore.RunRow run = detail.run();
             points.add(new TrendPoint(run.id(), run.createdAt(), run.endpoint(), run.bucket(), run.operation(),
-                    run.status(), run.averageSpeedMiBps(), operationsPerSecond(run), run.p50LatencyMs(),
+                    run.status(), run.latencyScope(), run.averageSpeedMiBps(), operationsPerSecond(run), run.p50LatencyMs(),
                     run.p95LatencyMs(), run.p99LatencyMs(), run.failedParts(), durationMs(run)));
         }
         points.sort(Comparator.comparing(TrendPoint::createdAt));
@@ -49,13 +49,16 @@ public class HistoryTrendService {
         Set<String> endpoints = new LinkedHashSet<>();
         Set<String> buckets = new LinkedHashSet<>();
         Set<String> operations = new LinkedHashSet<>();
+        Set<String> latencyScopes = new LinkedHashSet<>();
         for (TrendPoint point : points) {
             endpoints.add(point.endpoint());
             buckets.add(point.bucket());
             operations.add(point.operation());
+            latencyScopes.add(point.latencyScope());
         }
         return new Grouping(List.copyOf(endpoints), List.copyOf(buckets), List.copyOf(operations),
-                endpoints.size() == 1 && buckets.size() == 1 && operations.size() == 1);
+                List.copyOf(latencyScopes), endpoints.size() == 1 && buckets.size() == 1
+                && operations.size() == 1 && latencyScopes.size() == 1);
     }
 
     private static double operationsPerSecond(AdvancedHistoryStore.RunRow run) {
@@ -81,10 +84,10 @@ public class HistoryTrendService {
                               double p95ChangePercent, double p99ChangePercent, long errorDifference) { }
 
     public record TrendPoint(UUID id, Instant createdAt, String endpoint, String bucket, String operation,
-                             String status, double throughputMiBps, double operationsPerSecond,
+                             String status, String latencyScope, double throughputMiBps, double operationsPerSecond,
                              double p50LatencyMs, double p95LatencyMs, double p99LatencyMs,
                              long errors, long durationMs) { }
 
     public record Grouping(List<String> endpoints, List<String> buckets, List<String> operations,
-                           boolean homogeneous) { }
+                           List<String> latencyScopes, boolean homogeneous) { }
 }

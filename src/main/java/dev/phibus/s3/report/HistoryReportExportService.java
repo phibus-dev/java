@@ -53,7 +53,15 @@ public class HistoryReportExportService {
         card(out, "Статус", run.status());
         card(out, "Создан", format(run.createdAt()));
         card(out, "Средняя скорость", number(run.averageSpeedMiBps()) + " MiB/s");
-        card(out, "p50 / p95 / p99", number(run.p50LatencyMs()) + " / " + number(run.p95LatencyMs()) + " / " + number(run.p99LatencyMs()) + " ms");
+        card(out, "Записанный шаг (" + run.latencyScope() + ")",
+                number(run.p50LatencyMs()) + " / " + number(run.p95LatencyMs()) + " / "
+                        + number(run.p99LatencyMs()) + " ms; samples=" + run.latencySampleCount());
+        card(out, "S3 API request p50 / p95 / p99",
+                number(run.apiRequestP50LatencyMs()) + " / " + number(run.apiRequestP95LatencyMs()) + " / "
+                        + number(run.apiRequestP99LatencyMs()) + " ms; requests=" + run.apiRequestCount());
+        card(out, "Объект end-to-end p50 / p95 / p99",
+                number(run.objectP50LatencyMs()) + " / " + number(run.objectP95LatencyMs()) + " / "
+                        + number(run.objectP99LatencyMs()) + " ms; operations=" + run.objectOperationCount());
         card(out, "Ошибки", Long.toString(run.failedParts()));
         card(out, "Передано", number(run.bytesTransferred() / 1048576.0) + " MiB");
         card(out, "Продолжительность", duration(run));
@@ -122,7 +130,15 @@ public class HistoryReportExportService {
         lines.add("Object key: " + value(run.objectKey()));
         lines.add("## Результаты");
         lines.add("Средняя скорость: " + number(run.averageSpeedMiBps()) + " MiB/s    Передано: " + number(run.bytesTransferred() / 1048576.0) + " MiB");
-        lines.add("Latency p50/p95/p99: " + number(run.p50LatencyMs()) + " / " + number(run.p95LatencyMs()) + " / " + number(run.p99LatencyMs()) + " ms");
+        lines.add("Записанный шаг " + run.latencyScope() + " p50/p95/p99: "
+                + number(run.p50LatencyMs()) + " / " + number(run.p95LatencyMs()) + " / "
+                + number(run.p99LatencyMs()) + " ms; samples=" + run.latencySampleCount());
+        lines.add("S3 API request p50/p95/p99: " + number(run.apiRequestP50LatencyMs()) + " / "
+                + number(run.apiRequestP95LatencyMs()) + " / " + number(run.apiRequestP99LatencyMs())
+                + " ms; requests=" + run.apiRequestCount());
+        lines.add("Объект end-to-end p50/p95/p99: " + number(run.objectP50LatencyMs()) + " / "
+                + number(run.objectP95LatencyMs()) + " / " + number(run.objectP99LatencyMs())
+                + " ms; operations=" + run.objectOperationCount());
         lines.add("Успешных операций: " + run.successfulParts() + "    Ошибок: " + run.failedParts() + "    Продолжительность: " + duration(run));
         lines.add("## Параметры");
         lines.add("Объект: " + run.objectSizeMiB() + " MiB    Часть: " + run.partSizeMiB() + " MiB    Parallelism: " + run.parallelism() + "    Objects: " + run.objectCount());

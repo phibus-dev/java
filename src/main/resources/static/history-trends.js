@@ -44,7 +44,7 @@
     ].join('');
 
     const warnings = [];
-    if (!report.grouping.homogeneous) warnings.push('Выбраны запуски с разными endpoint, bucket или операциями. Сравнение отображается, но интерпретировать тренд следует с осторожностью.');
+    if (!report.grouping.homogeneous) warnings.push('Выбраны запуски с разными endpoint, bucket, операциями или latency scope. Сравнение отображается, но интерпретировать тренд следует с осторожностью.');
     const first = report.points?.[0];
     if (first && (Number(first.throughputMiBps) === 0 || Number(first.operationsPerSecond) === 0)) {
       warnings.push('Для метрики с нулевым исходным значением переход к ненулевому значению отображается как ±100%, поскольку обычное процентное изменение от нуля не определено.');
@@ -63,7 +63,7 @@
     chart('errors-chart',{...common,yUnit:'ошибок'}).setData(report.points,[{name:'Ошибки',unit:'',value:p=>p.errors}]);
     requestAnimationFrame(() => Object.values(trendCharts).forEach(item => item.draw()));
 
-    byId('trend-table').innerHTML = report.points.map(p => `<tr><td>${new Date(p.createdAt).toLocaleString()}</td><td>${escapeHtml(p.operation)}</td><td>${Number(p.throughputMiBps).toFixed(2)}</td><td>${Number(p.operationsPerSecond).toFixed(2)}</td><td>${Number(p.p50LatencyMs).toFixed(1)}</td><td>${Number(p.p95LatencyMs).toFixed(1)}</td><td>${Number(p.p99LatencyMs).toFixed(1)}</td><td>${p.errors}</td></tr>`).join('');
+    byId('trend-table').innerHTML = report.points.map(p => `<tr><td>${new Date(p.createdAt).toLocaleString()}</td><td>${escapeHtml(p.operation)}</td><td>${escapeHtml(p.latencyScope)}</td><td>${Number(p.throughputMiBps).toFixed(2)}</td><td>${Number(p.operationsPerSecond).toFixed(2)}</td><td>${Number(p.p50LatencyMs).toFixed(1)}</td><td>${Number(p.p95LatencyMs).toFixed(1)}</td><td>${Number(p.p99LatencyMs).toFixed(1)}</td><td>${p.errors}</td></tr>`).join('');
     byId('trend-panel').scrollIntoView({behavior:'smooth',block:'start'});
   }
 

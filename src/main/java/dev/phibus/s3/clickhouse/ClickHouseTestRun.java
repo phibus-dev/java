@@ -1,5 +1,6 @@
 package dev.phibus.s3.clickhouse;
 
+import dev.phibus.s3.test.LatencyHistogramCodec;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +44,7 @@ public final class ClickHouseTestRun {
     public UUID id() { return id; }
     public ClickHouseTestRequest request() { return request; }
     public boolean isCancelled() { return cancelled.get(); }
+    public synchronized String encodedLatencyHistogram() { return LatencyHistogramCodec.encode(latencyHistogram); }
 
     public synchronized void cancel() {
         if (status == Status.COMPLETED || status == Status.FAILED || status == Status.CANCELLED) return;

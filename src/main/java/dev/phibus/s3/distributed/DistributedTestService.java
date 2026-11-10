@@ -1,5 +1,6 @@
 package dev.phibus.s3.distributed;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.phibus.s3.clickhouse.ClickHouseConnectionSpec;
 import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
@@ -7,6 +8,8 @@ import dev.phibus.s3.clickhouse.ClickHouseTestRequest;
 import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.kafka.KafkaProducerRunService;
 import dev.phibus.s3.kafka.KafkaProfileService;
+import dev.phibus.s3.test.LatencyHistogramCodec;
+import dev.phibus.s3.test.S3LatencyScope;
 import dev.phibus.s3.test.TestRequest;
 import dev.phibus.s3.test.TestType;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.HdrHistogram.Histogram;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -99,7 +103,7 @@ public class DistributedTestService {
         try {
             for(UUID agentId:agentIds){
                 registry.reserve(agentId,capability); reserved.add(agentId);
-                agents.put(agentId,new AgentProgress(agentId,"ASSIGNED",0,0,0,0,0,0,0,0,0,null,now));
+                agents.put(agentId,new AgentProgress(agentId,"ASSIGNED",0,0,0,0,0,0,0,0,0,null,now,null));
             }
             return agents;
         } catch(RuntimeException error) {
@@ -114,7 +118,8 @@ public class DistributedTestService {
         AgentRegistry.AgentRecord agent=registry.authenticate(agentId,token); Assignment assignment=assignments.get(agentId);
         if(assignment==null||!assignment.runId().equals(stats.runId())) throw new IllegalArgumentException("No matching assignment");
         DistributedRun run=require(stats.runId());
-        AgentProgress progress=new AgentProgress(agentId,stats.status(),stats.completedOperations(),stats.rowsProcessed(),stats.bytesTransferred(),stats.operationsPerSecond(),stats.throughputMiBps(),stats.p50LatencyMs(),stats.p95LatencyMs(),stats.p99LatencyMs(),stats.errors(),stats.message(),Instant.now());
+        if(stats.latencyHistogram()!=null) LatencyHistogramCodec.decode(stats.latencyHistogram());
+        AgentProgress progress=new AgentProgress(agentId,stats.status(),stats.completedOperations(),stats.rowsProcessed(),stats.bytesTransferred(),stats.operationsPerSecond(),stats.throughputMiBps(),stats.p50LatencyMs(),stats.p95LatencyMs(),stats.p99LatencyMs(),stats.errors(),stats.message(),Instant.now(),stats.latencyHistogram());
         run.agents().put(agentId,progress);
         if(isTerminal(stats.status())){if(run.testType()==TestType.S3)persistS3Agent(run,agent,stats);assignments.remove(agentId);registry.release(agentId);}
         if(run.agents().values().stream().allMatch(p->isTerminal(p.status()))&&!isTerminal(run.status())){
@@ -135,10 +140,24 @@ public class DistributedTestService {
     private DistributedRun require(UUID id){DistributedRun run=runs.get(id);if(run==null)throw new IllegalArgumentException("Distributed test not found");return run;}
 
     private DistributedRunView view(DistributedRun run){
-        List<AgentProgress> agents=new ArrayList<>(run.agents().values()); long operations=agents.stream().mapToLong(AgentProgress::completedOperations).sum(); long rows=agents.stream().mapToLong(AgentProgress::rowsProcessed).sum(); long bytes=agents.stream().mapToLong(AgentProgress::bytesTransferred).sum(); double ops=agents.stream().mapToDouble(AgentProgress::operationsPerSecond).sum(); double throughput=agents.stream().mapToDouble(AgentProgress::throughputMiBps).sum(); long errors=agents.stream().mapToLong(AgentProgress::errors).sum(); double p50=maxLatency(agents,50); double p95=maxLatency(agents,95); double p99=maxLatency(agents,99); double rowsPerSecond=run.testType()==TestType.CLICKHOUSE?agents.stream().mapToDouble(a->a.operationsPerSecond()>0&&a.completedOperations()>0?a.rowsProcessed()*a.operationsPerSecond()/a.completedOperations():0).sum():0;
-        return new DistributedRunView(run.id(),run.name(),run.testType(),run.status(),run.startedAt(),run.finishedAt(),safeRequest(run.s3Request()),run.clickHouseRequest(),run.kafkaRequest(),operations,rows,bytes,ops,rowsPerSecond,throughput,p50,p95,p99,errors,agents.stream().sorted(Comparator.comparing(AgentProgress::agentId)).toList());
+        List<AgentProgress> agents=new ArrayList<>(run.agents().values()); long operations=agents.stream().mapToLong(AgentProgress::completedOperations).sum(); long rows=agents.stream().mapToLong(AgentProgress::rowsProcessed).sum(); long bytes=agents.stream().mapToLong(AgentProgress::bytesTransferred).sum(); double ops=agents.stream().mapToDouble(AgentProgress::operationsPerSecond).sum(); double throughput=agents.stream().mapToDouble(AgentProgress::throughputMiBps).sum(); long errors=agents.stream().mapToLong(AgentProgress::errors).sum(); LatencyAggregate latency=aggregateLatency(agents); double rowsPerSecond=run.testType()==TestType.CLICKHOUSE?agents.stream().mapToDouble(a->a.operationsPerSecond()>0&&a.completedOperations()>0?a.rowsProcessed()*a.operationsPerSecond()/a.completedOperations():0).sum():0;
+        return new DistributedRunView(run.id(),run.name(),run.testType(),run.status(),run.startedAt(),run.finishedAt(),safeRequest(run.s3Request()),run.clickHouseRequest(),run.kafkaRequest(),operations,rows,bytes,ops,rowsPerSecond,throughput,latency.p50(),latency.p95(),latency.p99(),errors,agents.stream().sorted(Comparator.comparing(AgentProgress::agentId)).toList(),latencyScope(run),latency.method());
+    }
+    private static LatencyAggregate aggregateLatency(List<AgentProgress> agents){
+        List<AgentProgress> measured=agents.stream().filter(a->a.completedOperations()>0).toList();
+        if(measured.isEmpty()) return new LatencyAggregate(0,0,0,"NO_SAMPLES");
+        if(measured.stream().anyMatch(a->a.latencyHistogram()==null||a.latencyHistogram().isBlank())) return new LatencyAggregate(maxLatency(measured,50),maxLatency(measured,95),maxLatency(measured,99),"LEGACY_MAX");
+        Histogram merged=null;
+        for(AgentProgress agent:measured){Histogram next=LatencyHistogramCodec.decode(agent.latencyHistogram());if(next==null)continue;if(merged==null)merged=next.copy();else merged.add(next);}
+        if(merged==null||merged.getTotalCount()==0) return new LatencyAggregate(0,0,0,"NO_SAMPLES");
+        return new LatencyAggregate(merged.getValueAtPercentile(50),merged.getValueAtPercentile(95),merged.getValueAtPercentile(99),"HDR_HISTOGRAM");
     }
     private static double maxLatency(List<AgentProgress> agents,int percentile){return agents.stream().filter(a->a.completedOperations()>0).mapToDouble(a->percentile==50?a.p50LatencyMs():percentile==99?a.p99LatencyMs():a.p95LatencyMs()).max().orElse(0);}
+    private static String latencyScope(DistributedRun run){
+        if(run.testType()==TestType.CLICKHOUSE)return "CLICKHOUSE_QUERY";
+        if(run.testType()==TestType.KAFKA)return "KAFKA_PRODUCE_ACK";
+        return S3LatencyScope.forRequest(run.s3Request()).name();
+    }
     private static TestRequest safeRequest(TestRequest request){if(request==null)return null;return new TestRequest(request.endpoint(),request.bucket(),request.region(),null,null,request.pathStyleAccess(),request.objectKey(),request.objectSizeMiB(),request.partSizeMiB(),request.parallelism(),request.objectCount(),request.deleteAfterTest(),request.operation(),request.executionMode(),request.durationSeconds(),request.warmupSeconds(),request.workloadProfile(),request.workloadWeights(),request.targetOperationsPerSecond(),request.operationThreads(),request.profileId());}
     private static void requireAgents(List<UUID> agentIds){if(agentIds==null||agentIds.isEmpty())throw new IllegalArgumentException("At least one agent is required");}
     private static boolean notBlank(String value){return value!=null&&!value.isBlank();}
@@ -148,8 +167,9 @@ public class DistributedTestService {
     public record CreateDistributedClickHouseTestRequest(String name,List<UUID> agentIds,ClickHouseTestRequest testRequest,Map<UUID,String> endpointByAgent){}
     public record CreateDistributedKafkaTestRequest(String name,List<UUID> agentIds,KafkaProducerRunService.ProducerRequest testRequest){}
     public record Assignment(UUID runId,UUID agentId,TestType testType,TestRequest testRequest,ClickHouseTestRequest clickHouseRequest,ClickHouseConnectionSpec clickHouseConnection,KafkaProducerRunService.ProducerRequest kafkaRequest,KafkaProfileService.Profile kafkaProfile,Instant assignedAt){}
-    public record AgentStatistics(UUID runId,String status,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,String message){}
-    public record AgentProgress(UUID agentId,String status,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,String message,Instant updatedAt){}
+    public record AgentStatistics(UUID runId,String status,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,String message,String latencyHistogram){}
+    public record AgentProgress(UUID agentId,String status,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,String message,Instant updatedAt,@JsonIgnore String latencyHistogram){}
+    private record LatencyAggregate(double p50,double p95,double p99,String method){}
     private record DistributedRun(UUID id,String name,TestType testType,TestRequest s3Request,ClickHouseTestRequest clickHouseRequest,KafkaProducerRunService.ProducerRequest kafkaRequest,Instant startedAt,Instant finishedAt,String status,Map<UUID,AgentProgress> agents,String primaryEndpoint){}
-    public record DistributedRunView(UUID id,String name,TestType testType,String status,Instant startedAt,Instant finishedAt,TestRequest testRequest,ClickHouseTestRequest clickHouseRequest,KafkaProducerRunService.ProducerRequest kafkaRequest,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double rowsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,List<AgentProgress> agents){}
+    public record DistributedRunView(UUID id,String name,TestType testType,String status,Instant startedAt,Instant finishedAt,TestRequest testRequest,ClickHouseTestRequest clickHouseRequest,KafkaProducerRunService.ProducerRequest kafkaRequest,long completedOperations,long rowsProcessed,long bytesTransferred,double operationsPerSecond,double rowsPerSecond,double throughputMiBps,double p50LatencyMs,double p95LatencyMs,double p99LatencyMs,long errors,List<AgentProgress> agents,String latencyScope,String latencyAggregation){}
 }

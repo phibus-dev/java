@@ -40,7 +40,7 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(23);
+        assertThat(applied).isGreaterThanOrEqualTo(24);
 
         for (String table : new String[]{"test_run", "test_schedule", "security_audit_event", "s3_profile",
                 "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
@@ -49,6 +49,16 @@ class PostgreSqlMigrationIT {
                     "SELECT to_regclass('public.' || ?) IS NOT NULL", Boolean.class, table);
             assertThat(exists).as("table %s", table).isTrue();
         }
+
+        Integer latencyColumns = jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='test_run'
+                   AND column_name IN ('latency_scope','latency_sample_count','api_request_count',
+                       'api_request_p50_latency_ms','api_request_p95_latency_ms','api_request_p99_latency_ms',
+                       'object_operation_count','object_p50_latency_ms','object_p95_latency_ms',
+                       'object_p99_latency_ms')
+                """, Integer.class);
+        assertThat(latencyColumns).isEqualTo(10);
 
         DataSource dataSource = jdbc.getDataSource();
         assertThat(dataSource).isNotNull();

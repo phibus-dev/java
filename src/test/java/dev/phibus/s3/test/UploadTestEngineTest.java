@@ -4,25 +4,29 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.phibus.s3.credentials.CredentialProvider;
 import dev.phibus.s3.workload.WorkloadProfileCatalog;
 import org.junit.jupiter.api.Test;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
-import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.UploadPartRequest;
-import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.core.sync.RequestBody;
-import static org.mockito.Mockito.times;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 class UploadTestEngineTest {
     @Test
@@ -51,6 +55,8 @@ class UploadTestEngineTest {
         assertEquals(1, snapshot.completedParts());
         assertEquals(1, snapshot.failedParts());
         assertEquals(0, snapshot.successfulParts());
+        assertEquals(1, snapshot.apiRequestCount());
+        assertEquals(1, snapshot.objectOperationCount());
         assertEquals("FAILED", snapshot.parts().getFirst().status());
         assertTrue(snapshot.parts().getFirst().error().contains("object is unavailable"));
         verify(client).close();
@@ -79,7 +85,33 @@ class UploadTestEngineTest {
         assertEquals(5, snapshot.completedParts());
         assertEquals(5, snapshot.successfulParts());
         assertEquals(160L * 1024 * 1024, snapshot.bytesTransferred());
+        assertEquals("MULTIPART_PART", snapshot.latencyScope());
+        assertEquals(5, snapshot.latencySampleCount());
+        assertEquals(7, snapshot.apiRequestCount());
+        assertEquals(1, snapshot.objectOperationCount());
         verify(client, times(5)).uploadPart(any(UploadPartRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    void cleanupRequestDoesNotPolluteMeasuredApiLatency() {
+        S3Client client = mock(S3Client.class);
+        when(client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenReturn(PutObjectResponse.builder().eTag("etag").build());
+        when(client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenReturn(DeleteObjectResponse.builder().build());
+        UploadTestEngine engine = new UploadTestEngine(mock(CredentialProvider.class),
+                mock(WorkloadProfileCatalog.class), request -> client);
+        TestRequest request = new TestRequest("http://localhost:9000", "bucket", "us-east-1", "key", "secret",
+                true, "test.bin", 1, 5, 1, 1, true, "UPLOAD");
+        TestRun run = new TestRun(request);
+
+        engine.execute(run);
+
+        TestRun.Snapshot snapshot = run.snapshot();
+        assertEquals(TestStatus.COMPLETED, snapshot.status());
+        assertEquals(1, snapshot.apiRequestCount());
+        assertEquals(1, snapshot.objectOperationCount());
+        verify(client).deleteObject(any(DeleteObjectRequest.class));
     }
 
     private static TestRequest request(String operation) {

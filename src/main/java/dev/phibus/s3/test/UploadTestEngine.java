@@ -89,21 +89,21 @@ public class UploadTestEngine {
                 int operationNumber = (int) Math.min(Integer.MAX_VALUE, ++sequence);
                 switch (operation) {
                     case "UPLOAD" -> {
-                        if (objectExists) client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket()).key(key).build());
-                        uploadManagedObject(client, run, request, key, operationNumber);
+                        if (objectExists) cleanupDelete(client, request, key);
+                        uploadManagedObject(client, run, request, key, operationNumber, true);
                         objectExists = true;
                     }
                     case "DOWNLOAD" -> {
-                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber); objectExists = true; }
+                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber, false); objectExists = true; }
                         downloadObject(client, run, request, operationNumber, operationNumber, key);
                     }
                     case "HEAD" -> {
-                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber); objectExists = true; }
+                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber, false); objectExists = true; }
                         headObject(client, run, request, operationNumber, operationNumber, key);
                     }
                     case "LIST" -> executeListOperation(client, run, request, operationNumber);
                     case "DELETE" -> {
-                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber); objectExists = true; }
+                        if (!objectExists) { uploadManagedObject(client, run, request, key, operationNumber, false); objectExists = true; }
                         deleteObject(client, run, request, operationNumber, operationNumber, key);
                         objectExists = false;
                     }
@@ -112,17 +112,25 @@ public class UploadTestEngine {
             } while (!run.durationExpired());
         } finally {
             if (objectExists) {
-                client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket()).key(key).build());
+                cleanupDelete(client, request, key);
                 run.cleanupSuccessful();
             }
         }
     }
 
-    private void uploadManagedObject(S3Client client, TestRun run, TestRequest request, String key, int number) throws Exception {
+    private void uploadManagedObject(S3Client client, TestRun run, TestRequest request, String key, int number,
+                                     boolean recordMeasurements) throws Exception {
+        long started = System.nanoTime();
         long totalSize = request.objectSizeBytes();
-        if (totalSize < MIN_PART_SIZE) uploadSingle(client, run, request, key, number, totalSize);
-        else uploadMultipart(client, run, request, key, number, totalSize,
-                normalizePartSize(request.partSizeBytes(), totalSize));
+        try {
+            if (totalSize < MIN_PART_SIZE) {
+                uploadSingle(client, run, request, key, number, totalSize, recordMeasurements);
+            }
+            else uploadMultipart(client, run, request, key, number, totalSize,
+                    normalizePartSize(request.partSizeBytes(), totalSize), recordMeasurements);
+        } finally {
+            if (recordMeasurements) run.objectOperationCompleted(elapsedMillis(started));
+        }
     }
 
     private void executeListOperation(S3Client client, TestRun run, TestRequest request, int operationNumber) {
@@ -131,10 +139,15 @@ public class UploadTestEngine {
             ListObjectsV2Response response = client.listObjectsV2(ListObjectsV2Request.builder()
                     .bucket(request.bucket()).prefix(request.objectKey()).maxKeys(Math.min(1000, request.objectCount())).build());
             long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
             run.partCompleted(new PartResult(operationNumber, operationNumber, 0, ms, 0,
                     "LIST objects=" + response.keyCount(), "SUCCESS", null));
         } catch (RuntimeException e) {
-            run.operationFailed(operationNumber, operationNumber, "LIST", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
+            run.operationFailed(operationNumber, operationNumber, "LIST", ms, rootMessage(e));
             throw e;
         }
     }
@@ -170,16 +183,15 @@ public class UploadTestEngine {
 
     private void executeUpload(S3Client client, TestRun run, TestRequest request, boolean initialize, long cycle) throws Exception {
         long totalSize = request.objectSizeBytes();
-        long partSize = normalizePartSize(request.partSizeBytes(), totalSize);
-        int partsPerObject = totalSize < MIN_PART_SIZE ? 1 : (int) ((totalSize + partSize - 1) / partSize);
+        long normalizedPartSize = normalizePartSize(request.partSizeBytes(), totalSize);
+        int partsPerObject = totalSize < MIN_PART_SIZE ? 1 : (int) ((totalSize + normalizedPartSize - 1) / normalizedPartSize);
         if (initialize) run.start(Math.multiplyExact(partsPerObject, request.objectCount()));
         for (int n = 1; n <= request.objectCount(); n++) {
             checkCancelled(run);
             String key = objectKey(request, n, cycle);
-            if (totalSize < MIN_PART_SIZE) uploadSingle(client, run, request, key, n, totalSize);
-            else uploadMultipart(client, run, request, key, n, totalSize, partSize);
+            uploadManagedObject(client, run, request, key, n, true);
             if ((request.deleteAfterTest() || request.durationMode()) && !run.isCancelled())
-                client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket()).key(key).build());
+                cleanupDelete(client, request, key);
         }
         if (request.deleteAfterTest() || request.durationMode()) run.cleanupSuccessful();
     }
@@ -212,8 +224,7 @@ public class UploadTestEngine {
         if (initialize) run.start(Math.multiplyExact(uploadParts + 3, request.objectCount()));
         for (int n = 1; n <= request.objectCount(); n++) {
             String key = objectKey(request, n, cycle);
-            if (totalSize < MIN_PART_SIZE) uploadSingle(client, run, request, key, n, totalSize);
-            else uploadMultipart(client, run, request, key, n, totalSize, partSize);
+            uploadManagedObject(client, run, request, key, n, true);
             headObject(client, run, request, n, uploadParts + 1, key);
             downloadObject(client, run, request, n, uploadParts + 2, key);
             deleteObject(client, run, request, n, uploadParts + 3, key);
@@ -221,29 +232,43 @@ public class UploadTestEngine {
         run.cleanupSuccessful();
     }
 
-    private void uploadSingle(S3Client client, TestRun run, TestRequest request, String key, int objectNumber, long size) {
+    private void uploadSingle(S3Client client, TestRun run, TestRequest request, String key,
+                              int objectNumber, long size, boolean recordMeasurements) {
         long started = System.nanoTime();
         try (InputStream input = new GeneratedInputStream(size, objectNumber)) {
             String eTag = client.putObject(PutObjectRequest.builder().bucket(request.bucket()).key(key).build(),
                     RequestBody.fromInputStream(input, size)).eTag();
             long ms = elapsedMillis(started);
-            run.partCompleted(new PartResult(objectNumber, 1, size, ms, speed(size, ms), "UPLOAD " + eTag, "SUCCESS", null));
+            if (recordMeasurements) {
+                run.apiRequestCompleted(ms);
+                run.partCompleted(new PartResult(objectNumber, 1, size, ms, speed(size, ms),
+                        "UPLOAD " + eTag, "SUCCESS", null));
+            }
         } catch (Exception e) {
-            run.operationFailed(objectNumber, 1, "UPLOAD", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            if (recordMeasurements) {
+                run.apiRequestCompleted(ms);
+                run.operationFailed(objectNumber, 1, "UPLOAD", ms, rootMessage(e));
+            }
             throw new IllegalStateException(e);
         }
     }
 
     private void uploadMultipart(S3Client client, TestRun run, TestRequest request, String key,
-                                 int objectNumber, long totalSize, long partSize) throws Exception {
+                                 int objectNumber, long totalSize, long partSize,
+                                 boolean recordMeasurements) throws Exception {
         long createStarted = System.nanoTime();
         String uploadId;
         try {
             uploadId = client.createMultipartUpload(CreateMultipartUploadRequest.builder()
                     .bucket(request.bucket()).key(key).build()).uploadId();
+            if (recordMeasurements) run.apiRequestCompleted(elapsedMillis(createStarted));
         } catch (RuntimeException e) {
-            run.operationFailed(objectNumber, 0, "CREATE_MULTIPART_UPLOAD",
-                    elapsedMillis(createStarted), rootMessage(e));
+            if (recordMeasurements) {
+                run.apiRequestCompleted(elapsedMillis(createStarted));
+                run.operationFailed(objectNumber, 0, "CREATE_MULTIPART_UPLOAD",
+                        elapsedMillis(createStarted), rootMessage(e));
+            }
             throw e;
         }
         ExecutorService pool = Executors.newFixedThreadPool(request.parallelism());
@@ -253,7 +278,8 @@ public class UploadTestEngine {
             for (int part = 1; offset < totalSize; part++) {
                 long size = Math.min(partSize, totalSize - offset); int partNumber = part;
                 long seed = (((long) objectNumber) << 32) ^ partNumber;
-                tasks.add(() -> uploadPart(client, run, request, key, uploadId, objectNumber, partNumber, size, seed));
+                tasks.add(() -> uploadPart(client, run, request, key, uploadId, objectNumber, partNumber,
+                        size, seed, recordMeasurements));
                 offset += size;
             }
             List<Future<CompletedPart>> futures = pool.invokeAll(tasks);
@@ -264,33 +290,47 @@ public class UploadTestEngine {
             try {
                 client.completeMultipartUpload(CompleteMultipartUploadRequest.builder().bucket(request.bucket()).key(key)
                         .uploadId(uploadId).multipartUpload(CompletedMultipartUpload.builder().parts(completed).build()).build());
+                if (recordMeasurements) run.apiRequestCompleted(elapsedMillis(completeStarted));
             } catch (RuntimeException e) {
-                run.operationFailed(objectNumber, 0, "COMPLETE_MULTIPART_UPLOAD",
-                        elapsedMillis(completeStarted), rootMessage(e));
+                if (recordMeasurements) {
+                    run.apiRequestCompleted(elapsedMillis(completeStarted));
+                    run.operationFailed(objectNumber, 0, "COMPLETE_MULTIPART_UPLOAD",
+                            elapsedMillis(completeStarted), rootMessage(e));
+                }
                 throw e;
             }
         } catch (Exception e) {
+            long abortStarted = System.nanoTime();
             try {
                 client.abortMultipartUpload(AbortMultipartUploadRequest.builder()
                         .bucket(request.bucket()).key(key).uploadId(uploadId).build());
             } catch (RuntimeException abortError) {
                 e.addSuppressed(abortError);
-            }
+            } finally { if (recordMeasurements) run.apiRequestCompleted(elapsedMillis(abortStarted)); }
             throw e;
         } finally { pool.shutdownNow(); }
     }
 
     private CompletedPart uploadPart(S3Client client, TestRun run, TestRequest request, String key, String uploadId,
-                                     int objectNumber, int partNumber, long size, long seed) {
+                                     int objectNumber, int partNumber, long size, long seed,
+                                     boolean recordMeasurements) {
         checkCancelled(run); long started = System.nanoTime();
         try (InputStream input = new GeneratedInputStream(size, seed)) {
             String eTag = client.uploadPart(UploadPartRequest.builder().bucket(request.bucket()).key(key).uploadId(uploadId)
                     .partNumber(partNumber).contentLength(size).build(), RequestBody.fromInputStream(input, size)).eTag();
             long ms = elapsedMillis(started);
-            run.partCompleted(new PartResult(objectNumber, partNumber, size, ms, speed(size, ms), "UPLOAD " + eTag, "SUCCESS", null));
+            if (recordMeasurements) {
+                run.apiRequestCompleted(ms);
+                run.partCompleted(new PartResult(objectNumber, partNumber, size, ms, speed(size, ms),
+                        "UPLOAD " + eTag, "SUCCESS", null));
+            }
             return CompletedPart.builder().partNumber(partNumber).eTag(eTag).build();
         } catch (Exception e) {
-            run.operationFailed(objectNumber, partNumber, "UPLOAD_PART", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            if (recordMeasurements) {
+                run.apiRequestCompleted(ms);
+                run.operationFailed(objectNumber, partNumber, "UPLOAD_PART", ms, rootMessage(e));
+            }
             throw new IllegalStateException(e);
         }
     }
@@ -302,10 +342,15 @@ public class UploadTestEngine {
                     ResponseTransformer.toOutputStream(OutputStream.nullOutputStream()));
             long ms = elapsedMillis(started);
             long bytes = response.contentLength() == null ? request.objectSizeBytes() : response.contentLength();
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
             run.partCompleted(new PartResult(objectNumber, partNumber, bytes, ms, speed(bytes, ms),
                     "DOWNLOAD " + response.eTag(), "SUCCESS", null));
         } catch (RuntimeException e) {
-            run.operationFailed(objectNumber, partNumber, "DOWNLOAD", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
+            run.operationFailed(objectNumber, partNumber, "DOWNLOAD", ms, rootMessage(e));
             throw e;
         }
     }
@@ -315,10 +360,15 @@ public class UploadTestEngine {
         try {
             HeadObjectResponse response = client.headObject(HeadObjectRequest.builder().bucket(request.bucket()).key(key).build());
             long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
             run.partCompleted(new PartResult(objectNumber, partNumber, 0, ms, 0,
                     "HEAD size=" + response.contentLength(), "SUCCESS", null));
         } catch (RuntimeException e) {
-            run.operationFailed(objectNumber, partNumber, "HEAD", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
+            run.operationFailed(objectNumber, partNumber, "HEAD", ms, rootMessage(e));
             throw e;
         }
     }
@@ -328,11 +378,20 @@ public class UploadTestEngine {
         try {
             client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket()).key(key).build());
             long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
             run.partCompleted(new PartResult(objectNumber, partNumber, 0, ms, 0, "DELETE", "SUCCESS", null));
         } catch (RuntimeException e) {
-            run.operationFailed(objectNumber, partNumber, "DELETE", elapsedMillis(started), rootMessage(e));
+            long ms = elapsedMillis(started);
+            run.apiRequestCompleted(ms);
+            run.objectOperationCompleted(ms);
+            run.operationFailed(objectNumber, partNumber, "DELETE", ms, rootMessage(e));
             throw e;
         }
+    }
+
+    private void cleanupDelete(S3Client client, TestRequest request, String key) {
+        client.deleteObject(DeleteObjectRequest.builder().bucket(request.bucket()).key(key).build());
     }
 
     private S3Client client(TestRequest request) {

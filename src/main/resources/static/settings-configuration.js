@@ -17,15 +17,23 @@
     if (encrypted && exportPassword.length < 12) throw new Error('Пароль должен содержать не менее 12 символов');
     const parameters = new URLSearchParams({encrypted, includeSecrets});
     if (encrypted) parameters.set('password', exportPassword);
-    const response = await fetch(`/api/config/export?${parameters}`);
-    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-    const url = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = (response.headers.get('Content-Disposition') || '').includes('.evos3')
-      ? 'evo-snt-config.evos3' : 'evo-snt-config.json';
-    anchor.click();
-    URL.revokeObjectURL(url);
+    try {
+      const response = await fetch('/api/config/export', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+        body: parameters
+      });
+      if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = (response.headers.get('Content-Disposition') || '').includes('.evos3')
+        ? 'evo-snt-config.evos3' : 'evo-snt-config.json';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      byId('exportPassword').value = '';
+    }
   }
 
   function formData() {

@@ -9,9 +9,11 @@ import dev.phibus.s3.clickhouse.ClickHouseHistoryStore;
 import dev.phibus.s3.clickhouse.ClickHouseProfileService;
 import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.kafka.KafkaProfileService;
+import dev.phibus.s3.test.LatencyHistogramCodec;
 import dev.phibus.s3.test.TestRequest;
 import java.util.List;
 import java.util.Map;
+import org.HdrHistogram.Histogram;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -32,7 +34,7 @@ class DistributedTestHistoryTest {
                 new DistributedTestService.CreateDistributedTestRequest("run", List.of(registration.agentId()), request));
         service.report(registration.agentId(), registration.agentToken(),
                 new DistributedTestService.AgentStatistics(run.id(), "COMPLETED", 2, 0, 10 * 1024 * 1024,
-                        2.0, 5.0, 10, 20, 30, 0, "done"));
+                        2.0, 5.0, 10, 20, 30, 0, "done", null));
 
         ArgumentCaptor<TestHistoryStore.DistributedHistoryResult> result =
                 ArgumentCaptor.forClass(TestHistoryStore.DistributedHistoryResult.class);
@@ -45,7 +47,7 @@ class DistributedTestHistoryTest {
     }
 
     @Test
-    void rejectsCredentialsAndUsesWorstAgentPercentile() {
+    void rejectsCredentialsAndFallsBackToWorstAgentPercentileForLegacyAgents() {
         AgentRegistry registry = new AgentRegistry("registration-secret");
         AgentRegistry.RegistrationResult first = register(registry, "agent-a");
         AgentRegistry.RegistrationResult second = register(registry, "agent-b");
@@ -72,6 +74,36 @@ class DistributedTestHistoryTest {
                 service.report(second.agentId(), second.agentToken(), statistics(run.id(), 1, 100));
 
         assertThat(completed.p95LatencyMs()).isEqualTo(100);
+        assertThat(completed.latencyScope()).isEqualTo("MULTIPART_PART");
+        assertThat(completed.latencyAggregation()).isEqualTo("LEGACY_MAX");
+    }
+
+    @Test
+    void mergesAgentHistogramsIntoTrueGlobalPercentiles() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationResult first = register(registry, "agent-a");
+        AgentRegistry.RegistrationResult second = register(registry, "agent-b");
+        DistributedTestService service = new DistributedTestService(registry, mock(ClickHouseProfileService.class),
+                mock(ClickHouseHistoryStore.class), mock(TestHistoryStore.class), mock(KafkaProfileService.class));
+        TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", null, null,
+                true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
+        DistributedTestService.DistributedRunView run = service.create(
+                new DistributedTestService.CreateDistributedTestRequest(
+                        "run", List.of(first.agentId(), second.agentId()), request));
+
+        Histogram fast = new Histogram(1, 10_000, 3);
+        fast.recordValueWithCount(10, 100);
+        Histogram slow = new Histogram(1, 10_000, 3);
+        slow.recordValue(1_000);
+
+        service.report(first.agentId(), first.agentToken(),
+                statistics(run.id(), 100, 10, LatencyHistogramCodec.encode(fast)));
+        DistributedTestService.DistributedRunView completed = service.report(second.agentId(), second.agentToken(),
+                statistics(run.id(), 1, 1_000, LatencyHistogramCodec.encode(slow)));
+
+        assertThat(completed.p95LatencyMs()).isEqualTo(10);
+        assertThat(completed.p99LatencyMs()).isEqualTo(10);
+        assertThat(completed.latencyAggregation()).isEqualTo("HDR_HISTOGRAM");
     }
 
     @Test
@@ -98,6 +130,13 @@ class DistributedTestHistoryTest {
     private static DistributedTestService.AgentStatistics statistics(java.util.UUID runId,
                                                                       long operations, double p95) {
         return new DistributedTestService.AgentStatistics(runId, "COMPLETED", operations, 0, 1024,
-                1, 1, p95 / 2, p95, p95 * 2, 0, "done");
+                1, 1, p95 / 2, p95, p95 * 2, 0, "done", null);
+    }
+
+    private static DistributedTestService.AgentStatistics statistics(java.util.UUID runId,
+                                                                      long operations, double p95,
+                                                                      String histogram) {
+        return new DistributedTestService.AgentStatistics(runId, "COMPLETED", operations, 0, 1024,
+                1, 1, p95 / 2, p95, p95 * 2, 0, "done", histogram);
     }
 }
