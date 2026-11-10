@@ -2,21 +2,20 @@
 
 Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ, ClickHouse и Kafka.
 
-> **Текущая версия:** `2.4.0-rc17`<br>
+> **Текущая версия:** `2.4.0-rc18`<br>
 > **Статус:** Release Candidate<br>
-> **Релизный тег:** `v2.4.0-rc17`<br>
+> **Релизный тег:** `v2.4.0-rc18`<br>
 > **Последний стабильный релиз:** `2.3.0`
 
-## Что нового в 2.4.0-rc17
+## Что нового в 2.4.0-rc18
 
-- S3 latency разделена на прежний записанный шаг, фактический API request и объектную end-to-end операцию;
-- UI и история явно показывают измеряемую единицу, число samples и отдельные p50/p95/p99;
-- координатор объединяет HDR-гистограммы агентов и вычисляет настоящие глобальные перцентили;
-- служебные precondition/cleanup-запросы не загрязняют метрики измеряемой нагрузки;
-- пароль экспорта конфигурации передаётся только в теле POST-запроса;
-- устранены найденные небезопасные HTML-вставки в Kafka UI;
-- release workflow запускается только по тегу или вручную из `main`, а Docker image собирается из уже проверенного JAR;
-- Dependency Review, CodeQL и Maven CI завершаются ошибкой при нарушениях и не маскируют нестабильность повторными полными сборками.
+- общий admission control ограничивает число одновременных прогонов и суммарное число S3/ClickHouse/Kafka worker-задач;
+- не принятый из-за перегрузки запуск возвращает HTTP 429, а превышение глобального дедлайна завершает прогон как `CANCELLED`;
+- собственные неограниченные пулы multipart, ClickHouse и Kafka заменены общим bounded executor;
+- агенты передают координатору доступную/занятую ёмкость и сведения об использовании памяти;
+- PostgreSQL использует reloadable HikariCP с метриками, connection/query/transaction timeout и атомарной сменой пула после изменения bootstrap-настроек;
+- Maven CI выполняет реальные Testcontainers-проверки Kafka и ClickHouse с Keeper;
+- добавлены регрессионные тесты admission control, освобождения permit по дедлайну и горячей смены PostgreSQL-пула.
 
 ## Возможности
 
@@ -83,7 +82,7 @@ PostgreSQL, Vault, Keycloak, S3, ClickHouse и Kafka являются внешн
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.4.0-rc17.jar
+java -jar evo-snt-s3-2.4.0-rc18.jar
 ```
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
@@ -138,10 +137,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.4.0-rc17
+  ghcr.io/phibus-dev/s3-performance-test-web:2.4.0-rc18
 ```
 
-Для проверки RC используйте фиксированный тег `2.4.0-rc17`. Для production без RC-функций используйте последний стабильный тег `2.3.0`.
+Для проверки RC используйте фиксированный тег `2.4.0-rc18`. Для production без RC-функций используйте последний стабильный тег `2.3.0`.
 
 ## ClickHouse
 
@@ -196,24 +195,41 @@ Prometheus alerts:
 deploy/prometheus/s3-performance-alerts.yml
 ```
 
+## Лимиты выполнения и PostgreSQL pool
+
+Основные настройки можно передать через environment variables:
+
+| Переменная | По умолчанию | Назначение |
+|---|---:|---|
+| `S3PERF_RUNTIME_MAX_CONCURRENT_RUNS` | `8` | Одновременные локальные/agent-side прогоны |
+| `S3PERF_RUNTIME_MAX_WORKER_TASKS` | `64` | Суммарная concurrency worker-задач |
+| `S3PERF_RUNTIME_MAX_RUN_DURATION_SECONDS` | `86400` | Жёсткий дедлайн одного прогона |
+| `S3PERF_RUNTIME_EXECUTOR_QUEUE_CAPACITY` | `32` | Очередь верхнеуровневых задач |
+| `S3PERF_POSTGRESQL_POOL_MAXIMUM_SIZE` | `16` | Максимальный размер HikariCP |
+| `S3PERF_POSTGRESQL_CONNECTION_TIMEOUT_MS` | `10000` | Ожидание JDBC connection |
+| `S3PERF_POSTGRESQL_QUERY_TIMEOUT_SECONDS` | `30` | Таймаут JdbcTemplate query |
+| `S3PERF_POSTGRESQL_TRANSACTION_TIMEOUT_SECONDS` | `60` | Таймаут Spring transaction |
+
+Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Актуальная ёмкость агента также доступна в его heartbeat tags.
+
 ## Сборка
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.4.0-rc17.jar
+java -jar target/s3-multipart-uploader-2.4.0-rc18.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.
 
-## Обновление с 2.4.0-rc16
+## Обновление с 2.4.0-rc17
 
-См. `UPGRADE_2.4.0-rc17.md`. При старте Coordinator Flyway применяет миграцию V24 с новыми полями S3 latency. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL; координатор и агенты рекомендуется обновлять одновременно.
+См. `UPGRADE_2.4.0-rc18.md`. Новых миграций схемы после V24 нет. До обновления сохраните bootstrap-файл и резервную копию PostgreSQL; Coordinator и Agent рекомендуется обновлять одновременно, затем подобрать лимиты по ресурсам узлов.
 
 ## Релиз
 
 ```bash
-git tag -a v2.4.0-rc17 -m "ЭВО.СНТ 2.4.0-rc17"
-git push origin v2.4.0-rc17
+git tag -a v2.4.0-rc18 -m "ЭВО.СНТ 2.4.0-rc18"
+git push origin v2.4.0-rc18
 ```
 
 Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README, release notes, upgrade guide и Docker image.

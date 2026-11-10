@@ -1,11 +1,11 @@
 package dev.phibus.s3.settings;
 
 import dev.phibus.s3.distributed.ApplicationMode;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.sql.SQLFeatureNotSupportedException;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -22,26 +22,40 @@ public class BootstrapJdbcConfiguration {
 
     @Bean
     DataSource bootstrapDataSource(SettingsService settingsService, BootstrapSecretCodec codec,
+                                   MeterRegistry meterRegistry,
+                                   @Value("${s3perf.postgresql.pool.maximum-size:16}") int maximumPoolSize,
+                                   @Value("${s3perf.postgresql.pool.minimum-idle:1}") int minimumIdle,
+                                   @Value("${s3perf.postgresql.pool.connection-timeout-ms:10000}") long connectionTimeoutMs,
+                                   @Value("${s3perf.postgresql.pool.validation-timeout-ms:3000}") long validationTimeoutMs,
+                                   @Value("${s3perf.postgresql.pool.idle-timeout-ms:600000}") long idleTimeoutMs,
+                                   @Value("${s3perf.postgresql.pool.max-lifetime-ms:1800000}") long maxLifetimeMs,
+                                   @Value("${s3perf.postgresql.pool.leak-detection-ms:0}") long leakDetectionMs,
                                    @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
         if (ApplicationMode.from(applicationMode) == ApplicationMode.AGENT) {
             return new AgentDisabledDataSource();
         }
-        return new BootstrapDataSource(settingsService, codec);
+        return new ReloadableHikariDataSource(settingsService, codec, meterRegistry, maximumPoolSize, minimumIdle,
+                connectionTimeoutMs, validationTimeoutMs, idleTimeoutMs, maxLifetimeMs, leakDetectionMs);
     }
 
     @Bean
-    JdbcTemplate jdbcTemplate(DataSource bootstrapDataSource) {
-        return new JdbcTemplate(bootstrapDataSource);
+    JdbcTemplate jdbcTemplate(DataSource bootstrapDataSource,
+                              @Value("${s3perf.postgresql.query-timeout-seconds:30}") int queryTimeoutSeconds) {
+        JdbcTemplate template = new JdbcTemplate(bootstrapDataSource);
+        template.setQueryTimeout(Math.max(1, queryTimeoutSeconds));
+        return template;
     }
 
     @Bean
-    PlatformTransactionManager transactionManager(DataSource bootstrapDataSource) {
-        return new DataSourceTransactionManager(bootstrapDataSource);
+    PlatformTransactionManager transactionManager(DataSource bootstrapDataSource,
+            @Value("${s3perf.postgresql.transaction-timeout-seconds:60}") int transactionTimeoutSeconds) {
+        DataSourceTransactionManager manager = new DataSourceTransactionManager(bootstrapDataSource);
+        manager.setDefaultTimeout(Math.max(1, transactionTimeoutSeconds));
+        return manager;
     }
 
     @Bean
     ApplicationRunner migrateConfiguredPostgreSql(SettingsService settingsService,
-                                                   BootstrapSecretCodec codec,
                                                    DataSource bootstrapDataSource,
                                                    @Value("${s3perf.application-mode:COORDINATOR}") String applicationMode) {
         return arguments -> {
@@ -78,45 +92,4 @@ public class BootstrapJdbcConfiguration {
         @Override public boolean isWrapperFor(Class<?> iface) { return iface.isInstance(this); }
     }
 
-    private static final class BootstrapDataSource implements DataSource {
-        private final SettingsService settingsService;
-        private final BootstrapSecretCodec codec;
-
-        private BootstrapDataSource(SettingsService settingsService, BootstrapSecretCodec codec) {
-            this.settingsService = settingsService;
-            this.codec = codec;
-        }
-
-        @Override
-        public Connection getConnection() throws SQLException {
-            BootstrapSettings.PostgreSqlSettings postgresql = configuredSettings();
-            return DriverManager.getConnection(postgresql.jdbcUrl(), postgresql.username(),
-                    codec.decrypt(postgresql.encryptedPassword()));
-        }
-
-        @Override
-        public Connection getConnection(String username, String password) throws SQLException {
-            BootstrapSettings.PostgreSqlSettings postgresql = configuredSettings();
-            return DriverManager.getConnection(postgresql.jdbcUrl(), username, password);
-        }
-
-        private BootstrapSettings.PostgreSqlSettings configuredSettings() throws SQLException {
-            BootstrapSettings.PostgreSqlSettings postgresql = settingsService.load().postgresql();
-            if (!postgresql.configured()) {
-                throw new SQLException("PostgreSQL is not configured; open /settings and restart the application");
-            }
-            return postgresql;
-        }
-
-        @Override public PrintWriter getLogWriter() { return DriverManager.getLogWriter(); }
-        @Override public void setLogWriter(PrintWriter out) { DriverManager.setLogWriter(out); }
-        @Override public void setLoginTimeout(int seconds) { DriverManager.setLoginTimeout(seconds); }
-        @Override public int getLoginTimeout() { return DriverManager.getLoginTimeout(); }
-        @Override public Logger getParentLogger() throws SQLFeatureNotSupportedException { return Logger.getLogger("dev.phibus.s3.jdbc"); }
-        @Override public <T> T unwrap(Class<T> iface) throws SQLException {
-            if (iface.isInstance(this)) return iface.cast(this);
-            throw new SQLException("Not a wrapper for " + iface.getName());
-        }
-        @Override public boolean isWrapperFor(Class<?> iface) { return iface.isInstance(this); }
-    }
 }

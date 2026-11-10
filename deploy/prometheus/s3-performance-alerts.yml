@@ -51,6 +51,30 @@ groups:
         annotations:
           summary: "Очередь executor растёт"
           description: "В executor {{ $labels.name }} более 100 ожидающих задач."
+      - alert: EvoSntS3RuntimeCapacityRejected
+        expr: increase(s3perf_runtime_rejections_total{job="s3-performance-test"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Нагрузочный запуск отклонён по лимиту"
+          description: "На {{ $labels.instance }} исчерпана runtime-ёмкость типа {{ $labels.resource }}."
+      - alert: EvoSntS3RuntimeDeadlineExceeded
+        expr: increase(s3perf_runtime_deadlines_exceeded_total{job="s3-performance-test"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Превышен deadline нагрузочного теста"
+          description: "На {{ $labels.instance }} как минимум один прогон остановлен глобальным deadline."
+      - alert: EvoSntS3PostgreSqlPoolWaiting
+        expr: hikaricp_connections_pending{job="s3-performance-test"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ожидание соединений PostgreSQL"
+          description: "Hikari pool {{ $labels.pool }} на {{ $labels.instance }} не выдаёт соединение без ожидания."
   - name: evo-snt-s3-load-tests
     rules:
       - alert: EvoSntS3TestErrors

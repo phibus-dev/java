@@ -10,8 +10,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +26,13 @@ class ClickHouseTestRunServiceTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<ClickHouseHistoryStore> history = mock(ObjectProvider.class);
     private final Executor directExecutor = Runnable::run;
+    private final RuntimeResourceManager resources = new RuntimeResourceManager(4, 16, 60,
+            new SimpleMeterRegistry());
+
+    @AfterEach
+    void closeResources() {
+        resources.close();
+    }
 
     @Test
     void createsHistoryBeforeExecutionAndUpdatesItAfterCompletion() {
@@ -72,7 +82,8 @@ class ClickHouseTestRunServiceTest {
         when(history.getIfAvailable()).thenReturn(historyStore);
         Executor rejectingExecutor = command -> { throw new IllegalStateException("executor rejected task"); };
 
-        ClickHouseTestRun run = new ClickHouseTestRunService(engine, connections, history, rejectingExecutor).create(request);
+        ClickHouseTestRun run = new ClickHouseTestRunService(
+                engine, connections, history, rejectingExecutor, resources).create(request);
 
         assertThat(run.snapshot().status()).isEqualTo(ClickHouseTestRun.Status.FAILED);
         assertThat(run.snapshot().message()).contains("executor rejected task");
@@ -94,7 +105,7 @@ class ClickHouseTestRunServiceTest {
     }
 
     private ClickHouseTestRunService service() {
-        return new ClickHouseTestRunService(engine, connections, history, directExecutor);
+        return new ClickHouseTestRunService(engine, connections, history, directExecutor, resources);
     }
 
     private static ClickHouseTestRequest request() {

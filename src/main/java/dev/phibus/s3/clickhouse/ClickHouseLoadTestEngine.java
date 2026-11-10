@@ -1,5 +1,6 @@
 package dev.phibus.s3.clickhouse;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -9,18 +10,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ClickHouseLoadTestEngine {
     private final ClickHouseConnectionProvider connections;
+    private final ExecutorService workloadExecutor;
+    private final RuntimeResourceManager resources;
 
-    public ClickHouseLoadTestEngine(ClickHouseConnectionProvider connections) {
+    public ClickHouseLoadTestEngine(ClickHouseConnectionProvider connections,
+                                    @Qualifier("workloadExecutor") ExecutorService workloadExecutor,
+                                    RuntimeResourceManager resources) {
         this.connections = connections;
+        this.workloadExecutor = workloadExecutor;
+        this.resources = resources;
     }
 
     public void execute(ClickHouseTestRun run) {
@@ -61,15 +68,13 @@ public class ClickHouseLoadTestEngine {
 
     private void executeInsert(ClickHouseTestRun run, ConnectionFactory connectionFactory, int timeout) throws Exception {
         int workers = run.request().concurrency();
-        ExecutorService pool = Executors.newFixedThreadPool(workers);
         AtomicLong sequence = new AtomicLong();
-        try {
+        try (RuntimeResourceManager.WorkerPermit ignored =
+                     resources.acquireWorkers(workers, "CLICKHOUSE", run.id())) {
             List<Callable<Void>> tasks = new ArrayList<>();
             for (int worker = 0; worker < workers; worker++)
                 tasks.add(() -> { insertWorker(run, sequence, connectionFactory, timeout); return null; });
-            for (Future<Void> future : pool.invokeAll(tasks)) future.get();
-        } finally {
-            pool.shutdownNow();
+            for (Future<Void> future : workloadExecutor.invokeAll(tasks)) future.get();
         }
     }
 

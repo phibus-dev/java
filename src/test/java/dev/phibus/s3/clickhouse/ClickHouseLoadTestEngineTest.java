@@ -7,10 +7,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
 class ClickHouseLoadTestEngineTest {
@@ -32,7 +36,11 @@ class ClickHouseLoadTestEngineTest {
                 "evo_snt_perf_load", "SELECT", 1, 100, 1_000_000, 0, 0, 128, 3L, false);
         ClickHouseTestRun run = new ClickHouseTestRun(request, "http://clickhouse:8123");
 
-        new ClickHouseLoadTestEngine(connections).execute(run);
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+             RuntimeResourceManager resources = new RuntimeResourceManager(2, 8, 60,
+                     new SimpleMeterRegistry())) {
+            new ClickHouseLoadTestEngine(connections, executor, resources).execute(run);
+        }
 
         verify(statement, times(3)).executeQuery(anyString());
         assertThat(run.snapshot().queries()).isEqualTo(3);

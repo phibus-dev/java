@@ -2,6 +2,7 @@ package dev.phibus.s3.test;
 
 import dev.phibus.s3.credentials.CredentialProvider;
 import dev.phibus.s3.credentials.S3Credentials;
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.workload.WeightedOperationSelector;
 import dev.phibus.s3.workload.WorkloadProfileCatalog;
 import java.io.InputStream;
@@ -15,11 +16,12 @@ import java.util.SplittableRandom;
 import java.util.function.Function;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -39,17 +41,24 @@ public class UploadTestEngine {
     private final CredentialProvider credentialProvider;
     private final WorkloadProfileCatalog workloadProfiles;
     private final Function<TestRequest, S3Client> clientFactory;
+    private final ExecutorService workloadExecutor;
+    private final RuntimeResourceManager resources;
 
     @Autowired
-    public UploadTestEngine(CredentialProvider credentialProvider, WorkloadProfileCatalog workloadProfiles) {
-        this(credentialProvider, workloadProfiles, null);
+    public UploadTestEngine(CredentialProvider credentialProvider, WorkloadProfileCatalog workloadProfiles,
+                            @Qualifier("workloadExecutor") ExecutorService workloadExecutor,
+                            RuntimeResourceManager resources) {
+        this(credentialProvider, workloadProfiles, null, workloadExecutor, resources);
     }
 
     UploadTestEngine(CredentialProvider credentialProvider, WorkloadProfileCatalog workloadProfiles,
-                     Function<TestRequest, S3Client> clientFactory) {
+                     Function<TestRequest, S3Client> clientFactory, ExecutorService workloadExecutor,
+                     RuntimeResourceManager resources) {
         this.credentialProvider = credentialProvider;
         this.workloadProfiles = workloadProfiles;
         this.clientFactory = clientFactory;
+        this.workloadExecutor = workloadExecutor;
+        this.resources = resources;
     }
 
     public void execute(TestRun run) {
@@ -271,20 +280,29 @@ public class UploadTestEngine {
             }
             throw e;
         }
-        ExecutorService pool = Executors.newFixedThreadPool(request.parallelism());
-        try {
-            List<Callable<CompletedPart>> tasks = new ArrayList<>();
-            long offset = 0;
-            for (int part = 1; offset < totalSize; part++) {
-                long size = Math.min(partSize, totalSize - offset); int partNumber = part;
-                long seed = (((long) objectNumber) << 32) ^ partNumber;
-                tasks.add(() -> uploadPart(client, run, request, key, uploadId, objectNumber, partNumber,
-                        size, seed, recordMeasurements));
-                offset += size;
+        int partCount = Math.toIntExact((totalSize + partSize - 1) / partSize);
+        int workers = Math.min(request.parallelism(), partCount);
+        try (RuntimeResourceManager.WorkerPermit ignored =
+                     resources.acquireWorkers(workers, "S3", run.id())) {
+            AtomicInteger nextPart = new AtomicInteger(1);
+            List<Callable<List<CompletedPart>>> tasks = new ArrayList<>();
+            for (int worker = 0; worker < workers; worker++) {
+                tasks.add(() -> {
+                    List<CompletedPart> workerParts = new ArrayList<>();
+                    int partNumber;
+                    while ((partNumber = nextPart.getAndIncrement()) <= partCount) {
+                        long offset = (long) (partNumber - 1) * partSize;
+                        long size = Math.min(partSize, totalSize - offset);
+                        long seed = (((long) objectNumber) << 32) ^ partNumber;
+                        workerParts.add(uploadPart(client, run, request, key, uploadId, objectNumber, partNumber,
+                                size, seed, recordMeasurements));
+                    }
+                    return workerParts;
+                });
             }
-            List<Future<CompletedPart>> futures = pool.invokeAll(tasks);
+            List<Future<List<CompletedPart>>> futures = workloadExecutor.invokeAll(tasks);
             List<CompletedPart> completed = new ArrayList<>();
-            for (Future<CompletedPart> future : futures) completed.add(future.get());
+            for (Future<List<CompletedPart>> future : futures) completed.addAll(future.get());
             completed.sort(Comparator.comparingInt(CompletedPart::partNumber));
             long completeStarted = System.nanoTime();
             try {
@@ -308,7 +326,7 @@ public class UploadTestEngine {
                 e.addSuppressed(abortError);
             } finally { if (recordMeasurements) run.apiRequestCompleted(elapsedMillis(abortStarted)); }
             throw e;
-        } finally { pool.shutdownNow(); }
+        }
     }
 
     private CompletedPart uploadPart(S3Client client, TestRun run, TestRequest request, String key, String uploadId,

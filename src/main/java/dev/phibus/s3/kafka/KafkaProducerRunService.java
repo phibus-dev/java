@@ -1,5 +1,6 @@
 package dev.phibus.s3.kafka;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.test.LatencyHistogramCodec;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -10,7 +11,10 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -19,6 +23,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.Recorder;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -30,12 +35,21 @@ public class KafkaProducerRunService {
     private final KafkaProfileService profiles;
     private final KafkaConnectionService connections;
     private final JdbcTemplate jdbc;
+    private final Executor testExecutor;
+    private final ExecutorService workloadExecutor;
+    private final RuntimeResourceManager resources;
     private final ConcurrentHashMap<UUID, RuntimeState> active = new ConcurrentHashMap<>();
 
-    public KafkaProducerRunService(KafkaProfileService profiles, KafkaConnectionService connections, JdbcTemplate jdbc) {
+    public KafkaProducerRunService(KafkaProfileService profiles, KafkaConnectionService connections, JdbcTemplate jdbc,
+                                   @Qualifier("testExecutor") Executor testExecutor,
+                                   @Qualifier("workloadExecutor") ExecutorService workloadExecutor,
+                                   RuntimeResourceManager resources) {
         this.profiles = profiles;
         this.connections = connections;
         this.jdbc = jdbc;
+        this.testExecutor = testExecutor;
+        this.workloadExecutor = workloadExecutor;
+        this.resources = resources;
     }
 
     public Snapshot start(ProducerRequest request, String initiator) {
@@ -71,7 +85,15 @@ public class KafkaProducerRunService {
                     """, id, profile.id(), topic, request.messageCount(), request.producerThreads(), request.messageSizeBytes(),
                     initiator, configText(request));
         }
-        Thread.ofVirtual().name("kafka-producer-run-" + id).start(() -> execute(profile, state));
+        try {
+            resources.submit(testExecutor, "KAFKA", id, state::deadlineExceeded,
+                    () -> execute(profile, state));
+        } catch (RuntimeException error) {
+            state.fail(rootMessage(error));
+            if (persist) persistFinal(state);
+            active.remove(id);
+            throw error;
+        }
         return state.snapshot();
     }
 
@@ -130,12 +152,14 @@ public class KafkaProducerRunService {
         Semaphore inFlight = new Semaphore(maxInFlight);
         GlobalRateLimiter rateLimiter = new GlobalRateLimiter(request.targetMessagesPerSec());
 
-        try (KafkaProducer<byte[], byte[]> producer = producer(profile, request, state.id)) {
+        try (RuntimeResourceManager.WorkerPermit ignored =
+                     resources.acquireWorkers(request.producerThreads(), "KAFKA", state.id);
+             KafkaProducer<byte[], byte[]> producer = producer(profile, request, state.id)) {
             for (int worker = 0; worker < request.producerThreads(); worker++) {
                 final int workerId = worker;
-                Thread.ofVirtual().name("kafka-producer-" + workerId).start(() -> {
+                workloadExecutor.execute(() -> {
                     try {
-                        while (true) {
+                        while (!state.cancelled.get() && !Thread.currentThread().isInterrupted()) {
                             long index = sequence.getAndIncrement();
                             if (index >= request.messageCount()) break;
                             rateLimiter.acquire();
@@ -172,14 +196,17 @@ public class KafkaProducerRunService {
                 });
             }
             workers.await();
+            if (state.cancelled.get()) return;
             producer.flush();
             state.retries.set(retryCount(producer));
             state.finish(state.errors.get() == 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            state.cancelled.set(true);
             state.recordError("Kafka producer run interrupted");
             state.finish("FAILED");
         } catch (Exception e) {
+            state.cancelled.set(true);
             state.recordError(rootMessage(e));
             state.finish("FAILED");
         } finally {
@@ -298,6 +325,7 @@ public class KafkaProducerRunService {
         final AtomicLong errors = new AtomicLong();
         final AtomicLong retries = new AtomicLong();
         final AtomicLong inFlight = new AtomicLong();
+        final AtomicBoolean cancelled = new AtomicBoolean();
         final Recorder latencyRecorder = new Recorder(1, MAX_LATENCY_NANOS, 3);
         final Histogram latencyTotals = new Histogram(1, MAX_LATENCY_NANOS, 3);
         Histogram intervalLatency;
@@ -319,10 +347,21 @@ public class KafkaProducerRunService {
         }
         void recordError(String message) { errors.incrementAndGet(); errorMessage=message; }
         synchronized void finish(String newStatus) {
+            if (finishedAt != null) return;
             status=newStatus;
             finishedAt=Instant.now();
             cachedSnapshot=buildSnapshot();
             cachedSnapshotAtNanos=System.nanoTime();
+        }
+        void deadlineExceeded() {
+            cancelled.set(true);
+            errorMessage = "Runtime deadline exceeded";
+            finish("CANCELLED");
+        }
+        void fail(String message) {
+            errorMessage = message;
+            errors.incrementAndGet();
+            finish("FAILED");
         }
         Snapshot snapshot() {
             Snapshot current = cachedSnapshot;

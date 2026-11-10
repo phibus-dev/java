@@ -1,10 +1,7 @@
 package dev.phibus.s3.security;
 
-import dev.phibus.s3.settings.BootstrapSecretCodec;
-import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.SettingsService;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -13,16 +10,17 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import javax.sql.DataSource;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class SecurityAuditRepository {
     private final SettingsService settingsService;
-    private final BootstrapSecretCodec codec;
+    private final DataSource dataSource;
 
-    public SecurityAuditRepository(SettingsService settingsService, BootstrapSecretCodec codec) {
+    public SecurityAuditRepository(SettingsService settingsService, DataSource dataSource) {
         this.settingsService = settingsService;
-        this.codec = codec;
+        this.dataSource = dataSource;
     }
 
     public void save(SecurityAuditEvent event) {
@@ -126,8 +124,7 @@ public class SecurityAuditRepository {
     }
 
     private Connection connection() throws SQLException {
-        BootstrapSettings.PostgreSqlSettings settings = settingsService.load().postgresql();
-        return DriverManager.getConnection(settings.jdbcUrl(), settings.username(), codec.decrypt(settings.encryptedPassword()));
+        return dataSource.getConnection();
     }
 
     private static SecurityAuditEvent mapRow(ResultSet rs) throws SQLException {
