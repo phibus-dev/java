@@ -5,6 +5,8 @@ VERSION="${VERSION:-2.4.0}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/phibus-dev/s3-performance-test-web}"
 IMAGE_DIGEST="${IMAGE_DIGEST:-}"
 SOAK_SECONDS="${SOAK_SECONDS:-60}"
+EXPECTED_LATEST_MIGRATION="${EXPECTED_LATEST_MIGRATION:-24}"
+EXPECT_DURABLE_AGENT_REGISTRY="${EXPECT_DURABLE_AGENT_REGISTRY:-false}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-post-release-smoke-logs}"
 
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
@@ -13,6 +15,14 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
 fi
 if ! [[ "$SOAK_SECONDS" =~ ^[0-9]+$ ]] || (( SOAK_SECONDS < 10 || SOAK_SECONDS > 3600 )); then
   echo "SOAK_SECONDS must be an integer between 10 and 3600" >&2
+  exit 2
+fi
+if ! [[ "$EXPECTED_LATEST_MIGRATION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "EXPECTED_LATEST_MIGRATION must be a positive integer" >&2
+  exit 2
+fi
+if [[ "$EXPECT_DURABLE_AGENT_REGISTRY" != "true" && "$EXPECT_DURABLE_AGENT_REGISTRY" != "false" ]]; then
+  echo "EXPECT_DURABLE_AGENT_REGISTRY must be true or false" >&2
   exit 2
 fi
 if [[ -n "$IMAGE_DIGEST" && ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -116,6 +126,27 @@ wait_for_agent() {
     fi
     sleep 2
   done
+}
+
+agent_last_seen() {
+  local agent_id="$1"
+  curl -fsS "$COORDINATOR_URL/api/agents" \
+    | jq -er --arg agent_id "$agent_id" \
+      '.[] | select((.id | tostring) == $agent_id) | .lastSeenAt'
+}
+
+wait_for_fresh_agent_heartbeat() {
+  local agent_id="$1" previous_last_seen="$2"
+  local deadline=$((SECONDS + 120)) current_last_seen
+  while (( SECONDS < deadline )); do
+    current_last_seen="$(agent_last_seen "$agent_id" 2>/dev/null || true)"
+    if [[ -n "$current_last_seen" && "$current_last_seen" != "$previous_last_seen" ]] && agent_is_online; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Agent $agent_id did not publish a fresh heartbeat" >&2
+  return 1
 }
 
 start_coordinator() {
@@ -228,8 +259,9 @@ APPLIED_MIGRATIONS="$(docker exec "$POSTGRES_CONTAINER" psql -U s3perf -d s3perf
   "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE")"
 LATEST_MIGRATION="$(docker exec "$POSTGRES_CONTAINER" psql -U s3perf -d s3perf -Atc \
   "SELECT version FROM flyway_schema_history WHERE success = TRUE ORDER BY installed_rank DESC LIMIT 1")"
-if (( APPLIED_MIGRATIONS < 24 )) || [[ "$LATEST_MIGRATION" != "24" ]]; then
-  echo "Expected at least 24 successful migrations through V24; got $APPLIED_MIGRATIONS through V$LATEST_MIGRATION" >&2
+if (( APPLIED_MIGRATIONS < EXPECTED_LATEST_MIGRATION )) \
+    || [[ "$LATEST_MIGRATION" != "$EXPECTED_LATEST_MIGRATION" ]]; then
+  echo "Expected migrations through V$EXPECTED_LATEST_MIGRATION; got $APPLIED_MIGRATIONS through V$LATEST_MIGRATION" >&2
   exit 1
 fi
 
@@ -267,6 +299,7 @@ start_agent
 wait_for_agent
 AGENT_ID="$(curl -fsS "$COORDINATOR_URL/api/agents" \
   | jq -er '.[] | select(.name == "release-smoke-agent") | .id')"
+AGENT_LAST_SEEN="$(agent_last_seen "$AGENT_ID")"
 
 log "Restarting coordinator and waiting for agent re-registration"
 capture_container "$COORDINATOR_CONTAINER" coordinator-before-restart
@@ -276,7 +309,12 @@ wait_for_readiness
 wait_for_agent
 AGENT_ID_AFTER_COORDINATOR_RESTART="$(curl -fsS "$COORDINATOR_URL/api/agents" \
   | jq -er '.[] | select(.name == "release-smoke-agent") | .id')"
-[[ "$AGENT_ID_AFTER_COORDINATOR_RESTART" != "$AGENT_ID" ]]
+if [[ "$EXPECT_DURABLE_AGENT_REGISTRY" == "true" ]]; then
+  [[ "$AGENT_ID_AFTER_COORDINATOR_RESTART" == "$AGENT_ID" ]]
+  wait_for_fresh_agent_heartbeat "$AGENT_ID" "$AGENT_LAST_SEEN"
+else
+  [[ "$AGENT_ID_AFTER_COORDINATOR_RESTART" != "$AGENT_ID" ]]
+fi
 SESSION="$(curl -fsS "$COORDINATOR_URL/api/session")"
 SECOND_STARTED_AT="$(jq -er '.startedAt' <<<"$SESSION")"
 [[ "$FIRST_STARTED_AT" != "$SECOND_STARTED_AT" ]]
@@ -286,6 +324,7 @@ MIGRATIONS_AFTER_RESTART="$(docker exec "$POSTGRES_CONTAINER" psql -U s3perf -d 
 [[ "$MIGRATIONS_AFTER_RESTART" == "$APPLIED_MIGRATIONS" ]]
 
 log "Restarting agent with its persisted identity"
+AGENT_LAST_SEEN_BEFORE_AGENT_RESTART="$(agent_last_seen "$AGENT_ID_AFTER_COORDINATOR_RESTART")"
 capture_container "$AGENT_CONTAINER" agent-before-restart
 docker rm -f "$AGENT_CONTAINER" >/dev/null
 start_agent
@@ -293,6 +332,7 @@ wait_for_agent
 AGENT_ID_AFTER_RESTART="$(curl -fsS "$COORDINATOR_URL/api/agents" \
   | jq -er '.[] | select(.name == "release-smoke-agent") | .id')"
 [[ "$AGENT_ID_AFTER_RESTART" == "$AGENT_ID_AFTER_COORDINATOR_RESTART" ]]
+wait_for_fresh_agent_heartbeat "$AGENT_ID_AFTER_RESTART" "$AGENT_LAST_SEEN_BEFORE_AGENT_RESTART"
 
 log "Running ${SOAK_SECONDS}s readiness and heartbeat soak"
 SOAK_DEADLINE=$((SECONDS + SOAK_SECONDS))
@@ -321,6 +361,7 @@ cat >"$ARTIFACT_DIR/summary.md" <<EOF
 - Flyway: $APPLIED_MIGRATIONS successful migrations, latest V$LATEST_MIGRATION
 - Coordinator version: $VERSION
 - Coordinator restart: passed
+- Durable Agent registry expected: $EXPECT_DURABLE_AGENT_REGISTRY
 - Agent registration and persisted identity restart: passed
 - X-Agent-Token valid/invalid checks: HTTP $GOOD_CODE / HTTP $BAD_CODE
 - Runtime and HikariCP metrics: present

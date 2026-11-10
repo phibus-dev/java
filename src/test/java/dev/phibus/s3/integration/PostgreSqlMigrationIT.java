@@ -52,9 +52,9 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(24);
+        assertThat(applied).isGreaterThanOrEqualTo(25);
 
-        for (String table : new String[]{"test_run", "test_schedule", "security_audit_event", "s3_profile",
+        for (String table : new String[]{"agent", "test_run", "test_schedule", "security_audit_event", "s3_profile",
                 "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
                 "clickhouse_replicated_scenario_run", "clickhouse_failover_run"}) {
             Boolean exists = jdbc.queryForObject(
@@ -71,6 +71,14 @@ class PostgreSqlMigrationIT {
                        'object_p99_latency_ms')
                 """, Integer.class);
         assertThat(latencyColumns).isEqualTo(10);
+
+        Integer durableAgentColumns = jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='agent'
+                   AND column_name IN ('agent_token_hash','enabled','desired_version','update_requested',
+                       'update_completed_at','management_changed_at')
+                """, Integer.class);
+        assertThat(durableAgentColumns).isEqualTo(6);
 
         DataSource dataSource = jdbc.getDataSource();
         assertThat(dataSource).isNotNull();

@@ -5,7 +5,8 @@ Java 21 / Spring Boot платформа для функционального, 
 > **Текущая версия:** `2.4.0`<br>
 > **Статус:** стабильный выпуск<br>
 > **Релизный тег:** `v2.4.0`<br>
-> **Последний стабильный релиз:** `2.4.0`
+> **Последний стабильный релиз:** `2.4.0`<br>
+> **Ветка разработки:** `2.5.0-SNAPSHOT` — см. [ROADMAP_2.5.md](ROADMAP_2.5.md)
 
 ## Что нового в 2.4.0
 
@@ -216,7 +217,7 @@ Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Акту
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.4.0.jar
+java -jar target/s3-multipart-uploader-2.5.0-SNAPSHOT.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.

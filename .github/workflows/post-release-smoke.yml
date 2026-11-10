@@ -15,6 +15,15 @@ on:
         description: Readiness and agent heartbeat soak duration
         required: true
         default: '180'
+      expected_latest_migration:
+        description: Expected latest Flyway migration number
+        required: true
+        default: '24'
+      durable_agent_registry:
+        description: Require Agent identity to survive Coordinator restart
+        required: true
+        type: boolean
+        default: false
   pull_request:
     branches:
       - main
@@ -38,6 +47,8 @@ jobs:
       VERSION: ${{ inputs.version || '2.4.0' }}
       IMAGE_DIGEST: ${{ inputs.image_digest || '' }}
       SOAK_SECONDS: ${{ inputs.soak_seconds || '60' }}
+      EXPECTED_LATEST_MIGRATION: ${{ inputs.expected_latest_migration || '24' }}
+      EXPECT_DURABLE_AGENT_REGISTRY: ${{ inputs.durable_agent_registry || 'false' }}
       IMAGE_REPOSITORY: ghcr.io/phibus-dev/s3-performance-test-web
       ARTIFACT_DIR: post-release-smoke-logs
 
