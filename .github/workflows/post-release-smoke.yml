@@ -1,0 +1,65 @@
+name: Post-release smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable release version without the v prefix
+        required: true
+        default: '2.4.0'
+      image_digest:
+        description: Optional immutable sha256 digest
+        required: false
+        default: ''
+      soak_seconds:
+        description: Readiness and agent heartbeat soak duration
+        required: true
+        default: '180'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/post-release-smoke.yml'
+      - 'scripts/post-release-smoke.sh'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: post-release-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version || '2.4.0' }}
+      IMAGE_DIGEST: ${{ inputs.image_digest || '' }}
+      SOAK_SECONDS: ${{ inputs.soak_seconds || '60' }}
+      IMAGE_REPOSITORY: ghcr.io/phibus-dev/s3-performance-test-web
+      ARTIFACT_DIR: post-release-smoke-logs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run post-release smoke
+        run: scripts/post-release-smoke.sh
+
+      - name: Upload smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-release-smoke-${{ env.VERSION }}-${{ github.run_attempt }}
+          path: post-release-smoke-logs
+          if-no-files-found: warn
+          retention-days: 30

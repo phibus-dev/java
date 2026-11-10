@@ -40,6 +40,11 @@
 
 ## Проверка после обновления
 
+Изолированную проверку опубликованного контейнера можно запустить workflow
+`Post-release smoke`. Для неизменяемой проверки передайте версию `2.4.0` и digest образа из
+release workflow. Проверка разворачивает временный PostgreSQL, Coordinator и Agent, проверяет
+Flyway V24, метрики, `X-Agent-Token`, восстановление после перезапуска и heartbeat soak.
+
 1. Выполните локальный и распределённый S3 multipart test; проверьте scope, sample count, API и object latency.
 2. Запустите Kafka Producer, Consumer/E2E, replication и failover smoke tests.
 3. Проверьте ClickHouse load test, replication/Keeper dashboard и доступность профилей.
