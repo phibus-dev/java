@@ -3,6 +3,7 @@ package dev.phibus.s3.test;
 import dev.phibus.s3.distributed.ApplicationMode;
 import dev.phibus.s3.history.HistoryRequestMetadataUpdater;
 import dev.phibus.s3.history.TestHistoryStore;
+import dev.phibus.s3.lifecycle.RunScope;
 import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.settings.S3ProfileService;
 import java.util.Comparator;
@@ -59,7 +60,8 @@ public class TestRunService {
         // effective connection settings, so AGENT mode never resolves profiles from PostgreSQL.
         TestRequest effectiveRequest = testType == TestType.S3 && applicationMode != ApplicationMode.AGENT
                 ? resolveProfile(request) : request;
-        TestRun run = new TestRun(effectiveRequest);
+        RunScope scope = applicationMode == ApplicationMode.AGENT ? RunScope.DISTRIBUTED : RunScope.LOCAL;
+        TestRun run = new TestRun(testType, scope, effectiveRequest);
         runs.put(run.id(), run);
         try {
             resources.submit(testExecutor, testType.name(), run.id(), run::deadlineExceeded,

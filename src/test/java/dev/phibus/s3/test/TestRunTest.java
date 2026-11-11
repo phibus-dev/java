@@ -1,5 +1,6 @@
 package dev.phibus.s3.test;
 
+import dev.phibus.s3.lifecycle.RunScope;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,9 @@ class TestRunTest {
         assertEquals("bucket", snapshot.bucket());
         assertEquals("MULTIPART_PART", snapshot.latencyScope());
         assertEquals(2, snapshot.latencySampleCount());
+        assertEquals(TestType.S3, snapshot.testType());
+        assertEquals(RunScope.LOCAL, snapshot.scope());
+        assertTrue(snapshot.updatedAt().compareTo(snapshot.createdAt()) >= 0);
     }
 
     @Test
@@ -68,6 +72,7 @@ class TestRunTest {
         run.partCompleted(new PartResult(1, 1, 1024, 10, 1, "late", "SUCCESS", null));
         assertTrue(run.isCancelled());
         assertEquals(TestStatus.CANCELLED, run.snapshot().status());
+        assertEquals("USER_CANCELLED", run.snapshot().stopReason());
         assertEquals(0, run.snapshot().completedParts());
     }
 

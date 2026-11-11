@@ -6,11 +6,14 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.settings.BootstrapSecretCodec;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.ReloadableHikariDataSource;
 import dev.phibus.s3.settings.S3ProfileService;
 import dev.phibus.s3.settings.SettingsService;
+import dev.phibus.s3.test.TestRequest;
+import dev.phibus.s3.test.TestRun;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -133,6 +136,27 @@ class PostgreSqlMigrationIT {
 
         assertThat(jdbc.queryForObject(
                 "select count(*) from part_result where test_run_id=?", Integer.class, id)).isEqualTo(2);
+    }
+
+    @Test
+    void localRunPersistsItsActualStopReason() {
+        SettingsService settings = mock(SettingsService.class);
+        when(settings.load()).thenReturn(new BootstrapSettings(
+                new BootstrapSettings.PostgreSqlSettings(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()),
+                null, null, null));
+        BootstrapSecretCodec codec = mock(BootstrapSecretCodec.class);
+        when(codec.decrypt(POSTGRES.getPassword())).thenReturn(POSTGRES.getPassword());
+        TestHistoryStore history = new TestHistoryStore(settings, codec);
+        TestRun run = new TestRun(new TestRequest("http://s3:9000", "bucket", "us-east-1", null, null,
+                true, "cancelled.bin", 5, 5, 1, 1, false, "UPLOAD"));
+
+        run.cancel();
+        history.save(run.snapshot());
+
+        assertThat(jdbc.queryForObject("select stop_reason from test_run where id=?", String.class, run.id()))
+                .isEqualTo("USER_CANCELLED");
+        assertThat(history.get(run.id()).stopReason()).isEqualTo("USER_CANCELLED");
     }
 
     @Test

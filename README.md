@@ -117,6 +117,20 @@ java -jar evo-snt-s3-2.4.0.jar
 
 Старые адреса с `.html` перенаправляются на канонические маршруты.
 
+### Единый API жизненного цикла запусков
+
+Coordinator предоставляет нормализованное read-only представление локальных S3, ClickHouse, Kafka
+и распределённых запусков, не заменяя существующие специализированные API:
+
+```text
+GET /api/runs
+GET /api/runs/{id}
+```
+
+Список поддерживает параметры `scope=LOCAL|DISTRIBUTED`, `testType=S3|CLICKHOUSE|KAFKA`,
+`status`, полнотекстовый параметр `q` и `limit` от 1 до 500. Ответ использует общие поля
+`status`, `createdAt`, `startedAt`, `updatedAt`, `finishedAt`, `stopReason`, метрики и `detailsUrl`.
+
 ## Bootstrap и секреты
 
 Приложение запускается, если bootstrap-файл отсутствует, пуст или содержит только пробелы. Перед заменой существующей конфигурации создаётся backup в каталоге `config/backups`.
