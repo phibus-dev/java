@@ -15,8 +15,8 @@
   function breadcrumbDefinition(path) {
     const exact = {
       '/tasks': [['S3', '/tasks'], ['Задания']],
-      '/history': [['S3', '/tasks'], ['История']],
-      '/history/compare': [['S3', '/tasks'], ['История', '/history'], ['Сравнение запусков']],
+      '/history': [['История']],
+      '/history/compare': [['История', '/history'], ['Сравнение S3-запусков']],
       '/schedules': [['S3', '/tasks'], ['Расписания']],
       '/baselines': [['S3', '/tasks'], ['Baselines']],
       '/settings/s3-profiles': [['S3', '/tasks'], ['Профили']],
@@ -43,7 +43,8 @@
       '/error': [['Ошибка']]
     };
     if (exact[path]) return exact[path];
-    if (/^\/history\/[^/]+$/.test(path)) return [['S3', '/tasks'], ['История', '/history'], ['Детали запуска']];
+    if (/^\/run-history\/[^/]+$/.test(path)) return [['История', '/history'], ['Результат запуска']];
+    if (/^\/history\/[^/]+$/.test(path)) return [['История', '/history'], ['Специализированный отчёт S3']];
     if (/^\/clickhouse\/history\/[^/]+$/.test(path)) return [['ClickHouse', '/clickhouse'], ['Тесты и история', '/clickhouse'], ['Результат теста']];
     if (/^\/clickhouse\/replicated-tests\/history\/[^/]+$/.test(path)) {
       return [['ClickHouse', '/clickhouse'], ['Replicated tests', '/clickhouse/replicated-tests'], ['Результат теста']];

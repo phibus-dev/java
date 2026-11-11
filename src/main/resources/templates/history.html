@@ -1,16 +1,126 @@
 <!doctype html>
-<html lang="ru" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>История S3 — ЭВО.СНТ</title><th:block th:replace="~{fragments/layout :: headAssets}"></th:block></head>
-<body><main class="container"><header th:replace="~{fragments/layout :: header(title='История S3', subtitle='Отчёты, сравнение запусков и тренды производительности.')}"></header><nav th:replace="~{fragments/layout :: primaryNav(active='s3')}"></nav><nav th:replace="~{fragments/layout :: s3Nav(active='history')}"></nav>
-<section class="panel"><form method="get" action="/history"><div class="filters">
-<label>Поиск<input name="q" th:value="${filter.query}" placeholder="endpoint, bucket, object key"></label>
-<label>Операция<select name="operation"><option value="">Все</option><option th:each="op : ${ {'UPLOAD','DOWNLOAD','HEAD','LIST','DELETE','LIFECYCLE','MIXED'} }" th:value="${op}" th:text="${op}" th:selected="${op == filter.operation}"></option></select></label>
-<label>Статус<select name="status"><option value="">Все</option><option th:each="s : ${ {'COMPLETED','FAILED','CANCELLED'} }" th:value="${s}" th:text="${s}" th:selected="${s == filter.status}"></option></select></label>
-<label>Endpoint<input name="endpoint" th:value="${filter.endpoint}"></label><label>Bucket<input name="bucket" th:value="${filter.bucket}"></label>
-</div><div class="actions"><button type="submit">Применить</button><a class="button secondary" href="/history">Сбросить</a></div></form></section>
-<section class="panel"><div class="title-row"><h2>Запуски</h2><span th:text="${result.totalElements + ' записей'}"></span></div>
-<div class="table-wrap"><table><thead><tr><th></th><th>Создан</th><th>Инициатор теста</th><th>Операция</th><th>Статус</th><th>Endpoint / Bucket</th><th>Объект</th><th>Throughput</th><th>p95 / scope</th><th>Ошибки</th><th>Действия</th></tr></thead><tbody>
-<tr th:each="run : ${result.items}"><td><input type="checkbox" class="compare-id" th:value="${run.id}"></td><td th:text="${run.createdAt}"></td><td th:text="${run.initiator}"></td><td th:text="${run.operation}"></td><td th:text="${run.status}"></td><td th:text="${run.endpoint + ' / ' + run.bucket}"></td><td th:text="${run.objectKey}"></td><td th:text="${#numbers.formatDecimal(run.averageSpeedMiBps,1,2) + ' MiB/s'}"></td><td><span th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1) + ' ms'}"></span><br><small class="muted" th:text="${run.latencyScope}"></small></td><td th:text="${run.failedParts}"></td><td class="actions-inline"><a th:href="@{/history/{id}(id=${run.id})}">Открыть</a><span class="baseline" th:if="${run.baseline}">Baseline</span></td></tr>
-</tbody></table></div><div class="actions"><button type="button" id="compare-selected">Сравнить 2 запуска</button><button type="button" id="build-trends" class="secondary">Построить тренды (2–20)</button></div>
-<div class="pager"><a th:if="${result.page > 0}" th:href="@{/history(page=${result.page-1},status=${filter.status},operation=${filter.operation},endpoint=${filter.endpoint},bucket=${filter.bucket},q=${filter.query})}">← Назад</a><span th:text="${'Страница ' + (result.page+1) + ' из ' + (result.totalPages == 0 ? 1 : result.totalPages)}"></span><a th:if="${result.page+1 < result.totalPages}" th:href="@{/history(page=${result.page+1},status=${filter.status},operation=${filter.operation},endpoint=${filter.endpoint},bucket=${filter.bucket},q=${filter.query})}">Вперёд →</a></div></section>
-<section class="panel" id="trend-panel" hidden><div class="title-row"><div><h2>Тренды производительности</h2><p class="muted">Интерактивные графики с сеткой, шкалами, единицами измерения и детализацией при наведении.</p></div></div><p id="trend-warning" class="warning"></p><div id="trend-summary" class="trend-summary"></div><div class="trend-grid"><div class="trend-chart-card"><h3>Throughput</h3><canvas id="throughput-chart" aria-label="Тренд Throughput"></canvas></div><div class="trend-chart-card"><h3>Operations/sec</h3><canvas id="ops-chart" aria-label="Тренд Operations per second"></canvas></div><div class="trend-chart-card"><h3>Latency записанного шага p50 / p95 / p99</h3><canvas id="latency-chart" aria-label="Тренд latency записанного шага"></canvas></div><div class="trend-chart-card"><h3>Ошибки</h3><canvas id="errors-chart" aria-label="Тренд ошибок"></canvas></div></div><div class="table-wrap"><table><thead><tr><th>Время</th><th>Операция</th><th>Scope</th><th>MiB/s</th><th>OPS</th><th>p50</th><th>p95</th><th>p99</th><th>Ошибки</th></tr></thead><tbody id="trend-table"></tbody></table></div></section>
-<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block><script src="/performance-chart.js"></script><script src="/history-trends.js"></script></body></html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>История запусков — ЭВО.СНТ</title>
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
+</head>
+<body>
+<main class="container">
+  <header th:replace="~{fragments/layout :: header(title='История запусков', subtitle='Локальные и распределённые S3, ClickHouse и Kafka тесты.')}"></header>
+  <nav th:replace="~{fragments/layout :: primaryNav(active='history')}"></nav>
+
+  <section class="panel">
+    <form method="get" action="/history">
+      <div class="filters">
+        <label>Поиск
+          <input name="q" th:value="${filter.query}" placeholder="ID, название, операция, объект">
+        </label>
+        <label>Контур
+          <select name="scope">
+            <option value="">Все</option>
+            <option value="LOCAL" th:selected="${filter.scope != null and filter.scope.name() == 'LOCAL'}">Локальный</option>
+            <option value="DISTRIBUTED" th:selected="${filter.scope != null and filter.scope.name() == 'DISTRIBUTED'}">Распределённый</option>
+          </select>
+        </label>
+        <label>Тип теста
+          <select name="testType">
+            <option value="">Все</option>
+            <option value="S3" th:selected="${filter.testType != null and filter.testType.name() == 'S3'}">S3</option>
+            <option value="CLICKHOUSE" th:selected="${filter.testType != null and filter.testType.name() == 'CLICKHOUSE'}">ClickHouse</option>
+            <option value="KAFKA" th:selected="${filter.testType != null and filter.testType.name() == 'KAFKA'}">Kafka</option>
+          </select>
+        </label>
+        <label>Статус
+          <select name="status">
+            <option value="">Все</option>
+            <option th:each="state : ${ {'QUEUED','RUNNING','COMPLETED','COMPLETED_WITH_ERRORS','FAILED','CANCELLED'} }"
+                    th:value="${state}" th:text="${state}"
+                    th:selected="${filter.status != null and filter.status.name() == state}"></option>
+          </select>
+        </label>
+        <label>Создан после, UTC
+          <input type="datetime-local" name="from" th:value="${fromValue}">
+        </label>
+        <label>Создан до, UTC
+          <input type="datetime-local" name="to" th:value="${toValue}">
+        </label>
+      </div>
+      <div class="actions">
+        <button type="submit">Применить</button>
+        <a class="button secondary" href="/history">Сбросить</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="title-row">
+      <div>
+        <h2>Все запуски</h2>
+        <p class="muted">Распределённые результаты дедуплицированы и показываются одной агрегированной записью.</p>
+      </div>
+      <span th:text="${result.totalElements + ' записей'}"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Создан</th><th>Контур / тип</th><th>Название</th><th>Статус</th><th>Цель</th><th>Операции</th><th>Throughput</th><th>p95 / scope</th><th>Ошибки</th><th>Причина</th><th>Действия</th></tr></thead>
+        <tbody>
+        <tr th:each="run : ${result.items}">
+          <td><input th:if="${run.s3AnalyticsCompatible}" type="checkbox" class="compare-id" th:value="${run.id}" aria-label="Выбрать S3-запуск для сравнения"></td>
+          <td><a th:href="@{/run-history/{id}(id=${run.id})}" th:text="${run.createdAt}"></a></td>
+          <td><span class="badge" th:text="${run.scope}"></span><br><small th:text="${run.testType}"></small></td>
+          <td><strong th:text="${run.name}"></strong><br><small class="muted" th:text="${run.operation}"></small></td>
+          <td th:text="${run.status}"></td>
+          <td th:text="${run.target}"></td>
+          <td th:text="${run.completedOperations}"></td>
+          <td th:text="${#numbers.formatDecimal(run.throughputMiBps,1,2)+' MiB/s'}"></td>
+          <td><span th:text="${#numbers.formatDecimal(run.p95LatencyMs,1,1)+' ms'}"></span><br><small class="muted" th:text="${run.latencyScope}"></small></td>
+          <td th:text="${run.errors}"></td>
+          <td th:text="${run.stopReason == null ? '—' : run.stopReason}"></td>
+          <td class="actions-inline">
+            <a th:href="@{/run-history/{id}(id=${run.id})}">Открыть</a>
+            <a th:if="${run.sourceDetailUrl != null}" th:href="${run.sourceDetailUrl}">Отчёт</a>
+            <button th:if="${run.rerunnable}" type="button" class="secondary rerun-run" data-min-role="OPERATOR" th:attr="data-run-id=${run.id}">Повторить</button>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <p id="rerun-result" class="muted" role="status" aria-live="polite"></p>
+    <div class="actions">
+      <button type="button" id="compare-selected">Сравнить 2 S3-запуска</button>
+      <button type="button" id="build-trends" class="secondary">Тренды S3 (2–20)</button>
+    </div>
+    <p class="muted">Сравнение и тренды пока доступны для совместимых локальных S3-запусков; повторный запуск поддерживается для всех типов.</p>
+    <div class="pager">
+      <a th:if="${result.page > 0}" th:href="@{/history(page=${result.page-1},scope=${filter.scope},testType=${filter.testType},status=${filter.status},q=${filter.query},from=${fromValue},to=${toValue})}">← Назад</a>
+      <span th:text="${'Страница '+(result.page+1)+' из '+(result.totalPages == 0 ? 1 : result.totalPages)}"></span>
+      <a th:if="${result.page+1 < result.totalPages}" th:href="@{/history(page=${result.page+1},scope=${filter.scope},testType=${filter.testType},status=${filter.status},q=${filter.query},from=${fromValue},to=${toValue})}">Вперёд →</a>
+    </div>
+  </section>
+
+  <section class="panel" id="trend-panel" hidden>
+    <div class="title-row"><div><h2>Тренды производительности S3</h2><p class="muted">Интерактивные графики для выбранных совместимых локальных S3-запусков.</p></div></div>
+    <p id="trend-warning" class="warning"></p>
+    <div id="trend-summary" class="trend-summary"></div>
+    <div class="trend-grid">
+      <div class="trend-chart-card"><h3>Throughput</h3><canvas id="throughput-chart" aria-label="Тренд Throughput"></canvas></div>
+      <div class="trend-chart-card"><h3>Operations/sec</h3><canvas id="ops-chart" aria-label="Тренд Operations per second"></canvas></div>
+      <div class="trend-chart-card"><h3>Latency p50 / p95 / p99</h3><canvas id="latency-chart" aria-label="Тренд latency"></canvas></div>
+      <div class="trend-chart-card"><h3>Ошибки</h3><canvas id="errors-chart" aria-label="Тренд ошибок"></canvas></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Время</th><th>Операция</th><th>Scope</th><th>MiB/s</th><th>OPS</th><th>p50</th><th>p95</th><th>p99</th><th>Ошибки</th></tr></thead><tbody id="trend-table"></tbody></table></div>
+  </section>
+
+  <footer th:replace="~{fragments/layout :: footer}"></footer>
+</main>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
+<script src="/csrf-fetch.js"></script>
+<script src="/performance-chart.js"></script>
+<script src="/history-trends.js"></script>
+<script src="/run-history.js"></script>
+</body>
+</html>

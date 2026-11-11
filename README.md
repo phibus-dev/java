@@ -92,7 +92,7 @@ java -jar evo-snt-s3-2.4.0.jar
 
 ```text
 /tasks                       задания, запуск и локальные шаблоны
-/history                     история, сравнение и тренды
+/history                     общая история S3, ClickHouse и Kafka, фильтры и повтор запуска
 /monitoring                  Health Dashboard
 /agents                      управление агентами
 /distributed-tests           распределённые тесты
@@ -130,6 +130,22 @@ GET /api/runs/{id}
 Список поддерживает параметры `scope=LOCAL|DISTRIBUTED`, `testType=S3|CLICKHOUSE|KAFKA`,
 `status`, полнотекстовый параметр `q` и `limit` от 1 до 500. Ответ использует общие поля
 `status`, `createdAt`, `startedAt`, `updatedAt`, `finishedAt`, `stopReason`, метрики и `detailsUrl`.
+
+### Единая история запусков
+
+Долговременная история объединяет локальные и распределённые результаты, но сохраняет старые
+специализированные S3/ClickHouse API и детальные отчёты:
+
+```text
+GET  /api/run-history
+GET  /api/run-history/{id}
+POST /api/run-history/{id}/rerun
+```
+
+Для списка доступны `scope`, `testType`, `status`, `q`, `from`, `to`, `page` и `size`.
+Распределённый прогон возвращается одной агрегированной записью; его служебные результаты в
+историях отдельных движков не дублируются. Повтор разрешён только для терминального прогона,
+если профиль и безопасная конфигурация были сохранены. Интерфейс находится на `/history`.
 
 ## Bootstrap и секреты
 

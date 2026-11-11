@@ -144,6 +144,28 @@ class DistributedTestHistoryTest {
         assertThat(completed.stopReason()).isEqualTo("ERROR");
     }
 
+    @Test
+    void repeatsCompletedRunWithTheSameAgentsAndSafeRequest() {
+        AgentRegistry registry = new AgentRegistry("registration-secret");
+        AgentRegistry.RegistrationResult agent = register(registry, "agent-a");
+        DistributedTestService service = new DistributedTestService(registry, mock(ClickHouseProfileService.class),
+                mock(ClickHouseHistoryStore.class), mock(TestHistoryStore.class), mock(KafkaProfileService.class));
+        TestRequest request = new TestRequest("http://s3", "bucket", "us-east-1", null, null,
+                true, "object.bin", 10, 5, 2, 1, false, "UPLOAD");
+        DistributedTestService.DistributedRunView first = service.create(
+                new DistributedTestService.CreateDistributedTestRequest("repeatable", List.of(agent.agentId()), request));
+        service.report(agent.agentId(), agent.agentToken(), statistics(first.id(), 1, 10));
+
+        DistributedTestService.DistributedRunView repeated = service.rerun(first.id());
+
+        assertThat(repeated.id()).isNotEqualTo(first.id());
+        assertThat(repeated.name()).isEqualTo("repeatable");
+        assertThat(repeated.testRequest()).isEqualTo(request);
+        assertThat(repeated.agents()).extracting(DistributedTestService.AgentProgress::agentId)
+                .containsExactly(agent.agentId());
+        assertThat(repeated.status()).isEqualTo("RUNNING");
+    }
+
     private static AgentRegistry.RegistrationResult register(AgentRegistry registry, String name) {
         return registry.register(new AgentRegistry.RegistrationRequest(name, name + "-host", "http://" + name,
                 "2.4.0", 4, 1024, Map.of("capabilities", "S3")), "registration-secret");

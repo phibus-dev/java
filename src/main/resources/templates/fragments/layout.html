@@ -28,6 +28,7 @@
   <a href="/clickhouse" th:attr="aria-current=${active == 'clickhouse'} ? 'page' : null">ClickHouse</a>
   <a href="/kafka" th:attr="aria-current=${active == 'kafka'} ? 'page' : null">Kafka</a>
   <a href="/distributed-tests" th:attr="aria-current=${active == 'distributed'} ? 'page' : null">Распределённые тесты</a>
+  <a href="/history" th:attr="aria-current=${active == 'history'} ? 'page' : null">История</a>
   <a href="/agents" data-min-role="ADMIN" th:attr="aria-current=${active == 'agents'} ? 'page' : null">Агенты</a>
   <a href="/monitoring" th:attr="aria-current=${active == 'monitoring'} ? 'page' : null">Мониторинг</a>
   <a href="/settings" data-min-role="ADMIN" th:attr="aria-current=${active == 'settings'} ? 'page' : null">Настройки</a>
@@ -35,7 +36,7 @@
 
 <nav th:fragment="s3Nav(active)" class="corporate-nav section-nav" aria-label="Разделы S3">
   <a href="/tasks" th:attr="aria-current=${active == 'tasks'} ? 'page' : null">Задания</a>
-  <a href="/history" th:attr="aria-current=${active == 'history'} ? 'page' : null">История</a>
+  <a href="/history?scope=LOCAL&amp;testType=S3" th:attr="aria-current=${active == 'history'} ? 'page' : null">История S3</a>
   <a href="/schedules" th:attr="aria-current=${active == 'schedules'} ? 'page' : null">Расписания</a>
   <a href="/baselines" th:attr="aria-current=${active == 'baselines'} ? 'page' : null">Baselines</a>
   <a href="/settings/s3-profiles" data-min-role="ADMIN" th:attr="aria-current=${active == 'profiles'} ? 'page' : null">Профили</a>

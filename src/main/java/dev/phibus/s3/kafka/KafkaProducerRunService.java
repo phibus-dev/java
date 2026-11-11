@@ -146,6 +146,74 @@ public class KafkaProducerRunService {
                 rs.getLong("error_count"), rs.getLong("retry_count"), rs.getString("error_message")), safeLimit);
     }
 
+    public Snapshot rerun(UUID id, String initiator) {
+        return start(historyRequest(id), initiator);
+    }
+
+    public ProducerRequest historyRequest(UUID id) {
+        List<ProducerRequest> rows = jdbc.query("""
+                SELECT profile_id, topic, message_size_bytes, requested_messages, producer_threads, config_json
+                  FROM kafka_test_run
+                 WHERE id = ?
+                """, (result, row) -> requestFromHistory(result.getObject("profile_id", UUID.class),
+                result.getString("topic"), result.getInt("message_size_bytes"),
+                result.getLong("requested_messages"), result.getInt("producer_threads"),
+                result.getString("config_json")), id);
+        if (rows.isEmpty()) throw new IllegalArgumentException("Kafka history entry not found: " + id);
+        ProducerRequest request = rows.getFirst();
+        if (request.profileId() == null) {
+            throw new IllegalStateException("Kafka profile is missing for history entry: " + id);
+        }
+        if (request.messageCount() < 1) {
+            throw new IllegalStateException("Kafka message count is missing for history entry: " + id);
+        }
+        return request;
+    }
+
+    static ProducerRequest requestFromHistory(UUID profileId, String topic, int messageSizeBytes,
+                                              long messageCount, int producerThreads, String configText) {
+        Map<String, String> config = parseConfig(configText);
+        return new ProducerRequest(profileId, topic, messageSizeBytes, messageCount, producerThreads,
+                config.getOrDefault("acks", "all"), config.getOrDefault("compression", "none"),
+                intValue(config, "batchSize", 16_384), longValue(config, "lingerMs", 5),
+                booleanValue(config, "idempotence", true), longValue(config, "targetMessagesPerSec", 0),
+                intValue(config, "maxInFlightMessages", DEFAULT_MAX_IN_FLIGHT_MESSAGES));
+    }
+
+    private static Map<String, String> parseConfig(String value) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (value == null || value.isBlank()) return result;
+        for (String entry : value.split(";")) {
+            int separator = entry.indexOf('=');
+            if (separator > 0) result.put(entry.substring(0, separator).trim(), entry.substring(separator + 1).trim());
+        }
+        return result;
+    }
+
+    private static int intValue(Map<String, String> config, String key, int fallback) {
+        try {
+            return Integer.parseInt(config.getOrDefault(key, Integer.toString(fallback)));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static long longValue(Map<String, String> config, String key, long fallback) {
+        try {
+            return Long.parseLong(config.getOrDefault(key, Long.toString(fallback)));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static boolean booleanValue(Map<String, String> config, String key, boolean fallback) {
+        String value = config.get(key);
+        if (value == null) return fallback;
+        if ("true".equalsIgnoreCase(value)) return true;
+        if ("false".equalsIgnoreCase(value)) return false;
+        return fallback;
+    }
+
     public List<Snapshot> recent(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
         Map<UUID, Snapshot> snapshots = new LinkedHashMap<>();
