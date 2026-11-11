@@ -1,5 +1,6 @@
 package dev.phibus.s3.test;
 
+import dev.phibus.s3.lifecycle.RunScope;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -20,6 +21,8 @@ public final class TestRun {
 
     private final UUID id = UUID.randomUUID();
     private final TestRequest request;
+    private final TestType testType;
+    private final RunScope scope;
     private final Instant createdAt = Instant.now();
     private final int maxRetainedDetails;
     private final AtomicBoolean cancelled = new AtomicBoolean();
@@ -52,10 +55,20 @@ public final class TestRun {
     private volatile String stopReason = "NORMAL";
 
     public TestRun(TestRequest request) {
-        this(request, DEFAULT_MAX_RETAINED_DETAILS);
+        this(TestType.S3, RunScope.LOCAL, request, DEFAULT_MAX_RETAINED_DETAILS);
     }
 
     TestRun(TestRequest request, int maxRetainedDetails) {
+        this(TestType.S3, RunScope.LOCAL, request, maxRetainedDetails);
+    }
+
+    TestRun(TestType testType, RunScope scope, TestRequest request) {
+        this(testType, scope, request, DEFAULT_MAX_RETAINED_DETAILS);
+    }
+
+    TestRun(TestType testType, RunScope scope, TestRequest request, int maxRetainedDetails) {
+        this.testType = testType;
+        this.scope = scope;
         this.request = request;
         this.maxRetainedDetails = Math.max(1, maxRetainedDetails);
     }
@@ -244,6 +257,7 @@ public final class TestRun {
         List<Long> window;
         synchronized (recentLatenciesMs) { window = new ArrayList<>(recentLatenciesMs); }
         window.sort(Comparator.naturalOrder());
+        Instant updatedAt = finishedAt != null ? finishedAt : startedAt != null ? Instant.now() : createdAt;
         return new Snapshot(id, status, createdAt, startedAt, finishedAt, request.endpoint(), request.bucket(),
                 request.region(), request.objectKey(), request.normalizedOperation(), request.normalizedExecutionMode(),
                 request.effectiveDurationSeconds(), request.effectiveWarmupSeconds(), elapsedMillis, remainingMillis,
@@ -258,7 +272,7 @@ public final class TestRun {
                 histogramPercentile(apiRequestLatencyHistogram, 99), objectOperations.get(),
                 histogramPercentile(objectOperationLatencyHistogram, 50),
                 histogramPercentile(objectOperationLatencyHistogram, 95),
-                histogramPercentile(objectOperationLatencyHistogram, 99));
+                histogramPercentile(objectOperationLatencyHistogram, 99), testType, scope, updatedAt);
     }
 
     private double rollingSpeed(long nowNanos) {
@@ -306,5 +320,6 @@ public final class TestRun {
                            long apiRequestCount, double apiRequestP50LatencyMs, double apiRequestP95LatencyMs,
                            double apiRequestP99LatencyMs, long objectOperationCount,
                            double objectP50LatencyMs, double objectP95LatencyMs,
-                           double objectP99LatencyMs) { }
+                           double objectP99LatencyMs, TestType testType, RunScope scope,
+                           Instant updatedAt) { }
 }

@@ -61,7 +61,8 @@ public class TestHistoryStore {
                     total_parts=excluded.total_parts, average_speed_mibps=excluded.average_speed_mibps,
                     p50_latency_ms=excluded.p50_latency_ms, p95_latency_ms=excluded.p95_latency_ms,
                     p99_latency_ms=excluded.p99_latency_ms, successful_parts=excluded.successful_parts,
-                    failed_parts=excluded.failed_parts, message=excluded.message, initiator=excluded.initiator,
+                    failed_parts=excluded.failed_parts, message=excluded.message,
+                    stop_reason=excluded.stop_reason, initiator=excluded.initiator,
                     latency_scope=excluded.latency_scope, latency_sample_count=excluded.latency_sample_count
                 """;
         TestRequest request = result.request();
@@ -82,7 +83,7 @@ public class TestHistoryStore {
             ps.setString(i++, request.normalizedExecutionMode());
             ps.setLong(i++, request.effectiveDurationSeconds());
             ps.setLong(i++, request.effectiveWarmupSeconds());
-            ps.setString(i++, "FAILED".equals(result.status()) ? "ERROR" : "NORMAL");
+            ps.setString(i++, distributedStopReason(result.status()));
             ps.setLong(i++, request.totalBytes());
             ps.setLong(i++, result.bytesTransferred());
             ps.setLong(i++, completed);
@@ -117,7 +118,7 @@ public class TestHistoryStore {
                 select id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                        object_key, total_bytes, bytes_transferred, average_speed_mibps,
                        p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts,
-                       failed_parts, cleanup_successful, message, initiator, latency_scope,
+                       failed_parts, cleanup_successful, message, stop_reason, initiator, latency_scope,
                        latency_sample_count, api_request_count, api_request_p50_latency_ms,
                        api_request_p95_latency_ms, api_request_p99_latency_ms, object_operation_count,
                        object_p50_latency_ms, object_p95_latency_ms, object_p99_latency_ms
@@ -144,7 +145,7 @@ public class TestHistoryStore {
                 select id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                        object_key, total_bytes, bytes_transferred, average_speed_mibps,
                        p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts,
-                       failed_parts, cleanup_successful, message, initiator, latency_scope,
+                       failed_parts, cleanup_successful, message, stop_reason, initiator, latency_scope,
                        latency_sample_count, api_request_count, api_request_p50_latency_ms,
                        api_request_p95_latency_ms, api_request_p99_latency_ms, object_operation_count,
                        object_p50_latency_ms, object_p95_latency_ms, object_p99_latency_ms
@@ -185,11 +186,11 @@ public class TestHistoryStore {
                 insert into test_run (id, status, created_at, started_at, finished_at, endpoint, bucket, region,
                     object_key, total_bytes, bytes_transferred, completed_parts, total_parts, average_speed_mibps,
                     p50_latency_ms, p95_latency_ms, p99_latency_ms, successful_parts, failed_parts,
-                    delete_after_test, cleanup_successful, message, latency_scope, latency_sample_count,
+                    delete_after_test, cleanup_successful, message, stop_reason, latency_scope, latency_sample_count,
                     api_request_count, api_request_p50_latency_ms, api_request_p95_latency_ms,
                     api_request_p99_latency_ms, object_operation_count, object_p50_latency_ms,
                     object_p95_latency_ms, object_p99_latency_ms)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (id) do update set
                     status = excluded.status, started_at = excluded.started_at, finished_at = excluded.finished_at,
                     bytes_transferred = excluded.bytes_transferred, completed_parts = excluded.completed_parts,
@@ -197,7 +198,8 @@ public class TestHistoryStore {
                     p50_latency_ms = excluded.p50_latency_ms, p95_latency_ms = excluded.p95_latency_ms,
                     p99_latency_ms = excluded.p99_latency_ms, successful_parts = excluded.successful_parts,
                     failed_parts = excluded.failed_parts, cleanup_successful = excluded.cleanup_successful,
-                    message = excluded.message, latency_scope = excluded.latency_scope,
+                    message = excluded.message, stop_reason = excluded.stop_reason,
+                    latency_scope = excluded.latency_scope,
                     latency_sample_count = excluded.latency_sample_count,
                     api_request_count = excluded.api_request_count,
                     api_request_p50_latency_ms = excluded.api_request_p50_latency_ms,
@@ -232,6 +234,7 @@ public class TestHistoryStore {
             ps.setBoolean(i++, run.deleteAfterTest());
             ps.setBoolean(i++, run.cleanupSuccessful());
             ps.setString(i++, run.message());
+            ps.setString(i++, run.stopReason());
             ps.setString(i++, run.latencyScope());
             ps.setLong(i++, run.latencySampleCount());
             ps.setLong(i++, run.apiRequestCount());
@@ -282,7 +285,7 @@ public class TestHistoryStore {
                 rs.getLong("bytes_transferred"), rs.getDouble("average_speed_mibps"),
                 rs.getDouble("p50_latency_ms"), rs.getDouble("p95_latency_ms"),
                 rs.getDouble("p99_latency_ms"), rs.getLong("successful_parts"), rs.getLong("failed_parts"),
-                rs.getBoolean("cleanup_successful"), rs.getString("message"),
+                rs.getBoolean("cleanup_successful"), rs.getString("message"), rs.getString("stop_reason"),
                 normalizeInitiator(rs.getString("initiator")), rs.getString("latency_scope"),
                 rs.getLong("latency_sample_count"), rs.getLong("api_request_count"),
                 rs.getDouble("api_request_p50_latency_ms"), rs.getDouble("api_request_p95_latency_ms"),
@@ -296,12 +299,18 @@ public class TestHistoryStore {
     private static String normalizeInitiator(String value) {
         return value == null || value.isBlank() ? "local" : value.trim();
     }
+    private static String distributedStopReason(String status) {
+        if ("FAILED".equals(status)) return "ERROR";
+        if ("CANCELLED".equals(status)) return "AGENT_CANCELLED";
+        return "NORMAL";
+    }
 
     public record HistoryRow(UUID id, String status, Instant createdAt, Instant startedAt, Instant finishedAt,
                              String endpoint, String bucket, String region, String objectKey, long totalBytes,
                              long bytesTransferred, double averageSpeedMiBps, double p50LatencyMs,
                              double p95LatencyMs, double p99LatencyMs, long successfulParts, long failedParts,
-                             boolean cleanupSuccessful, String message, String initiator, String latencyScope,
+                             boolean cleanupSuccessful, String message, String stopReason, String initiator,
+                             String latencyScope,
                              long latencySampleCount, long apiRequestCount, double apiRequestP50LatencyMs,
                              double apiRequestP95LatencyMs, double apiRequestP99LatencyMs,
                              long objectOperationCount, double objectP50LatencyMs,

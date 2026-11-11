@@ -6,7 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -141,6 +144,18 @@ public class KafkaProducerRunService {
                 rs.getDouble("throughput_messages_sec"), rs.getDouble("throughput_mib_sec"), rs.getDouble("latency_avg_ms"),
                 rs.getDouble("latency_p95_ms"), rs.getDouble("latency_p99_ms"), rs.getDouble("latency_max_ms"),
                 rs.getLong("error_count"), rs.getLong("retry_count"), rs.getString("error_message")), safeLimit);
+    }
+
+    public List<Snapshot> recent(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        Map<UUID, Snapshot> snapshots = new LinkedHashMap<>();
+        active.values().stream().filter(state -> state.persist).map(RuntimeState::snapshot)
+                .forEach(snapshot -> snapshots.put(snapshot.id(), snapshot));
+        history(safeLimit).forEach(snapshot -> snapshots.putIfAbsent(snapshot.id(), snapshot));
+        return snapshots.values().stream()
+                .sorted(Comparator.comparing(Snapshot::startedAt).reversed())
+                .limit(safeLimit)
+                .toList();
     }
 
     private void execute(KafkaProfileService.Profile profile, RuntimeState state) {

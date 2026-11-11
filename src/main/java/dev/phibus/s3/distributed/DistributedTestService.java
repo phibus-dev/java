@@ -323,7 +323,7 @@ public class DistributedTestService {
                 operations, rows, bytes, operationsPerSecond, rowsPerSecond, throughput, latency.p50(),
                 latency.p95(), latency.p99(), errors,
                 agents.stream().sorted(Comparator.comparing(AgentProgress::agentId)).toList(),
-                latencyScope(run), latency.method(), run.createdAt(), run.stopReason(), run.message());
+                latencyScope(run), latency.method(), run.createdAt(), run.updatedAt(), run.stopReason(), run.message());
     }
 
     private static LatencyAggregate aggregateLatency(List<AgentProgress> agents) {
@@ -592,5 +592,5 @@ public class DistributedTestService {
                                      double operationsPerSecond, double rowsPerSecond, double throughputMiBps,
                                      double p50LatencyMs, double p95LatencyMs, double p99LatencyMs, long errors,
                                      List<AgentProgress> agents, String latencyScope, String latencyAggregation,
-                                     Instant createdAt, String stopReason, String message) { }
+                                     Instant createdAt, Instant updatedAt, String stopReason, String message) { }
 }
