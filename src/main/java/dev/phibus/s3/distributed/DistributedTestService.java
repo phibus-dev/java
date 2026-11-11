@@ -298,6 +298,46 @@ public class DistributedTestService {
         return view(require(id));
     }
 
+    public synchronized DistributedRunView rerun(UUID id) {
+        ensureLoaded();
+        DistributedRun source = require(id);
+        if (!terminal(source.status())) {
+            throw new IllegalStateException("Only a completed distributed run can be repeated");
+        }
+        List<UUID> agentIds = source.agents().keySet().stream().sorted().toList();
+        if (agentIds.isEmpty()) {
+            throw new IllegalStateException("Distributed run has no persisted agents and cannot be repeated");
+        }
+        return switch (source.testType()) {
+            case S3 -> {
+                if (source.s3Request() == null) {
+                    throw new IllegalStateException("Distributed S3 request is missing and cannot be repeated");
+                }
+                yield create(new CreateDistributedTestRequest(source.name(), agentIds, source.s3Request()));
+            }
+            case CLICKHOUSE -> {
+                if (source.clickHouseRequest() == null) {
+                    throw new IllegalStateException("Distributed ClickHouse request is missing and cannot be repeated");
+                }
+                Map<UUID, String> endpointByAgent = new LinkedHashMap<>();
+                source.assignmentDefinitions().forEach((agentId, assignment) -> {
+                    if (assignment.clickHouseConnection() != null) {
+                        endpointByAgent.put(agentId, assignment.clickHouseConnection().endpoint());
+                    }
+                });
+                yield createClickHouse(new CreateDistributedClickHouseTestRequest(
+                        source.name(), agentIds, source.clickHouseRequest(), Map.copyOf(endpointByAgent)));
+            }
+            case KAFKA -> {
+                if (source.kafkaRequest() == null) {
+                    throw new IllegalStateException("Distributed Kafka request is missing and cannot be repeated");
+                }
+                yield createKafka(new CreateDistributedKafkaTestRequest(
+                        source.name(), agentIds, source.kafkaRequest()));
+            }
+        };
+    }
+
     private DistributedRun require(UUID id) {
         DistributedRun run = runs.get(id);
         if (run == null) throw new IllegalArgumentException("Distributed test not found");

@@ -33,6 +33,8 @@ class UiBehaviorRegressionTest {
     void breadcrumbsUseKnownRoutesInsteadOfSyntheticIntermediateLinks() throws IOException {
         String ui = Files.readString(Path.of("src/main/resources/static/app-ui.js"));
         assertThat(ui)
+                .contains("/^\\/run-history\\/[^/]+$/")
+                .contains("['История', '/history'], ['Результат запуска']")
                 .contains("/^\\/clickhouse\\/history\\/[^/]+$/")
                 .contains("['Тесты и история', '/clickhouse']")
                 .doesNotContain("path+=`/${p}`");

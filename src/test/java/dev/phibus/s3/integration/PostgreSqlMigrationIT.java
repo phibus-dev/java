@@ -7,6 +7,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import dev.phibus.s3.history.TestHistoryStore;
+import dev.phibus.s3.lifecycle.RunScope;
+import dev.phibus.s3.lifecycle.RunStatus;
+import dev.phibus.s3.lifecycle.UnifiedRunHistoryStore;
 import dev.phibus.s3.settings.BootstrapSecretCodec;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.ReloadableHikariDataSource;
@@ -14,6 +17,7 @@ import dev.phibus.s3.settings.S3ProfileService;
 import dev.phibus.s3.settings.SettingsService;
 import dev.phibus.s3.test.TestRequest;
 import dev.phibus.s3.test.TestRun;
+import dev.phibus.s3.test.TestType;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -160,6 +164,78 @@ class PostgreSqlMigrationIT {
     }
 
     @Test
+    void unifiedHistoryCombinesAllEnginesAndDeduplicatesDistributedResults() {
+        String marker = "unified-" + UUID.randomUUID();
+        UUID s3Id = UUID.randomUUID();
+        UUID clickHouseId = UUID.randomUUID();
+        UUID kafkaId = UUID.randomUUID();
+        UUID distributedId = UUID.randomUUID();
+
+        jdbc.update("""
+                INSERT INTO test_run(id,status,created_at,started_at,finished_at,endpoint,bucket,region,object_key,
+                    total_bytes,bytes_transferred,completed_parts,total_parts,average_speed_mibps,
+                    p50_latency_ms,p95_latency_ms,p99_latency_ms,successful_parts,failed_parts,
+                    delete_after_test,cleanup_successful,message,operation,stop_reason,initiator,latency_scope)
+                VALUES (?, 'COMPLETED', current_timestamp - interval '4 seconds',
+                    current_timestamp - interval '3 seconds', current_timestamp - interval '2 seconds',
+                    ?, ?, 'us-east-1', ?, 1024, 1024, 1, 1, 1, 1, 2, 3, 1, 0,
+                    false, true, 'done', 'UPLOAD', 'NORMAL', 'local', 'MULTIPART_PART')
+                """, s3Id, "http://" + marker, marker, marker + ".bin");
+        insertClickHouseRun(clickHouseId, marker);
+        jdbc.update("""
+                INSERT INTO kafka_test_run(id,profile_id,topic,status,started_at,finished_at,duration_ms,
+                    requested_messages,sent_messages,sent_bytes,producer_threads,message_size_bytes,
+                    throughput_messages_sec,throughput_mib_sec,latency_avg_ms,latency_p95_ms,
+                    latency_p99_ms,latency_max_ms,error_count,retry_count,error_message,config_json,initiator)
+                VALUES (?, NULL, ?, 'COMPLETED_WITH_ERRORS', current_timestamp - interval '3 seconds',
+                    current_timestamp - interval '2 seconds', 1000, 10, 9, 900, 1, 100,
+                    9, 0.001, 1, 2, 3, 4, 1, 0, 'one failed message',
+                    'acks=all;compression=none;batchSize=100;lingerMs=1;idempotence=true', 'local')
+                """, kafkaId, marker);
+        jdbc.update("""
+                INSERT INTO distributed_test(id,status,requested_agents,started_at,finished_at,created_at,
+                    aggregate_bytes,aggregate_operations,aggregate_errors,name,test_type,request_json,
+                    primary_endpoint,stop_reason,message,updated_at)
+                VALUES (?, 'COMPLETED', 2, current_timestamp - interval '3 seconds',
+                    current_timestamp - interval '1 second', current_timestamp - interval '4 seconds',
+                    2048, 20, 0, ?, 'KAFKA', '{}', 'kafka:9092', 'NORMAL', 'done', current_timestamp)
+                """, distributedId, marker + " distributed");
+        jdbc.update("""
+                INSERT INTO distributed_test_agent(distributed_test_id,agent_id,status,started_at,finished_at,
+                    bytes_transferred,operations,errors,rows_processed,operations_per_second,
+                    throughput_mibps,p50_latency_ms,p95_latency_ms,p99_latency_ms,updated_at)
+                VALUES (?, ?, 'COMPLETED', current_timestamp - interval '3 seconds', current_timestamp,
+                    2048, 20, 0, 0, 10, 2, 1, 2, 3, current_timestamp)
+                """, distributedId, UUID.randomUUID());
+        insertClickHouseRun(distributedId, marker);
+
+        UnifiedRunHistoryStore store = new UnifiedRunHistoryStore(jdbc);
+        UnifiedRunHistoryStore.Page all = store.search(new UnifiedRunHistoryStore.Filter(
+                null, null, null, marker, null, null, 0, 20));
+
+        assertThat(all.totalElements()).isEqualTo(4);
+        assertThat(all.items()).extracting(UnifiedRunHistoryStore.RunHistoryRow::testType)
+                .containsExactlyInAnyOrder(TestType.S3, TestType.CLICKHOUSE, TestType.KAFKA, TestType.KAFKA);
+        assertThat(all.items()).filteredOn(row -> row.id().equals(distributedId)).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.scope()).isEqualTo(RunScope.DISTRIBUTED);
+                    assertThat(row.participants()).isEqualTo(2);
+                    assertThat(row.operationsPerSecond()).isEqualTo(10);
+                    assertThat(row.rerunnable()).isFalse();
+                });
+        assertThat(all.items()).filteredOn(row -> row.id().equals(kafkaId)).singleElement()
+                .satisfies(row -> assertThat(row.rerunnable()).isFalse());
+        assertThat(all.items()).filteredOn(row -> row.id().equals(s3Id)).singleElement()
+                .satisfies(row -> assertThat(row.rerunnable()).isTrue());
+
+        UnifiedRunHistoryStore.Page filtered = store.search(new UnifiedRunHistoryStore.Filter(
+                RunScope.LOCAL, TestType.CLICKHOUSE, RunStatus.COMPLETED, marker, null, null, 0, 20));
+        assertThat(filtered.items()).extracting(UnifiedRunHistoryStore.RunHistoryRow::id)
+                .containsExactly(clickHouseId);
+        assertThat(store.get(s3Id).sourceDetailUrl()).isEqualTo("/history/" + s3Id);
+    }
+
+    @Test
     void profileCrudAndSingleDefaultConstraintWorkAgainstPostgreSql() {
         S3ProfileService.Profile first = profiles.create(request("primary", "http://minio-a:9000", true));
         S3ProfileService.Profile second = profiles.create(request("secondary", "http://minio-b:9000", false));
@@ -223,6 +299,19 @@ class PostgreSqlMigrationIT {
             assertThat(result.next()).isTrue();
             return result.getString(1);
         }
+    }
+
+    private static void insertClickHouseRun(UUID id, String marker) {
+        jdbc.update("""
+                INSERT INTO clickhouse_test_run(id,profile_id,endpoint,table_name,operation,status,created_at,
+                    started_at,finished_at,concurrency,batch_size,requested_rows,requested_queries,
+                    duration_seconds,warmup_seconds,payload_bytes,auto_create_table,rows_processed,
+                    bytes_processed,queries,errors,rows_per_second,mib_per_second,queries_per_second,
+                    p50_latency_ms,p95_latency_ms,p99_latency_ms,message)
+                VALUES (?, ?, ?, ?, 'SELECT', 'COMPLETED', current_timestamp - interval '4 seconds',
+                    current_timestamp - interval '3 seconds', current_timestamp - interval '2 seconds',
+                    1, 100, 100, 1, 0, 0, 128, true, 100, 12800, 1, 0, 100, 0.01, 1, 1, 2, 3, 'done')
+                """, id, UUID.randomUUID(), "http://" + marker, marker);
     }
 
     private static S3ProfileService.ProfileRequest request(String name, String endpoint, boolean defaultProfile) {

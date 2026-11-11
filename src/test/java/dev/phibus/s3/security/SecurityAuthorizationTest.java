@@ -66,6 +66,7 @@ class SecurityAuthorizationTest {
         mvc.perform(get("/settings")).andExpect(status().isForbidden());
         mvc.perform(post("/api/tests").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/history/123/rerun").with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(post("/api/run-history/123/rerun").with(csrf())).andExpect(status().isForbidden());
     }
 
     @Test
@@ -92,7 +93,8 @@ class SecurityAuthorizationTest {
         public String read() { return "ok"; }
 
         @PostMapping({"/api/agents/register", "/api/agents/{id}/heartbeat", "/api/agents/{id}/enabled",
-                "/api/tests", "/api/history/{id}/rerun", "/api/settings", "/api/config/import"})
+                "/api/tests", "/api/history/{id}/rerun", "/api/run-history/{id}/rerun",
+                "/api/settings", "/api/config/import"})
         public String write() { return "ok"; }
     }
 }

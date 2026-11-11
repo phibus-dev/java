@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <title>Результат запуска — ЭВО.СНТ</title>
+  <th:block th:replace="~{fragments/layout :: headAssets}"></th:block>
+</head>
+<body>
+<main class="container">
+  <header th:replace="~{fragments/layout :: header(title='Результат запуска', subtitle=${run.name})}"></header>
+  <nav th:replace="~{fragments/layout :: primaryNav(active='history')}"></nav>
+
+  <section class="panel">
+    <div class="title-row"><h2 th:text="${run.name}"></h2><span><span class="badge" th:text="${run.scope}"></span> <span class="badge" th:text="${run.testType}"></span></span></div>
+    <div class="metrics">
+      <article><span>Статус</span><strong th:text="${run.status}"></strong></article>
+      <article><span>Операции</span><strong th:text="${run.completedOperations}"></strong></article>
+      <article><span>Строки</span><strong th:text="${run.rowsProcessed}"></strong></article>
+      <article><span>Передано</span><strong th:text="${#numbers.formatDecimal(run.bytesTransferred/1048576.0,1,2)+' MiB'}"></strong></article>
+      <article><span>OPS</span><strong th:text="${#numbers.formatDecimal(run.operationsPerSecond,1,2)}"></strong></article>
+      <article><span>Throughput</span><strong th:text="${#numbers.formatDecimal(run.throughputMiBps,1,2)+' MiB/s'}"></strong></article>
+      <article><span>p50 / p95 / p99</span><strong th:text="${#numbers.formatDecimal(run.p50LatencyMs,1,1)+' / '+#numbers.formatDecimal(run.p95LatencyMs,1,1)+' / '+#numbers.formatDecimal(run.p99LatencyMs,1,1)+' ms'}"></strong><small class="muted" th:text="${run.latencyScope}"></small></article>
+      <article><span>Ошибки</span><strong th:text="${run.errors}"></strong></article>
+      <article><span>Участники</span><strong th:text="${run.participants}"></strong></article>
+      <article><span>Длительность</span><strong th:text="${run.durationMillis+' ms'}"></strong></article>
+    </div>
+    <p><b>ID:</b> <span th:text="${run.id}"></span></p>
+    <p><b>Инициатор теста:</b> <span th:text="${run.initiator}"></span></p>
+    <p><b>Цель:</b> <span th:text="${run.target}"></span></p>
+    <p><b>Создан:</b> <span th:text="${run.createdAt}"></span></p>
+    <p><b>Запущен:</b> <span th:text="${run.startedAt == null ? '—' : run.startedAt}"></span></p>
+    <p><b>Завершён:</b> <span th:text="${run.finishedAt == null ? '—' : run.finishedAt}"></span></p>
+    <p><b>Причина остановки:</b> <span th:text="${run.stopReason == null ? '—' : run.stopReason}"></span></p>
+    <p><b>Сообщение:</b> <span th:text="${run.message == null ? '—' : run.message}"></span></p>
+    <div class="actions">
+      <a class="button secondary" href="/history">К истории</a>
+      <a th:if="${run.sourceDetailUrl != null}" class="button secondary" th:href="${run.sourceDetailUrl}">Специализированный отчёт</a>
+      <button th:if="${run.rerunnable}" type="button" class="rerun-run" data-min-role="OPERATOR" th:attr="data-run-id=${run.id}">Повторить тест</button>
+    </div>
+    <p id="rerun-result" class="muted" role="status" aria-live="polite"></p>
+  </section>
+
+  <footer th:replace="~{fragments/layout :: footer}"></footer>
+</main>
+<th:block th:replace="~{fragments/layout :: commonScripts}"></th:block>
+<script src="/csrf-fetch.js"></script>
+<script src="/run-history.js"></script>
+</body>
+</html>
