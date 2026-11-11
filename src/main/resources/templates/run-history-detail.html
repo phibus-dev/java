@@ -28,6 +28,7 @@
       <article><span>Длительность</span><strong th:text="${run.durationMillis+' ms'}"></strong></article>
     </div>
     <p><b>ID:</b> <span th:text="${run.id}"></span></p>
+    <p><b>Инициатор теста:</b> <span th:text="${run.initiator}"></span></p>
     <p><b>Цель:</b> <span th:text="${run.target}"></span></p>
     <p><b>Создан:</b> <span th:text="${run.createdAt}"></span></p>
     <p><b>Запущен:</b> <span th:text="${run.startedAt == null ? '—' : run.startedAt}"></span></p>

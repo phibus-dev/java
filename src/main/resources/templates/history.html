@@ -66,13 +66,14 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th></th><th>Создан</th><th>Контур / тип</th><th>Название</th><th>Статус</th><th>Цель</th><th>Операции</th><th>Throughput</th><th>p95 / scope</th><th>Ошибки</th><th>Причина</th><th>Действия</th></tr></thead>
+        <thead><tr><th></th><th>Создан</th><th>Контур / тип</th><th>Название</th><th>Инициатор теста</th><th>Статус</th><th>Цель</th><th>Операции</th><th>Throughput</th><th>p95 / scope</th><th>Ошибки</th><th>Причина</th><th>Действия</th></tr></thead>
         <tbody>
         <tr th:each="run : ${result.items}">
           <td><input th:if="${run.s3AnalyticsCompatible}" type="checkbox" class="compare-id" th:value="${run.id}" aria-label="Выбрать S3-запуск для сравнения"></td>
           <td><a th:href="@{/run-history/{id}(id=${run.id})}" th:text="${run.createdAt}"></a></td>
           <td><span class="badge" th:text="${run.scope}"></span><br><small th:text="${run.testType}"></small></td>
           <td><strong th:text="${run.name}"></strong><br><small class="muted" th:text="${run.operation}"></small></td>
+          <td th:text="${run.initiator}"></td>
           <td th:text="${run.status}"></td>
           <td th:text="${run.target}"></td>
           <td th:text="${run.completedOperations}"></td>

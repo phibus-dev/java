@@ -130,7 +130,7 @@ class UnifiedRunRerunServiceTest {
         Instant now = Instant.now();
         return new UnifiedRunHistoryStore.RunHistoryRow(id, type, scope,
                 rerunnable ? RunStatus.COMPLETED : RunStatus.RUNNING, now, now,
-                rerunnable ? now : null, "run", "operation", "target", 1, 0, 1,
+                rerunnable ? now : null, "run", "operation", "target", "operator", 1, 0, 1,
                 1, 1, 1, 1, 1, 0, rerunnable ? RunStopReason.NORMAL : null,
                 "message", 1, "scope", null, rerunnable);
     }
