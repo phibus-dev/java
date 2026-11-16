@@ -120,11 +120,12 @@ java -jar evo-snt-s3-2.4.0.jar
 ### Единый API жизненного цикла запусков
 
 Coordinator предоставляет нормализованное read-only представление локальных S3, ClickHouse, Kafka
-и распределённых запусков, не заменяя существующие специализированные API:
+и распределённых запусков. Канонические маршруты автоматизации имеют версию `v1`; прежние
+маршруты без версии сохранены для обратной совместимости:
 
 ```text
-GET /api/runs
-GET /api/runs/{id}
+GET /api/v1/runs
+GET /api/v1/runs/{id}
 ```
 
 Список поддерживает параметры `scope=LOCAL|DISTRIBUTED`, `testType=S3|CLICKHOUSE|KAFKA`,
@@ -137,15 +138,34 @@ GET /api/runs/{id}
 специализированные S3/ClickHouse API и детальные отчёты:
 
 ```text
-GET  /api/run-history
-GET  /api/run-history/{id}
-POST /api/run-history/{id}/rerun
+GET  /api/v1/run-history
+GET  /api/v1/run-history/{id}
+POST /api/v1/run-history/{id}/rerun
 ```
 
 Для списка доступны `scope`, `testType`, `status`, `q`, `from`, `to`, `page` и `size`.
 Распределённый прогон возвращается одной агрегированной записью; его служебные результаты в
 историях отдельных движков не дублируются. Повтор разрешён только для терминального прогона,
 если профиль и безопасная конфигурация были сохранены. Интерфейс находится на `/history`.
+
+### OpenAPI v1 и машинные ошибки
+
+Контракт доступен в репозитории и из работающего Coordinator по адресу
+[`/api/v1/openapi.yaml`](src/main/resources/static/api/v1/openapi.yaml). Он описывает текущие
+запуски, историю, повтор запуска, фильтры, RBAC и все схемы ответов. Для защищённой инсталляции
+получение контракта требует роль `VIEWER`, `OPERATOR` или `ADMIN`.
+Маршруты `v1` stateless: они используют bearer JWT и не требуют браузерный CSRF-токен.
+
+Ошибки `v1` возвращаются как `application/problem+json` с постоянными полями `code`, `detail`,
+`instance`, `requestId` и `timestamp`. В ответ также добавляется `X-Request-ID`; безопасный ID,
+переданный клиентом, сохраняется для сквозной трассировки. Неаутентифицированный API-запрос
+получает JSON и HTTP 401, а не перенаправление на страницу входа.
+
+```bash
+curl -fsS -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: ci-nightly-42" \
+  "https://coordinator.example/api/v1/run-history?testType=S3&status=COMPLETED&size=20"
+```
 
 ## Bootstrap и секреты
 

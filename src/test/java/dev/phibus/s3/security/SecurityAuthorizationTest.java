@@ -1,9 +1,11 @@
 package dev.phibus.s3.security;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.http.MediaType.TEXT_HTML;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.Mockito.when;
 
@@ -60,19 +62,33 @@ class SecurityAuthorizationTest {
     }
 
     @Test
+    void versionedApiReturnsMachineReadableUnauthorizedResponse() throws Exception {
+        mvc.perform(get("/api/v1/runs"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
+    @Test
     @WithMockUser(roles = "VIEWER")
     void viewerCanReadButCannotMutateApi() throws Exception {
         mvc.perform(get("/api/read")).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/runs")).andExpect(status().isOk());
         mvc.perform(get("/settings")).andExpect(status().isForbidden());
         mvc.perform(post("/api/tests").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/history/123/rerun").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/run-history/123/rerun").with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/run-history/123/rerun"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 
     @Test
     @WithMockUser(roles = "OPERATOR")
     void operatorCanRunTestsButCannotChangeAdministration() throws Exception {
         mvc.perform(post("/api/tests").with(csrf())).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/run-history/123/rerun")).andExpect(status().isOk());
         mvc.perform(post("/api/settings").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/config/import").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/agents/123/enabled").with(csrf())).andExpect(status().isForbidden());
@@ -89,11 +105,12 @@ class SecurityAuthorizationTest {
 
     @RestController
     public static class ProbeController {
-        @GetMapping({"/settings", "/api/read"})
+        @GetMapping({"/settings", "/api/read", "/api/v1/runs"})
         public String read() { return "ok"; }
 
         @PostMapping({"/api/agents/register", "/api/agents/{id}/heartbeat", "/api/agents/{id}/enabled",
                 "/api/tests", "/api/history/{id}/rerun", "/api/run-history/{id}/rerun",
+                "/api/v1/run-history/{id}/rerun",
                 "/api/settings", "/api/config/import"})
         public String write() { return "ok"; }
     }
