@@ -15,6 +15,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 class OpenApiContractTest {
     private static final Path CONTRACT = Path.of("src/main/resources/static/api/v1/openapi.yaml");
+    private static final Set<String> START_PATHS = Set.of(
+            "/runs/s3", "/runs/clickhouse", "/runs/kafka",
+            "/runs/distributed/s3", "/runs/distributed/clickhouse", "/runs/distributed/kafka");
 
     @Test
     void versionedContractIsValidYamlAndCoversEveryCanonicalRunOperation() throws IOException {
@@ -23,10 +26,13 @@ class OpenApiContractTest {
         Map<String, Object> paths = map(root.get("paths"));
 
         assertThat(root.get("openapi")).isEqualTo("3.0.3");
-        assertThat(info.get("version")).isEqualTo("1.1.0");
+        assertThat(info.get("version")).isEqualTo("1.2.0");
         assertThat(paths.keySet()).containsExactlyInAnyOrder(
-                "/profiles/s3", "/runs/s3", "/runs", "/runs/{id}",
-                "/run-history", "/run-history/{id}", "/run-history/{id}/rerun");
+                "/profiles/s3", "/profiles/clickhouse", "/profiles/kafka",
+                "/runs/s3", "/runs/clickhouse", "/runs/kafka",
+                "/runs/distributed/s3", "/runs/distributed/clickhouse", "/runs/distributed/kafka",
+                "/runs", "/runs/{id}", "/run-history", "/run-history/{id}",
+                "/run-history/{id}/export/{format}", "/run-history/{id}/rerun");
 
         Set<String> operationIds = new LinkedHashSet<>();
         paths.values().stream().map(OpenApiContractTest::map).forEach(path -> path.forEach((method, value) -> {
@@ -37,8 +43,11 @@ class OpenApiContractTest {
                     .as("operationId %s must be unique", operationId).isTrue();
         }));
         assertThat(operationIds).containsExactlyInAnyOrder(
-                "listS3Profiles", "startS3Run", "listRuns", "getRun", "listRunHistory",
-                "getRunHistoryEntry", "rerunFromHistory");
+                "listS3Profiles", "listClickHouseProfiles", "listKafkaProfiles",
+                "startS3Run", "startClickHouseRun", "startKafkaRun",
+                "startDistributedS3Run", "startDistributedClickHouseRun", "startDistributedKafkaRun",
+                "listRuns", "getRun", "listRunHistory", "getRunHistoryEntry",
+                "exportRunHistoryEntry", "rerunFromHistory");
     }
 
     @Test
@@ -64,24 +73,45 @@ class OpenApiContractTest {
     }
 
     @Test
-    void idempotentStartRequiresAClientKeyAndDocumentsReplay() throws IOException {
+    void everyStartRequiresAClientKeyAndDocumentsReplay() throws IOException {
         Map<String, Object> root = loadContract();
         Map<String, Object> paths = map(root.get("paths"));
-        Map<String, Object> operation = map(map(paths.get("/runs/s3")).get("post"));
-        Map<String, Object> requestBody = map(operation.get("requestBody"));
-        Map<String, Object> accepted = map(map(operation.get("responses")).get("202"));
-        Map<String, Object> acceptedHeaders = map(accepted.get("headers"));
         Map<String, Object> parameters = map(map(root.get("components")).get("parameters"));
         Map<String, Object> idempotencyKey = map(parameters.get("IdempotencyKey"));
 
-        assertThat(requestBody.get("required")).isEqualTo(true);
         assertThat(idempotencyKey)
                 .containsEntry("name", "Idempotency-Key")
                 .containsEntry("in", "header")
                 .containsEntry("required", true);
-        assertThat(acceptedHeaders.keySet()).containsExactlyInAnyOrder(
-                "Location", "Idempotency-Replayed");
-        assertThat(map(operation.get("responses")).keySet()).contains("202", "409", "429");
+
+        for (String path : START_PATHS) {
+            Map<String, Object> operation = map(map(paths.get(path)).get("post"));
+            Map<String, Object> requestBody = map(operation.get("requestBody"));
+            Map<String, Object> responses = map(operation.get("responses"));
+            assertThat(requestBody.get("required")).as(path).isEqualTo(true);
+            assertThat(operation.get("parameters").toString()).as(path).contains("IdempotencyKey");
+            assertThat(responses.keySet()).as(path).contains("202", "409", "429");
+        }
+
+        Map<String, Object> accepted = map(map(map(paths.get("/runs/s3")).get("post"))
+                .get("responses"));
+        Map<String, Object> acceptedResponse = map(accepted.get("202"));
+        assertThat(map(acceptedResponse.get("headers")).keySet())
+                .containsExactlyInAnyOrder("Location", "Idempotency-Replayed");
+    }
+
+    @Test
+    void profileSelectionAndExportSchemasDoNotExposeCredentials() throws IOException {
+        String contract = Files.readString(CONTRACT);
+        Map<String, Object> schemas = map(map(loadContract().get("components")).get("schemas"));
+
+        assertThat(map(schemas.get("ProfileSummary")).keySet())
+                .contains("type", "additionalProperties", "required", "properties");
+        assertThat(list(map(schemas.get("TestType")).get("enum")))
+                .containsExactly("S3", "CLICKHOUSE", "KAFKA");
+        assertThat(list(map(schemas.get("RunScope")).get("enum")))
+                .containsExactly("LOCAL", "DISTRIBUTED");
+        assertThat(contract).doesNotContain("secretKey", "accessKey", "password");
     }
 
     private static Map<String, Object> loadContract() throws IOException {

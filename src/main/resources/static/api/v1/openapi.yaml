@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
   title: ЭВО.СНТ Run API
-  version: 1.1.0
+  version: 1.2.0
   description: >-
-    Версионированный API запуска S3-тестов, чтения текущих запусков, долговременной
+    Версионированный API запуска S3, ClickHouse и Kafka тестов, чтения текущих запусков, долговременной
     истории и повторного запуска безопасно сохранённой конфигурации S3, ClickHouse и Kafka тестов.
 servers:
   - url: /api/v1
@@ -30,7 +30,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/S3ProfileSummary'
+                  $ref: '#/components/schemas/ProfileSummary'
         '401':
           $ref: '#/components/responses/AuthenticationRequired'
         '403':
@@ -69,6 +69,198 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /profiles/clickhouse:
+    get:
+      tags: [Runs]
+      operationId: listClickHouseProfiles
+      summary: Получить доступные ClickHouse-профили
+      description: Возвращает только идентификатор, имя и признак профиля по умолчанию.
+      responses:
+        '200':
+          description: Безопасный список ClickHouse-профилей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProfileSummary'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /profiles/kafka:
+    get:
+      tags: [Runs]
+      operationId: listKafkaProfiles
+      summary: Получить доступные Kafka-профили
+      description: Возвращает только идентификатор, имя и признак профиля по умолчанию.
+      responses:
+        '200':
+          description: Безопасный список Kafka-профилей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProfileSummary'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/clickhouse:
+    post:
+      tags: [Runs]
+      operationId: startClickHouseRun
+      summary: Идемпотентно запустить локальный ClickHouse-тест
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClickHouseRunRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/kafka:
+    post:
+      tags: [Runs]
+      operationId: startKafkaRun
+      summary: Идемпотентно запустить локальный Kafka producer-тест
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KafkaRunRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/distributed/s3:
+    post:
+      tags: [Runs]
+      operationId: startDistributedS3Run
+      summary: Идемпотентно запустить распределённый S3-тест
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistributedS3RunRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/distributed/clickhouse:
+    post:
+      tags: [Runs]
+      operationId: startDistributedClickHouseRun
+      summary: Идемпотентно запустить распределённый ClickHouse-тест
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistributedClickHouseRunRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/distributed/kafka:
+    post:
+      tags: [Runs]
+      operationId: startDistributedKafkaRun
+      summary: Идемпотентно запустить распределённый Kafka producer-тест
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistributedKafkaRunRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/RunAccepted'
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
@@ -216,6 +408,52 @@ paths:
           $ref: '#/components/responses/RunHistoryNotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /run-history/{id}/export/{format}:
+    get:
+      tags: [Run history]
+      operationId: exportRunHistoryEntry
+      summary: Экспортировать унифицированный отчёт
+      description: Формирует отчёт одинакового формата для S3, ClickHouse, Kafka и распределённых запусков.
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - name: format
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [json, csv, html, pdf]
+      responses:
+        '200':
+          description: Сформированный отчёт
+          headers:
+            Content-Disposition:
+              description: Имя файла отчёта
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunHistoryEntry'
+            text/csv:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/RunHistoryNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /run-history/{id}/rerun:
     post:
       tags: [Run history]
@@ -292,6 +530,21 @@ components:
       schema:
         type: string
   responses:
+    RunAccepted:
+      description: Запуск принят либо воспроизведён по идемпотентному ключу
+      headers:
+        Location:
+          description: Канонический URL состояния запуска
+          schema:
+            type: string
+        Idempotency-Replayed:
+          description: true, если возвращён ранее созданный запуск
+          schema:
+            type: boolean
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RunAccepted'
     InvalidRequest:
       description: Некорректные параметры запроса
       headers:
@@ -408,7 +661,7 @@ components:
         minLength: 1
         maxLength: 64
   schemas:
-    S3ProfileSummary:
+    ProfileSummary:
       type: object
       additionalProperties: false
       required: [id, name, defaultProfile]
@@ -495,6 +748,461 @@ components:
           additionalProperties:
             type: integer
             minimum: 0
+    ClickHouseRunRequest:
+      type: object
+      additionalProperties: false
+      required: [profileId, concurrency, batchSize, rowCount, durationSeconds, warmupSeconds, payloadBytes, autoCreateTable]
+      properties:
+        profileId:
+          type: string
+          format: uuid
+        endpoint:
+          type: string
+          nullable: true
+        table:
+          type: string
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*      additionalProperties: false
+      required: [runId, testType, scope, monitorUrl, replayed]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        testType:
+          type: string
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        monitorUrl:
+          type: string
+        replayed:
+          type: boolean
+    RunScope:
+      type: string
+      enum: [LOCAL, DISTRIBUTED]
+    TestType:
+      type: string
+      enum: [S3, CLICKHOUSE, KAFKA]
+    RunStatus:
+      type: string
+      enum: [ASSIGNED, QUEUED, RUNNING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED, CANCELLED]
+    RunStopReason:
+      type: string
+      enum: [NORMAL, TIMEOUT, USER_CANCELLED, DEADLINE_EXCEEDED, ERROR, AGENT_CANCELLED, RECOVERY_TIMEOUT, RECOVERY_FAILED, UNKNOWN]
+    RunLifecycle:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - testType
+        - scope
+        - status
+        - createdAt
+        - completedOperations
+        - rowsProcessed
+        - bytesTransferred
+        - operationsPerSecond
+        - throughputMiBps
+        - p50LatencyMs
+        - p95LatencyMs
+        - p99LatencyMs
+        - errors
+        - participants
+        - latencyScope
+        - detailsUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        stopReason:
+          allOf:
+            - $ref: '#/components/schemas/RunStopReason'
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        completedOperations:
+          type: integer
+          format: int64
+        rowsProcessed:
+          type: integer
+          format: int64
+        bytesTransferred:
+          type: integer
+          format: int64
+        operationsPerSecond:
+          type: number
+          format: double
+        throughputMiBps:
+          type: number
+          format: double
+        p50LatencyMs:
+          type: number
+          format: double
+        p95LatencyMs:
+          type: number
+          format: double
+        p99LatencyMs:
+          type: number
+          format: double
+        errors:
+          type: integer
+          format: int64
+        participants:
+          type: integer
+          format: int32
+        latencyScope:
+          type: string
+        detailsUrl:
+          type: string
+    RunHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunHistoryEntry'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          minimum: 0
+    RunHistoryEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - testType
+        - scope
+        - status
+        - createdAt
+        - name
+        - operation
+        - target
+        - initiator
+        - completedOperations
+        - rowsProcessed
+        - bytesTransferred
+        - operationsPerSecond
+        - throughputMiBps
+        - p50LatencyMs
+        - p95LatencyMs
+        - p99LatencyMs
+        - errors
+        - participants
+        - latencyScope
+        - rerunnable
+      properties:
+        id:
+          type: string
+          format: uuid
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        name:
+          type: string
+        operation:
+          type: string
+        target:
+          type: string
+        initiator:
+          type: string
+        completedOperations:
+          type: integer
+          format: int64
+        rowsProcessed:
+          type: integer
+          format: int64
+        bytesTransferred:
+          type: integer
+          format: int64
+        operationsPerSecond:
+          type: number
+          format: double
+        throughputMiBps:
+          type: number
+          format: double
+        p50LatencyMs:
+          type: number
+          format: double
+        p95LatencyMs:
+          type: number
+          format: double
+        p99LatencyMs:
+          type: number
+          format: double
+        errors:
+          type: integer
+          format: int64
+        stopReason:
+          allOf:
+            - $ref: '#/components/schemas/RunStopReason'
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        participants:
+          type: integer
+          format: int32
+        latencyScope:
+          type: string
+        sourceDetailUrl:
+          type: string
+          nullable: true
+        rerunnable:
+          type: boolean
+    RerunResult:
+      type: object
+      additionalProperties: false
+      required: [sourceRunId, runId, testType, scope, status, monitorUrl]
+      properties:
+        sourceRunId:
+          type: string
+          format: uuid
+        runId:
+          type: string
+          format: uuid
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        monitorUrl:
+          type: string
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail, instance, requestId, timestamp]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - AUTHENTICATION_REQUIRED
+            - ACCESS_DENIED
+            - RUN_NOT_FOUND
+            - RUN_HISTORY_NOT_FOUND
+            - RUN_STATE_CONFLICT
+            - IDEMPOTENCY_CONFLICT
+            - PROFILE_NOT_FOUND
+            - CAPACITY_EXCEEDED
+            - INTERNAL_ERROR
+        detail:
+          type: string
+        instance:
+          type: string
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        timestamp:
+          type: string
+          format: date-time
+
+          default: evo_snt_perf_load
+        operation:
+          type: string
+          enum: [INSERT, SELECT, INSERT_SELECT]
+          default: INSERT
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 64
+        batchSize:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        rowCount:
+          type: integer
+          format: int64
+          minimum: 1
+        durationSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 86400
+        warmupSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 3600
+        payloadBytes:
+          type: integer
+          minimum: 1
+          maximum: 1048576
+        queryCount:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10000000
+          nullable: true
+        autoCreateTable:
+          type: boolean
+    KafkaRunRequest:
+      type: object
+      additionalProperties: false
+      required: [profileId, messageSizeBytes, messageCount, producerThreads, batchSize, lingerMs, enableIdempotence, targetMessagesPerSec, maxInFlightMessages]
+      properties:
+        profileId:
+          type: string
+          format: uuid
+        topic:
+          type: string
+          nullable: true
+        messageSizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 104857600
+        messageCount:
+          type: integer
+          format: int64
+          minimum: 1
+        producerThreads:
+          type: integer
+          minimum: 1
+          maximum: 256
+        acks:
+          type: string
+          default: all
+        compressionType:
+          type: string
+          default: none
+        batchSize:
+          type: integer
+          minimum: 1
+        lingerMs:
+          type: integer
+          format: int64
+          minimum: 0
+        enableIdempotence:
+          type: boolean
+        targetMessagesPerSec:
+          type: integer
+          format: int64
+          minimum: 0
+        maxInFlightMessages:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+    DistributedRunBase:
+      type: object
+      required: [name, agentIds, testRequest]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        agentIds:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    DistributedS3RunRequest:
+      allOf:
+        - $ref: '#/components/schemas/DistributedRunBase'
+        - type: object
+          additionalProperties: false
+          properties:
+            name:
+              type: string
+            agentIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            testRequest:
+              $ref: '#/components/schemas/S3RunRequest'
+    DistributedClickHouseRunRequest:
+      allOf:
+        - $ref: '#/components/schemas/DistributedRunBase'
+        - type: object
+          additionalProperties: false
+          properties:
+            name:
+              type: string
+            agentIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            testRequest:
+              $ref: '#/components/schemas/ClickHouseRunRequest'
+            endpointByAgent:
+              type: object
+              additionalProperties:
+                type: string
+    DistributedKafkaRunRequest:
+      allOf:
+        - $ref: '#/components/schemas/DistributedRunBase'
+        - type: object
+          additionalProperties: false
+          properties:
+            name:
+              type: string
+            agentIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            testRequest:
+              $ref: '#/components/schemas/KafkaRunRequest'
     RunAccepted:
       type: object
       additionalProperties: false
@@ -505,10 +1213,9 @@ components:
           format: uuid
         testType:
           type: string
-          enum: [S3]
+          $ref: '#/components/schemas/TestType'
         scope:
-          type: string
-          enum: [LOCAL]
+          $ref: '#/components/schemas/RunScope'
         monitorUrl:
           type: string
         replayed:

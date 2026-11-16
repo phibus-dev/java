@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 CLI = ROOT / "bin" / "evo-snt"
 RUN_ID = "11111111-2222-4333-8444-555555555555"
 PROFILE_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+AGENT_ID = "99999999-8888-4777-8666-555555555555"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -64,9 +65,10 @@ class EvoSntCliTest(unittest.TestCase):
             return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
 
         self.callback = callback
-        result = self.run_cli("profiles", "list")
+        result = self.run_cli("profiles", "list", "--type", "kafka")
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("/api/v1/profiles/kafka", self.requests[0][1])
         self.assertIn(PROFILE_ID, result.stdout)
         self.assertIn("primary", result.stdout)
         self.assertEqual("Bearer test-token", self.requests[0][3])
@@ -87,6 +89,36 @@ class EvoSntCliTest(unittest.TestCase):
         self.assertIn("replayed", result.stderr.lower())
         self.assertEqual("pipeline-42", self.requests[0][3])
         self.assertEqual(PROFILE_ID, self.requests[0][2]["profileId"])
+
+    def test_starts_clickhouse_and_distributed_kafka(self):
+        received = []
+
+        def callback(method, path, body, headers):
+            payload = json.loads(body)
+            received.append((method, path, payload, headers.get("Idempotency-Key")))
+            response = {"runId": RUN_ID, "testType": "CLICKHOUSE", "scope": "LOCAL",
+                        "monitorUrl": f"/api/v1/runs/{RUN_ID}", "replayed": False}
+            return 202, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        clickhouse = self.run_cli(
+            "runs", "start", "clickhouse", "--profile", PROFILE_ID,
+            "--idempotency-key", "clickhouse-1", "--table", "events",
+            "--clickhouse-operation", "SELECT", "--query-count", "20",
+        )
+        distributed = self.run_cli(
+            "runs", "start", "kafka", "--scope", "distributed",
+            "--profile", PROFILE_ID, "--agents", AGENT_ID,
+            "--idempotency-key", "kafka-1", "--topic", "events",
+        )
+
+        self.assertEqual(0, clickhouse.returncode, clickhouse.stderr)
+        self.assertEqual(0, distributed.returncode, distributed.stderr)
+        self.assertEqual("/api/v1/runs/clickhouse", received[0][1])
+        self.assertEqual("SELECT", received[0][2]["operation"])
+        self.assertEqual("/api/v1/runs/distributed/kafka", received[1][1])
+        self.assertEqual([AGENT_ID], received[1][2]["agentIds"])
+        self.assertEqual("events", received[1][2]["testRequest"]["topic"])
 
     def test_waits_until_terminal_status(self):
         statuses = iter(("RUNNING", "COMPLETED"))
@@ -119,7 +151,7 @@ class EvoSntCliTest(unittest.TestCase):
 
     def test_exports_history_json_without_overwriting_by_default(self):
         def callback(_method, path, _body, _headers):
-            self.assertEqual(f"/api/v1/run-history/{RUN_ID}", path)
+            self.assertEqual(f"/api/v1/run-history/{RUN_ID}/export/json", path)
             response = {"id": RUN_ID, "status": "COMPLETED"}
             return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
 
@@ -133,6 +165,17 @@ class EvoSntCliTest(unittest.TestCase):
             self.assertEqual(RUN_ID, json.loads(output.read_text())["id"])
             self.assertEqual(2, second.returncode)
             self.assertIn("File exists", second.stderr)
+
+    def test_exports_csv_through_the_unified_endpoint(self):
+        def callback(_method, path, _body, _headers):
+            self.assertEqual(f"/api/v1/run-history/{RUN_ID}/export/csv", path)
+            return 200, {"Content-Type": "text/csv"}, b'"id","testType"\\n'
+
+        self.callback = callback
+        result = self.run_cli("runs", "export", RUN_ID, "--format", "csv", "-o", "-")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('"id","testType"', result.stdout)
 
     def test_prints_machine_error_code_and_request_id(self):
         def callback(_method, _path, _body, _headers):

@@ -14,7 +14,7 @@ public final class ClickHouseTestRun {
     private static final int MAX_ERROR_MESSAGES = 20;
     private static final long MAX_TRACKABLE_LATENCY_MS = TimeUnit.DAYS.toMillis(7);
 
-    private final UUID id = UUID.randomUUID();
+    private final UUID id;
     private final ClickHouseTestRequest request;
     private final String endpoint;
     private final Instant createdAt = Instant.now();
@@ -37,6 +37,12 @@ public final class ClickHouseTestRun {
     private volatile String message = "Queued";
 
     public ClickHouseTestRun(ClickHouseTestRequest request, String endpoint) {
+        this(UUID.randomUUID(), request, endpoint);
+    }
+
+    public ClickHouseTestRun(UUID id, ClickHouseTestRequest request, String endpoint) {
+        if (id == null) throw new IllegalArgumentException("ClickHouse run id is required");
+        this.id = id;
         this.request = request;
         this.endpoint = endpoint;
     }
