@@ -56,10 +56,15 @@ public class KafkaProducerRunService {
     }
 
     public Snapshot start(ProducerRequest request, String initiator) {
+        return start(UUID.randomUUID(), request, initiator);
+    }
+
+    public Snapshot start(UUID runId, ProducerRequest request, String initiator) {
+        if (runId == null) throw new IllegalArgumentException("Kafka run id is required");
         validate(request);
         KafkaProfileService.Profile profile = request.profileId() == null ? profiles.defaultProfile() : profiles.get(request.profileId());
         if (profile == null) throw new IllegalArgumentException("Kafka profile is required");
-        return start(request, initiator, profile, true);
+        return start(runId, request, initiator, profile, true);
     }
 
     public Snapshot startDistributed(ProducerRequest request, KafkaProfileService.Profile profile, String initiator) {
@@ -70,14 +75,13 @@ public class KafkaProducerRunService {
             throw new IllegalArgumentException(
                     "Distributed Kafka tests require agent-local VAULT or ENVIRONMENT credentials");
         }
-        return start(request, initiator, profile, false);
+        return start(UUID.randomUUID(), request, initiator, profile, false);
     }
 
-    private Snapshot start(ProducerRequest request, String initiator,
+    private Snapshot start(UUID id, ProducerRequest request, String initiator,
                            KafkaProfileService.Profile profile, boolean persist) {
         String topic = request.topic() == null || request.topic().isBlank() ? profile.defaultTopic() : request.topic().trim();
         if (topic == null || topic.isBlank()) throw new IllegalArgumentException("Kafka topic is required");
-        UUID id = UUID.randomUUID();
         RuntimeState state = new RuntimeState(id, profile.id(), topic, request, Instant.now(), persist);
         active.put(id, state);
         if (persist) {

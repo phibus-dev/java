@@ -92,6 +92,11 @@ public class DistributedTestService {
     }
 
     public synchronized DistributedRunView create(CreateDistributedTestRequest request) {
+        return create(UUID.randomUUID(), request);
+    }
+
+    public synchronized DistributedRunView create(UUID runId, CreateDistributedTestRequest request) {
+        if (runId == null) throw new IllegalArgumentException("Distributed run id is required");
         ensureLoaded();
         requireAgents(request.agentIds());
         if (request.testRequest() == null) throw new IllegalArgumentException("S3 test request is required");
@@ -99,7 +104,6 @@ public class DistributedTestService {
             throw new IllegalArgumentException(
                     "Distributed S3 tests require credentials configured locally on each agent");
         }
-        UUID runId = UUID.randomUUID();
         Instant now = Instant.now();
         Map<UUID, AgentProgress> progress = prepareAgents(request.agentIds(), TestType.S3);
         try {
@@ -120,12 +124,17 @@ public class DistributedTestService {
     }
 
     public synchronized DistributedRunView createClickHouse(CreateDistributedClickHouseTestRequest request) {
+        return createClickHouse(UUID.randomUUID(), request);
+    }
+
+    public synchronized DistributedRunView createClickHouse(
+            UUID runId, CreateDistributedClickHouseTestRequest request) {
+        if (runId == null) throw new IllegalArgumentException("Distributed run id is required");
         ensureLoaded();
         requireAgents(request.agentIds());
         if (request.testRequest() == null) {
             throw new IllegalArgumentException("ClickHouse test request is required");
         }
-        UUID runId = UUID.randomUUID();
         Instant now = Instant.now();
         Map<UUID, ClickHouseConnectionSpec> connections = new LinkedHashMap<>();
         String firstEndpoint = null;
@@ -158,13 +167,17 @@ public class DistributedTestService {
     }
 
     public synchronized DistributedRunView createKafka(CreateDistributedKafkaTestRequest request) {
+        return createKafka(UUID.randomUUID(), request);
+    }
+
+    public synchronized DistributedRunView createKafka(UUID runId, CreateDistributedKafkaTestRequest request) {
+        if (runId == null) throw new IllegalArgumentException("Distributed run id is required");
         ensureLoaded();
         requireAgents(request.agentIds());
         if (request.testRequest() == null) throw new IllegalArgumentException("Kafka producer request is required");
         KafkaProfileService.Profile profile = request.testRequest().profileId() == null
                 ? kafkaProfiles.defaultProfile() : kafkaProfiles.get(request.testRequest().profileId());
         if (profile == null) throw new IllegalArgumentException("Kafka profile is required");
-        UUID runId = UUID.randomUUID();
         Instant now = Instant.now();
         Map<UUID, AgentProgress> progress = prepareAgents(request.agentIds(), TestType.KAFKA);
         try {

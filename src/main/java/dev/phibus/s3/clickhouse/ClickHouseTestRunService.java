@@ -37,13 +37,18 @@ public class ClickHouseTestRunService {
     }
 
     public ClickHouseTestRun create(ClickHouseTestRequest request) {
+        return create(UUID.randomUUID(), request);
+    }
+
+    public ClickHouseTestRun create(UUID runId, ClickHouseTestRequest request) {
+        if (runId == null) throw new IllegalArgumentException("ClickHouse run id is required");
         validate(request);
         ClickHouseHistoryStore store = history.getIfAvailable();
         String endpoint;
         try {
             endpoint = connections.endpoint(request.profileId(), request.endpoint());
         } catch (RuntimeException e) {
-            ClickHouseTestRun failed = new ClickHouseTestRun(request, fallbackEndpoint(request));
+            ClickHouseTestRun failed = new ClickHouseTestRun(runId, request, fallbackEndpoint(request));
             failed.start();
             failed.fail(rootMessage(e));
             runs.put(failed.id(), failed);
@@ -51,7 +56,7 @@ public class ClickHouseTestRunService {
             return failed;
         }
 
-        ClickHouseTestRun run = new ClickHouseTestRun(request, endpoint);
+        ClickHouseTestRun run = new ClickHouseTestRun(runId, request, endpoint);
         if (store != null) {
             try {
                 store.save(run.snapshot(), request);

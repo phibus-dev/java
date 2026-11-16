@@ -11,6 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.phibus.s3.clickhouse.ClickHouseProfileService;
+import dev.phibus.s3.clickhouse.ClickHouseTestRequest;
+import dev.phibus.s3.kafka.KafkaProfileService;
 import dev.phibus.s3.settings.S3ProfileService;
 import java.util.List;
 import java.util.UUID;
@@ -20,17 +23,21 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class VersionedAutomationApiControllerTest {
-    private final S3ProfileService profiles = mock(S3ProfileService.class);
-    private final IdempotentS3RunService runs = mock(IdempotentS3RunService.class);
+    private final S3ProfileService s3Profiles = mock(S3ProfileService.class);
+    private final ClickHouseProfileService clickHouseProfiles = mock(ClickHouseProfileService.class);
+    private final KafkaProfileService kafkaProfiles = mock(KafkaProfileService.class);
+    private final IdempotentS3RunService s3Runs = mock(IdempotentS3RunService.class);
+    private final IdempotentAutomationRunService automationRuns = mock(IdempotentAutomationRunService.class);
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
-                    new VersionedAutomationApiController(profiles, runs))
+                    new VersionedAutomationApiController(s3Profiles, clickHouseProfiles, kafkaProfiles,
+                            s3Runs, automationRuns))
             .setControllerAdvice(new VersionedRunApiExceptionHandler())
             .build();
 
     @Test
     void listsOnlySafeProfileSelectionFields() throws Exception {
         UUID id = UUID.randomUUID();
-        when(profiles.list()).thenReturn(List.of(new S3ProfileService.Profile(
+        when(s3Profiles.list()).thenReturn(List.of(new S3ProfileService.Profile(
                 id, "primary", "https://s3.internal", "us-east-1", "secret-bucket",
                 true, "VAULT", "secret/path", "access", "secret", "token",
                 "/etc/ca.pem", true, null, null)));
@@ -47,10 +54,10 @@ class VersionedAutomationApiControllerTest {
     }
 
     @Test
-    void startsAndReplaysWithMachineReadableHeaders() throws Exception {
+    void startsAndReplaysS3WithMachineReadableHeaders() throws Exception {
         UUID profileId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
-        when(runs.start(eq("pipeline-42"), any(S3RunRequest.class), eq("ci-user")))
+        when(s3Runs.start(eq("pipeline-42"), any(S3RunRequest.class), eq("ci-user")))
                 .thenReturn(new IdempotentS3RunService.StartResult(runId, true));
 
         mvc.perform(post("/api/v1/runs/s3")
@@ -62,7 +69,52 @@ class VersionedAutomationApiControllerTest {
                 .andExpect(header().string("Location", "/api/v1/runs/" + runId))
                 .andExpect(header().string("Idempotency-Replayed", "true"))
                 .andExpect(jsonPath("$.runId").value(runId.toString()))
+                .andExpect(jsonPath("$.testType").value("S3"))
+                .andExpect(jsonPath("$.scope").value("LOCAL"))
                 .andExpect(jsonPath("$.replayed").value(true));
+    }
+
+    @Test
+    void startsLocalClickHouseAndDistributedKafkaThroughTheSameContract() throws Exception {
+        UUID profileId = UUID.randomUUID();
+        UUID agentId = UUID.randomUUID();
+        UUID clickHouseRun = UUID.randomUUID();
+        UUID kafkaRun = UUID.randomUUID();
+        when(automationRuns.startClickHouse(eq("clickhouse-1"), any(ClickHouseTestRequest.class), eq(null)))
+                .thenReturn(new ApiIdempotencyCoordinator.StartResult(clickHouseRun, false));
+        when(automationRuns.startDistributedKafka(eq("kafka-1"),
+                any(IdempotentAutomationRunService.DistributedKafkaRunRequest.class), eq(null)))
+                .thenReturn(new ApiIdempotencyCoordinator.StartResult(kafkaRun, false));
+
+        mvc.perform(post("/api/v1/runs/clickhouse")
+                        .header(VersionedAutomationApiController.IDEMPOTENCY_KEY_HEADER, "clickhouse-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"profileId":"%s","table":"events","operation":"INSERT",
+                                 "concurrency":2,"batchSize":1000,"rowCount":10000,
+                                 "durationSeconds":0,"warmupSeconds":0,"payloadBytes":128,
+                                 "queryCount":1,"autoCreateTable":true}
+                                """.formatted(profileId)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.runId").value(clickHouseRun.toString()))
+                .andExpect(jsonPath("$.testType").value("CLICKHOUSE"))
+                .andExpect(jsonPath("$.scope").value("LOCAL"));
+
+        mvc.perform(post("/api/v1/runs/distributed/kafka")
+                        .header(VersionedAutomationApiController.IDEMPOTENCY_KEY_HEADER, "kafka-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"distributed-kafka","agentIds":["%s"],"testRequest":{
+                                 "profileId":"%s","topic":"events","messageSizeBytes":1024,
+                                 "messageCount":1000,"producerThreads":2,"acks":"all",
+                                 "compressionType":"none","batchSize":16384,"lingerMs":5,
+                                 "enableIdempotence":true,"targetMessagesPerSec":0,
+                                 "maxInFlightMessages":10000}}
+                                """.formatted(agentId, profileId)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.runId").value(kafkaRun.toString()))
+                .andExpect(jsonPath("$.testType").value("KAFKA"))
+                .andExpect(jsonPath("$.scope").value("DISTRIBUTED"));
     }
 
     @Test
@@ -75,7 +127,7 @@ class VersionedAutomationApiControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        when(runs.start(eq("pipeline-42"), any(S3RunRequest.class), eq(null)))
+        when(s3Runs.start(eq("pipeline-42"), any(S3RunRequest.class), eq(null)))
                 .thenThrow(new ApiIdempotencyStore.IdempotencyConflictException());
         mvc.perform(post("/api/v1/runs/s3")
                         .header(VersionedAutomationApiController.IDEMPOTENCY_KEY_HEADER, "pipeline-42")
@@ -85,7 +137,7 @@ class VersionedAutomationApiControllerTest {
 
         UUID missingProfile = UUID.randomUUID();
         String missingBody = "{\"profileId\":\"" + missingProfile + "\"}";
-        when(runs.start(eq("pipeline-43"), any(S3RunRequest.class), eq(null)))
+        when(s3Runs.start(eq("pipeline-43"), any(S3RunRequest.class), eq(null)))
                 .thenThrow(new IdempotentS3RunService.ProfileNotFoundException(missingProfile));
         mvc.perform(post("/api/v1/runs/s3")
                         .header(VersionedAutomationApiController.IDEMPOTENCY_KEY_HEADER, "pipeline-43")
