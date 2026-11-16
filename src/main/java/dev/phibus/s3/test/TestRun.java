@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,7 +20,7 @@ public final class TestRun {
     private static final long THROUGHPUT_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(2);
     private static final long MAX_TRACKABLE_LATENCY_MS = TimeUnit.DAYS.toMillis(7);
 
-    private final UUID id = UUID.randomUUID();
+    private final UUID id;
     private final TestRequest request;
     private final TestType testType;
     private final RunScope scope;
@@ -67,6 +68,11 @@ public final class TestRun {
     }
 
     TestRun(TestType testType, RunScope scope, TestRequest request, int maxRetainedDetails) {
+        this(UUID.randomUUID(), testType, scope, request, maxRetainedDetails);
+    }
+
+    TestRun(UUID id, TestType testType, RunScope scope, TestRequest request, int maxRetainedDetails) {
+        this.id = Objects.requireNonNull(id, "Run id is required");
         this.testType = testType;
         this.scope = scope;
         this.request = request;

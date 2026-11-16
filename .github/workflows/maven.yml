@@ -49,6 +49,9 @@ jobs:
       - name: Verify Docker runtime for integration tests
         run: docker info
 
+      - name: Test automation CLI
+        run: python3 -m unittest discover -s src/test/python -p 'test_*.py'
+
       - name: Build, test and analyze
         run: mvn -B clean verify
 

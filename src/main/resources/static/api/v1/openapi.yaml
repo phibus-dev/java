@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: ЭВО.СНТ Run API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
-    Версионированный API чтения текущих запусков, долговременной истории и повторного
-    запуска безопасно сохранённой конфигурации S3, ClickHouse и Kafka тестов.
+    Версионированный API запуска S3-тестов, чтения текущих запусков, долговременной
+    истории и повторного запуска безопасно сохранённой конфигурации S3, ClickHouse и Kafka тестов.
 servers:
   - url: /api/v1
     description: Текущий Coordinator
@@ -16,6 +16,73 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /profiles/s3:
+    get:
+      tags: [Runs]
+      operationId: listS3Profiles
+      summary: Получить доступные S3-профили
+      description: Возвращает только поля выбора профиля, без endpoint, bucket, Vault path и credentials.
+      responses:
+        '200':
+          description: Безопасный список S3-профилей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/S3ProfileSummary'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/s3:
+    post:
+      tags: [Runs]
+      operationId: startS3Run
+      summary: Идемпотентно запустить локальный S3-тест
+      description: >-
+        Первый запрос создаёт запуск. Повтор с тем же Idempotency-Key, клиентом и телом
+        возвращает исходный runId; изменённое тело возвращает IDEMPOTENCY_CONFLICT.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/S3RunRequest'
+      responses:
+        '202':
+          description: Запуск принят либо воспроизведён по ключу
+          headers:
+            Location:
+              description: Канонический URL состояния запуска
+              schema:
+                type: string
+            Idempotency-Replayed:
+              description: true, если возвращён ранее созданный запуск
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunAccepted'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ProfileNotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /runs:
     get:
       tags: [Runs]
@@ -185,6 +252,16 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Стабильный ключ команды в рамках аутентифицированного клиента
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
     RunId:
       name: id
       in: path
@@ -274,6 +351,24 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ApiError'
+    ProfileNotFound:
+      description: S3-профиль не найден
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    IdempotencyConflict:
+      description: Ключ уже использован с другим телом команды
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
     RunStateConflict:
       description: Состояние запуска не допускает операцию
       headers:
@@ -313,6 +408,111 @@ components:
         minLength: 1
         maxLength: 64
   schemas:
+    S3ProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, defaultProfile]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        defaultProfile:
+          type: boolean
+    S3RunRequest:
+      type: object
+      additionalProperties: false
+      required: [profileId]
+      properties:
+        profileId:
+          type: string
+          format: uuid
+        objectKey:
+          type: string
+          default: performance-test/random-upload.bin
+        objectSizeMiB:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1048576
+          default: 32
+        partSizeMiB:
+          type: integer
+          format: int64
+          minimum: 5
+          maximum: 5120
+          default: 8
+        parallelism:
+          type: integer
+          minimum: 1
+          maximum: 32
+          default: 4
+        objectCount:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        deleteAfterTest:
+          type: boolean
+          default: true
+        operation:
+          type: string
+          enum: [UPLOAD, DOWNLOAD, HEAD, LIST, DELETE, LIFECYCLE, MIXED]
+          default: UPLOAD
+        executionMode:
+          type: string
+          enum: [OBJECT_COUNT, TIME_DURATION]
+          default: OBJECT_COUNT
+        durationSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 604800
+          default: 60
+        warmupSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 86400
+          default: 0
+        workloadProfile:
+          type: string
+          enum: [CUSTOM, INGESTION, ANALYTICS, ETL, BACKUP, ARCHIVE]
+          default: CUSTOM
+        workloadWeights:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        targetOperationsPerSecond:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+        operationThreads:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+    RunAccepted:
+      type: object
+      additionalProperties: false
+      required: [runId, testType, scope, monitorUrl, replayed]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        testType:
+          type: string
+          enum: [S3]
+        scope:
+          type: string
+          enum: [LOCAL]
+        monitorUrl:
+          type: string
+        replayed:
+          type: boolean
     RunScope:
       type: string
       enum: [LOCAL, DISTRIBUTED]
@@ -575,6 +775,8 @@ components:
             - RUN_NOT_FOUND
             - RUN_HISTORY_NOT_FOUND
             - RUN_STATE_CONFLICT
+            - IDEMPOTENCY_CONFLICT
+            - PROFILE_NOT_FOUND
             - CAPACITY_EXCEEDED
             - INTERNAL_ERROR
         detail:
