@@ -193,7 +193,7 @@ public class UnifiedRunHistoryStore {
                 Long.class, parameters.toArray());
         List<Object> pageParameters = new ArrayList<>(parameters);
         pageParameters.add(size);
-        pageParameters.add(page * size);
+        pageParameters.add((long) page * size);
         List<RunHistoryRow> items = jdbc.query(HISTORY_CTE + "SELECT * FROM unified_history" + where
                         + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
                 this::map, pageParameters.toArray());

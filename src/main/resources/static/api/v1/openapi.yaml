@@ -1,0 +1,590 @@
+openapi: 3.0.3
+info:
+  title: ЭВО.СНТ Run API
+  version: 1.0.0
+  description: >-
+    Версионированный API чтения текущих запусков, долговременной истории и повторного
+    запуска безопасно сохранённой конфигурации S3, ClickHouse и Kafka тестов.
+servers:
+  - url: /api/v1
+    description: Текущий Coordinator
+tags:
+  - name: Runs
+    description: Текущий жизненный цикл запусков
+  - name: Run history
+    description: Долговременная история и повторный запуск
+security:
+  - bearerAuth: []
+paths:
+  /runs:
+    get:
+      tags: [Runs]
+      operationId: listRuns
+      summary: Получить текущие запуски
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - $ref: '#/components/parameters/TestType'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Query'
+        - name: limit
+          in: query
+          description: Максимальное число результатов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        '200':
+          description: Список запусков
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunLifecycle'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /runs/{id}:
+    get:
+      tags: [Runs]
+      operationId: getRun
+      summary: Получить текущий запуск
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Текущий запуск
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunLifecycle'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/RunNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /run-history:
+    get:
+      tags: [Run history]
+      operationId: listRunHistory
+      summary: Получить долговременную историю
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - $ref: '#/components/parameters/TestType'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Query'
+        - name: from
+          in: query
+          description: Начало интервала создания, включительно
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Конец интервала создания, исключительно
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Страница истории
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunHistoryPage'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /run-history/{id}:
+    get:
+      tags: [Run history]
+      operationId: getRunHistoryEntry
+      summary: Получить запись истории
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Запись истории
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunHistoryEntry'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/RunHistoryNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /run-history/{id}/rerun:
+    post:
+      tags: [Run history]
+      operationId: rerunFromHistory
+      summary: Повторить завершённый запуск
+      description: Требует роль OPERATOR или ADMIN и сохранённую безопасную конфигурацию запуска.
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '202':
+          description: Новый запуск создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerunResult'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/RunHistoryNotFound'
+        '409':
+          $ref: '#/components/responses/RunStateConflict'
+        '429':
+          $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RunId:
+      name: id
+      in: path
+      required: true
+      description: UUID запуска
+      schema:
+        type: string
+        format: uuid
+    Scope:
+      name: scope
+      in: query
+      schema:
+        $ref: '#/components/schemas/RunScope'
+    TestType:
+      name: testType
+      in: query
+      schema:
+        $ref: '#/components/schemas/TestType'
+    Status:
+      name: status
+      in: query
+      schema:
+        $ref: '#/components/schemas/RunStatus'
+    Query:
+      name: q
+      in: query
+      description: Поиск по ID, названию, операции, цели или сообщению
+      schema:
+        type: string
+  responses:
+    InvalidRequest:
+      description: Некорректные параметры запроса
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            type: urn:evo-snt:error:invalid-request
+            title: Bad Request
+            status: 400
+            code: INVALID_REQUEST
+            detail: 'Unsupported scope: REMOTE'
+            instance: /api/v1/runs
+            requestId: 25b72370-0387-4935-b01b-20f8ccfb5fa9
+            timestamp: '2026-11-11T09:00:00Z'
+    AuthenticationRequired:
+      description: Требуется аутентификация
+      headers:
+        WWW-Authenticate:
+          description: Схема bearer-аутентификации
+          schema:
+            type: string
+            example: Bearer
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    AccessDenied:
+      description: Недостаточно прав
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RunNotFound:
+      description: Текущий запуск не найден
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RunHistoryNotFound:
+      description: Запись истории не найдена
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RunStateConflict:
+      description: Состояние запуска не допускает операцию
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    CapacityExceeded:
+      description: Исчерпана доступная ёмкость выполнения
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Retry-After:
+          description: Рекомендуемая задержка перед повтором, секунд
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalError:
+      description: Внутренняя ошибка без раскрытия технических деталей
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+  headers:
+    RequestId:
+      description: Идентификатор запроса для трассировки
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+  schemas:
+    RunScope:
+      type: string
+      enum: [LOCAL, DISTRIBUTED]
+    TestType:
+      type: string
+      enum: [S3, CLICKHOUSE, KAFKA]
+    RunStatus:
+      type: string
+      enum: [ASSIGNED, QUEUED, RUNNING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED, CANCELLED]
+    RunStopReason:
+      type: string
+      enum: [NORMAL, TIMEOUT, USER_CANCELLED, DEADLINE_EXCEEDED, ERROR, AGENT_CANCELLED, RECOVERY_TIMEOUT, RECOVERY_FAILED, UNKNOWN]
+    RunLifecycle:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - testType
+        - scope
+        - status
+        - createdAt
+        - completedOperations
+        - rowsProcessed
+        - bytesTransferred
+        - operationsPerSecond
+        - throughputMiBps
+        - p50LatencyMs
+        - p95LatencyMs
+        - p99LatencyMs
+        - errors
+        - participants
+        - latencyScope
+        - detailsUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        stopReason:
+          allOf:
+            - $ref: '#/components/schemas/RunStopReason'
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        completedOperations:
+          type: integer
+          format: int64
+        rowsProcessed:
+          type: integer
+          format: int64
+        bytesTransferred:
+          type: integer
+          format: int64
+        operationsPerSecond:
+          type: number
+          format: double
+        throughputMiBps:
+          type: number
+          format: double
+        p50LatencyMs:
+          type: number
+          format: double
+        p95LatencyMs:
+          type: number
+          format: double
+        p99LatencyMs:
+          type: number
+          format: double
+        errors:
+          type: integer
+          format: int64
+        participants:
+          type: integer
+          format: int32
+        latencyScope:
+          type: string
+        detailsUrl:
+          type: string
+    RunHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunHistoryEntry'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          minimum: 0
+    RunHistoryEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - testType
+        - scope
+        - status
+        - createdAt
+        - name
+        - operation
+        - target
+        - initiator
+        - completedOperations
+        - rowsProcessed
+        - bytesTransferred
+        - operationsPerSecond
+        - throughputMiBps
+        - p50LatencyMs
+        - p95LatencyMs
+        - p99LatencyMs
+        - errors
+        - participants
+        - latencyScope
+        - rerunnable
+      properties:
+        id:
+          type: string
+          format: uuid
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        name:
+          type: string
+        operation:
+          type: string
+        target:
+          type: string
+        initiator:
+          type: string
+        completedOperations:
+          type: integer
+          format: int64
+        rowsProcessed:
+          type: integer
+          format: int64
+        bytesTransferred:
+          type: integer
+          format: int64
+        operationsPerSecond:
+          type: number
+          format: double
+        throughputMiBps:
+          type: number
+          format: double
+        p50LatencyMs:
+          type: number
+          format: double
+        p95LatencyMs:
+          type: number
+          format: double
+        p99LatencyMs:
+          type: number
+          format: double
+        errors:
+          type: integer
+          format: int64
+        stopReason:
+          allOf:
+            - $ref: '#/components/schemas/RunStopReason'
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        participants:
+          type: integer
+          format: int32
+        latencyScope:
+          type: string
+        sourceDetailUrl:
+          type: string
+          nullable: true
+        rerunnable:
+          type: boolean
+    RerunResult:
+      type: object
+      additionalProperties: false
+      required: [sourceRunId, runId, testType, scope, status, monitorUrl]
+      properties:
+        sourceRunId:
+          type: string
+          format: uuid
+        runId:
+          type: string
+          format: uuid
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        monitorUrl:
+          type: string
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail, instance, requestId, timestamp]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - AUTHENTICATION_REQUIRED
+            - ACCESS_DENIED
+            - RUN_NOT_FOUND
+            - RUN_HISTORY_NOT_FOUND
+            - RUN_STATE_CONFLICT
+            - CAPACITY_EXCEEDED
+            - INTERNAL_ERROR
+        detail:
+          type: string
+        instance:
+          type: string
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        timestamp:
+          type: string
+          format: date-time
