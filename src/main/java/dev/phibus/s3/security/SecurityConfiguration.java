@@ -81,6 +81,8 @@ public class SecurityConfiguration {
                 .requestCache(cache -> cache.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/v1/profiles/**")
+                        .hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers(HttpMethod.GET, "/api/v1/**")
                         .hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
                         .anyRequest().hasAnyRole("ADMIN", "OPERATOR"))

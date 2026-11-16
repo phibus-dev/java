@@ -167,6 +167,37 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
   "https://coordinator.example/api/v1/run-history?testType=S3&status=COMPLETED&size=20"
 ```
 
+### CLI и идемпотентный запуск S3
+
+В репозитории и release assets находится CLI `evo-snt`, использующий только стандартную
+библиотеку Python 3. Первая версия поддерживает безопасный список S3-профилей, запуск без
+передачи credentials, ожидание терминального статуса и экспорт JSON/CSV/HTML/PDF:
+
+```bash
+export EVO_SNT_URL=https://coordinator.example
+export EVO_SNT_TOKEN="$TOKEN"
+
+./bin/evo-snt profiles list
+
+RUN_ID=$(./bin/evo-snt runs start \
+  --profile 3f820fe2-74cb-42e2-b1f3-38ee20ae82b1 \
+  --idempotency-key "gitlab-${CI_PIPELINE_ID}" \
+  --operation UPLOAD --object-size-mib 1024 --part-size-mib 32 \
+  --parallelism 16 --object-count 1)
+
+./bin/evo-snt runs wait "$RUN_ID" --timeout 900
+./bin/evo-snt runs export "$RUN_ID" --format json --output result.json
+```
+
+`POST /api/v1/runs/s3` требует заголовок `Idempotency-Key`. Ключ имеет область действия
+аутентифицированного клиента: повтор того же нормализованного запроса возвращает прежний `runId`
+и `Idempotency-Replayed: true`, а другое тело с тем же ключом получает HTTP 409 и код
+`IDEMPOTENCY_CONFLICT`. В PostgreSQL сохраняются только SHA-256 отпечатки клиента, ключа и тела.
+
+CLI возвращает exit code `0` только для `COMPLETED`; `COMPLETED_WITH_ERRORS`, `FAILED` и
+`CANCELLED` завершают `runs wait` с кодом `4`, таймаут — с кодом `5`. Для внутреннего CA можно
+указать `EVO_SNT_CA_FILE`; отключение TLS-проверки намеренно не поддерживается.
+
 ## Bootstrap и секреты
 
 Приложение запускается, если bootstrap-файл отсутствует, пуст или содержит только пробелы. Перед заменой существующей конфигурации создаётся backup в каталоге `config/backups`.

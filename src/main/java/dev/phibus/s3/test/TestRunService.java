@@ -55,19 +55,29 @@ public class TestRunService {
     }
 
     public TestRun create(TestType testType, TestRequest request) {
+        return create(UUID.randomUUID(), testType, request);
+    }
+
+    public TestRun create(UUID runId, TestRequest request) {
+        return create(runId, TestType.S3, request);
+    }
+
+    private TestRun create(UUID runId, TestType testType, TestRequest request) {
+        if (runId == null) throw new IllegalArgumentException("Run id is required");
         if (testType == null) throw new IllegalArgumentException("Test type is required");
         // S3 profiles remain an S3-specific concern. Distributed assignments already contain
         // effective connection settings, so AGENT mode never resolves profiles from PostgreSQL.
         TestRequest effectiveRequest = testType == TestType.S3 && applicationMode != ApplicationMode.AGENT
                 ? resolveProfile(request) : request;
         RunScope scope = applicationMode == ApplicationMode.AGENT ? RunScope.DISTRIBUTED : RunScope.LOCAL;
-        TestRun run = new TestRun(testType, scope, effectiveRequest);
-        runs.put(run.id(), run);
+        TestRun run = new TestRun(runId, testType, scope, effectiveRequest, TestRun.DEFAULT_MAX_RETAINED_DETAILS);
+        TestRun existing = runs.putIfAbsent(run.id(), run);
+        if (existing != null) return existing;
         try {
             resources.submit(testExecutor, testType.name(), run.id(), run::deadlineExceeded,
                     () -> execute(testType, run));
         } catch (RuntimeResourceManager.RunCapacityExceededException e) {
-            runs.remove(run.id());
+            runs.remove(run.id(), run);
             throw e;
         } catch (RuntimeException e) {
             run.fail(rootMessage(e));

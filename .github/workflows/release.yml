@@ -57,6 +57,8 @@ jobs:
           echo "minor=${VERSION_MAJOR}.${VERSION_MINOR}" >> "$GITHUB_OUTPUT"
       - name: Build, test and create documentation artifacts
         run: mvn -B clean verify source:jar javadoc:jar
+      - name: Test automation CLI
+        run: python3 -m unittest discover -s src/test/python -p 'test_*.py'
       - name: Prepare release assets
         shell: bash
         run: |
@@ -66,8 +68,9 @@ jobs:
           cp "target/s3-multipart-uploader-${VERSION}-sources.jar" "dist/evo-snt-s3-${VERSION}-sources.jar"
           cp "target/s3-multipart-uploader-${VERSION}-javadoc.jar" "dist/evo-snt-s3-${VERSION}-javadoc.jar"
           cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
+          cp bin/evo-snt dist/evo-snt
           cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md dist/
-          cd dist; sha256sum *.jar *.json README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md > SHA256SUMS
+          cd dist; sha256sum *.jar *.json evo-snt README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md > SHA256SUMS
       - name: Upload release assets to Actions
         uses: actions/upload-artifact@v7
         with:
@@ -118,6 +121,7 @@ jobs:
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-sources.jar
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-javadoc.jar
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-sbom.cdx.json
+            dist/evo-snt
             dist/SHA256SUMS
             dist/README.md
             dist/RELEASE_NOTES_${{ steps.version.outputs.project }}.md

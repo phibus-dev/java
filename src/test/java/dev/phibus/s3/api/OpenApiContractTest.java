@@ -23,10 +23,10 @@ class OpenApiContractTest {
         Map<String, Object> paths = map(root.get("paths"));
 
         assertThat(root.get("openapi")).isEqualTo("3.0.3");
-        assertThat(info.get("version")).isEqualTo("1.0.0");
+        assertThat(info.get("version")).isEqualTo("1.1.0");
         assertThat(paths.keySet()).containsExactlyInAnyOrder(
-                "/runs", "/runs/{id}", "/run-history", "/run-history/{id}",
-                "/run-history/{id}/rerun");
+                "/profiles/s3", "/runs/s3", "/runs", "/runs/{id}",
+                "/run-history", "/run-history/{id}", "/run-history/{id}/rerun");
 
         Set<String> operationIds = new LinkedHashSet<>();
         paths.values().stream().map(OpenApiContractTest::map).forEach(path -> path.forEach((method, value) -> {
@@ -37,7 +37,8 @@ class OpenApiContractTest {
                     .as("operationId %s must be unique", operationId).isTrue();
         }));
         assertThat(operationIds).containsExactlyInAnyOrder(
-                "listRuns", "getRun", "listRunHistory", "getRunHistoryEntry", "rerunFromHistory");
+                "listS3Profiles", "startS3Run", "listRuns", "getRun", "listRunHistory",
+                "getRunHistoryEntry", "rerunFromHistory");
     }
 
     @Test
@@ -55,10 +56,32 @@ class OpenApiContractTest {
                 "type", "title", "status", "code", "detail", "instance", "requestId", "timestamp");
         assertThat(list(codes.get("enum"))).contains("INVALID_REQUEST", "RUN_NOT_FOUND",
                 "RUN_HISTORY_NOT_FOUND", "RUN_STATE_CONFLICT", "CAPACITY_EXCEEDED",
-                "AUTHENTICATION_REQUIRED", "ACCESS_DENIED", "INTERNAL_ERROR");
+                "AUTHENTICATION_REQUIRED", "ACCESS_DENIED", "INTERNAL_ERROR",
+                "IDEMPOTENCY_CONFLICT", "PROFILE_NOT_FOUND");
         assertThat(map(securitySchemes.get("bearerAuth")))
                 .containsEntry("type", "http")
                 .containsEntry("scheme", "bearer");
+    }
+
+    @Test
+    void idempotentStartRequiresAClientKeyAndDocumentsReplay() throws IOException {
+        Map<String, Object> root = loadContract();
+        Map<String, Object> paths = map(root.get("paths"));
+        Map<String, Object> operation = map(map(paths.get("/runs/s3")).get("post"));
+        Map<String, Object> requestBody = map(operation.get("requestBody"));
+        Map<String, Object> accepted = map(map(operation.get("responses")).get("202"));
+        Map<String, Object> acceptedHeaders = map(accepted.get("headers"));
+        Map<String, Object> parameters = map(map(root.get("components")).get("parameters"));
+        Map<String, Object> idempotencyKey = map(parameters.get("IdempotencyKey"));
+
+        assertThat(requestBody.get("required")).isEqualTo(true);
+        assertThat(idempotencyKey)
+                .containsEntry("name", "Idempotency-Key")
+                .containsEntry("in", "header")
+                .containsEntry("required", true);
+        assertThat(acceptedHeaders.keySet()).containsExactlyInAnyOrder(
+                "Location", "Idempotency-Replayed");
+        assertThat(map(operation.get("responses")).keySet()).contains("202", "409", "429");
     }
 
     private static Map<String, Object> loadContract() throws IOException {

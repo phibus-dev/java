@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Minimal dependency-free CLI for the ЭВО.СНТ Run API v1."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import ssl
+import sys
+import time
+from typing import Any
+from urllib import error, parse, request
+import uuid
+
+
+VERSION = "0.1.0"
+TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"}
+
+
+class ApiError(RuntimeError):
+    def __init__(self, status: int, code: str, detail: str, request_id: str | None = None):
+        super().__init__(detail)
+        self.status = status
+        self.code = code
+        self.detail = detail
+        self.request_id = request_id
+
+
+class ApiClient:
+    def __init__(self, base_url: str, token: str | None, timeout: float, ca_file: str | None):
+        parsed = parse.urlparse(base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("--url must be an absolute http:// or https:// URL")
+        if timeout <= 0:
+            raise ValueError("--request-timeout must be greater than zero")
+        self.base_url = base_url.rstrip("/")
+        self.token = token.strip() if token else None
+        self.timeout = timeout
+        self.context = ssl.create_default_context(cafile=ca_file) if parsed.scheme == "https" else None
+
+    def json(self, method: str, path: str, body: dict[str, Any] | None = None,
+             headers: dict[str, str] | None = None) -> tuple[Any, Any]:
+        payload = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
+        response_body, response_headers = self._request(method, path, payload, headers)
+        if not response_body:
+            return None, response_headers
+        try:
+            return json.loads(response_body.decode("utf-8")), response_headers
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ApiError(502, "INVALID_RESPONSE", "Server returned invalid JSON") from exc
+
+    def bytes(self, path: str) -> tuple[bytes, Any]:
+        return self._request("GET", path, None, {"Accept": "*/*"})
+
+    def _request(self, method: str, path: str, payload: bytes | None,
+                 extra_headers: dict[str, str] | None) -> tuple[bytes, Any]:
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        if extra_headers:
+            headers.update(extra_headers)
+        req = request.Request(self.base_url + path, data=payload, headers=headers, method=method)
+        try:
+            with request.urlopen(req, timeout=self.timeout, context=self.context) as response:
+                return response.read(), response.headers
+        except error.HTTPError as exc:
+            raw = exc.read()
+            try:
+                problem = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                problem = {}
+            raise ApiError(
+                exc.code,
+                str(problem.get("code") or f"HTTP_{exc.code}"),
+                str(problem.get("detail") or problem.get("message") or exc.reason),
+                problem.get("requestId") or exc.headers.get("X-Request-ID"),
+            ) from exc
+        except error.URLError as exc:
+            raise ApiError(0, "CONNECTION_ERROR", str(exc.reason)) from exc
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="evo-snt", description="ЭВО.СНТ automation CLI")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    parser.add_argument("--url", default=os.getenv("EVO_SNT_URL", "http://localhost:8080"),
+                        help="Coordinator URL (env: EVO_SNT_URL)")
+    parser.add_argument("--token", default=os.getenv("EVO_SNT_TOKEN"),
+                        help="Bearer token (env: EVO_SNT_TOKEN)")
+    parser.add_argument("--ca-file", default=os.getenv("EVO_SNT_CA_FILE"),
+                        help="Trusted CA bundle for HTTPS (env: EVO_SNT_CA_FILE)")
+    parser.add_argument("--request-timeout", type=float, default=30.0)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    profiles = commands.add_parser("profiles", help="Work with stored profiles")
+    profile_commands = profiles.add_subparsers(dest="profiles_command", required=True)
+    profile_list = profile_commands.add_parser("list", help="List safe S3 profile summaries")
+    profile_list.add_argument("--json", action="store_true", dest="json_output")
+
+    runs = commands.add_parser("runs", help="Start, wait for and export runs")
+    run_commands = runs.add_subparsers(dest="runs_command", required=True)
+
+    start = run_commands.add_parser("start", help="Idempotently start a local S3 run")
+    start.add_argument("--profile", required=True, dest="profile_id")
+    start.add_argument("--idempotency-key", default=os.getenv("EVO_SNT_IDEMPOTENCY_KEY"), required=False)
+    start.add_argument("--object-key", default="performance-test/random-upload.bin")
+    start.add_argument("--object-size-mib", type=int, default=32)
+    start.add_argument("--part-size-mib", type=int, default=8)
+    start.add_argument("--parallelism", type=int, default=4)
+    start.add_argument("--object-count", type=int, default=1)
+    start.add_argument("--operation", choices=("UPLOAD", "DOWNLOAD", "HEAD", "LIST", "DELETE", "LIFECYCLE", "MIXED"), default="UPLOAD")
+    start.add_argument("--execution-mode", choices=("OBJECT_COUNT", "TIME_DURATION"), default="OBJECT_COUNT")
+    start.add_argument("--duration-seconds", type=int, default=60)
+    start.add_argument("--warmup-seconds", type=int, default=0)
+    start.add_argument("--target-ops", type=int, default=0)
+    start.add_argument("--keep-objects", action="store_true")
+    start.add_argument("--json", action="store_true", dest="json_output")
+
+    wait = run_commands.add_parser("wait", help="Wait until a run reaches a terminal status")
+    wait.add_argument("run_id")
+    wait.add_argument("--timeout", type=float, default=3600.0)
+    wait.add_argument("--interval", type=float, default=2.0)
+    wait.add_argument("--json", action="store_true", dest="json_output")
+
+    export = run_commands.add_parser("export", help="Export an S3 run report")
+    export.add_argument("run_id")
+    export.add_argument("--format", choices=("json", "csv", "html", "pdf"), default="json")
+    export.add_argument("--output", "-o")
+    export.add_argument("--force", action="store_true")
+    return parser
+
+
+def profiles_list(client: ApiClient, json_output: bool) -> int:
+    profiles, _ = client.json("GET", "/api/v1/profiles/s3")
+    if json_output:
+        print_json(profiles)
+    else:
+        print("ID\tDEFAULT\tNAME")
+        for profile in profiles:
+            marker = "yes" if profile.get("defaultProfile") else "no"
+            print(f"{profile.get('id')}\t{marker}\t{profile.get('name', '')}")
+    return 0
+
+
+def runs_start(client: ApiClient, args: argparse.Namespace) -> int:
+    idempotency_key = args.idempotency_key.strip() if args.idempotency_key else ""
+    if not idempotency_key:
+        raise ValueError("--idempotency-key or EVO_SNT_IDEMPOTENCY_KEY is required")
+    body = {
+        "profileId": canonical_uuid(args.profile_id, "--profile"),
+        "objectKey": args.object_key,
+        "objectSizeMiB": args.object_size_mib,
+        "partSizeMiB": args.part_size_mib,
+        "parallelism": args.parallelism,
+        "objectCount": args.object_count,
+        "deleteAfterTest": not args.keep_objects,
+        "operation": args.operation,
+        "executionMode": args.execution_mode,
+        "durationSeconds": args.duration_seconds,
+        "warmupSeconds": args.warmup_seconds,
+        "targetOperationsPerSecond": args.target_ops,
+    }
+    result, headers = client.json("POST", "/api/v1/runs/s3", body, {
+        "Idempotency-Key": idempotency_key,
+    })
+    if args.json_output:
+        print_json(result)
+    else:
+        print(result["runId"])
+        if headers.get("Idempotency-Replayed", "false").lower() == "true":
+            print("Existing run replayed", file=sys.stderr)
+    return 0
+
+
+def runs_wait(client: ApiClient, args: argparse.Namespace) -> int:
+    if args.timeout <= 0 or args.interval <= 0:
+        raise ValueError("--timeout and --interval must be greater than zero")
+    run_id = canonical_uuid(args.run_id, "run_id")
+    deadline = time.monotonic() + args.timeout
+    last_status = None
+    while True:
+        state = get_run_state(client, run_id)
+        status = str(state.get("status", "UNKNOWN"))
+        if status != last_status:
+            print(f"{run_id}: {status}", file=sys.stderr)
+            last_status = status
+        if status in TERMINAL_STATUSES:
+            if args.json_output:
+                print_json(state)
+            else:
+                print(status)
+            return 0 if status == "COMPLETED" else 4
+        if time.monotonic() >= deadline:
+            print(f"Timed out waiting for run {run_id}", file=sys.stderr)
+            return 5
+        time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
+
+
+def runs_export(client: ApiClient, args: argparse.Namespace) -> int:
+    run_id = canonical_uuid(args.run_id, "run_id")
+    encoded_run_id = parse.quote(run_id, safe="")
+    if args.format == "json":
+        value = retry_json(client, f"/api/v1/run-history/{encoded_run_id}")
+        payload = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    else:
+        path = (f"/api/tests/{encoded_run_id}/report.csv" if args.format == "csv"
+                else f"/api/history/{encoded_run_id}/export/{args.format}")
+        payload, _ = retry_download(client, path)
+    output = args.output or f"evo-snt-report-{run_id}.{args.format}"
+    if output == "-":
+        sys.stdout.buffer.write(payload)
+        return 0
+    mode = "wb" if args.force else "xb"
+    with Path(output).open(mode) as stream:
+        stream.write(payload)
+    print(output)
+    return 0
+
+
+def retry_download(client: ApiClient, path: str) -> tuple[bytes, Any]:
+    for attempt in range(6):
+        try:
+            return client.bytes(path)
+        except ApiError as exc:
+            if exc.status != 404 or attempt == 5:
+                raise
+            time.sleep(0.5)
+    raise AssertionError("unreachable")
+
+
+def retry_json(client: ApiClient, path: str) -> Any:
+    for attempt in range(6):
+        try:
+            value, _ = client.json("GET", path)
+            return value
+        except ApiError as exc:
+            if exc.status != 404 or attempt == 5:
+                raise
+            time.sleep(0.5)
+    raise AssertionError("unreachable")
+
+
+def get_run_state(client: ApiClient, run_id: str) -> Any:
+    encoded = parse.quote(run_id, safe="")
+    try:
+        value, _ = client.json("GET", f"/api/v1/runs/{encoded}")
+        return value
+    except ApiError as exc:
+        if exc.status != 404:
+            raise
+    value, _ = client.json("GET", f"/api/v1/run-history/{encoded}")
+    return value
+
+
+def canonical_uuid(value: str, name: str) -> str:
+    try:
+        return str(uuid.UUID(value))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a UUID") from exc
+
+
+def print_json(value: Any) -> None:
+    print(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+def dispatch(args: argparse.Namespace, client: ApiClient) -> int:
+    if args.command == "profiles" and args.profiles_command == "list":
+        return profiles_list(client, args.json_output)
+    if args.command == "runs" and args.runs_command == "start":
+        return runs_start(client, args)
+    if args.command == "runs" and args.runs_command == "wait":
+        return runs_wait(client, args)
+    if args.command == "runs" and args.runs_command == "export":
+        return runs_export(client, args)
+    raise ValueError("Unsupported command")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    try:
+        args = parser.parse_args(argv)
+        client = ApiClient(args.url, args.token, args.request_timeout, args.ca_file)
+        return dispatch(args, client)
+    except ApiError as exc:
+        suffix = f"; requestId={exc.request_id}" if exc.request_id else ""
+        print(f"{exc.code}: {exc.detail} (HTTP {exc.status}{suffix})", file=sys.stderr)
+        return 3
+    except (OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

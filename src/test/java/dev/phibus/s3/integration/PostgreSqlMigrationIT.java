@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import dev.phibus.s3.api.ApiIdempotencyStore;
 import dev.phibus.s3.history.TestHistoryStore;
 import dev.phibus.s3.lifecycle.RunScope;
 import dev.phibus.s3.lifecycle.RunStatus;
@@ -59,11 +60,11 @@ class PostgreSqlMigrationIT {
     void allExpectedTablesAreCreatedAndMigrationsAreRepeatable() {
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE", Integer.class);
-        assertThat(applied).isGreaterThanOrEqualTo(26);
+        assertThat(applied).isGreaterThanOrEqualTo(27);
 
         for (String table : new String[]{"agent", "test_run", "test_schedule", "security_audit_event", "s3_profile",
                 "clickhouse_profile", "clickhouse_test_run", "clickhouse_replication_snapshot",
-                "clickhouse_replicated_scenario_run", "clickhouse_failover_run"}) {
+                "clickhouse_replicated_scenario_run", "clickhouse_failover_run", "api_idempotency"}) {
             Boolean exists = jdbc.queryForObject(
                     "SELECT to_regclass('public.' || ?) IS NOT NULL", Boolean.class, table);
             assertThat(exists).as("table %s", table).isTrue();
@@ -107,6 +108,23 @@ class PostgreSqlMigrationIT {
         DataSource dataSource = jdbc.getDataSource();
         assertThat(dataSource).isNotNull();
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+    }
+
+    @Test
+    void apiIdempotencyClaimsSurviveRetriesAndRejectChangedPayloads() {
+        ApiIdempotencyStore store = new ApiIdempotencyStore(jdbc);
+        String client = UUID.randomUUID().toString().replace("-", "").repeat(2);
+        String key = UUID.randomUUID().toString().replace("-", "").repeat(2);
+        String request = "a".repeat(64);
+        UUID runId = UUID.randomUUID();
+
+        ApiIdempotencyStore.Claim created = store.claim(client, key, request, "S3_RUN", runId);
+        ApiIdempotencyStore.Claim replayed = store.claim(client, key, request, "S3_RUN", UUID.randomUUID());
+
+        assertThat(created).isEqualTo(new ApiIdempotencyStore.Claim(runId, false));
+        assertThat(replayed).isEqualTo(new ApiIdempotencyStore.Claim(runId, true));
+        assertThatThrownBy(() -> store.claim(client, key, "b".repeat(64), "S3_RUN", UUID.randomUUID()))
+                .isInstanceOf(ApiIdempotencyStore.IdempotencyConflictException.class);
     }
 
     @Test

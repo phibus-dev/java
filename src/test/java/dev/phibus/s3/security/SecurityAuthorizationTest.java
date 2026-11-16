@@ -75,11 +75,17 @@ class SecurityAuthorizationTest {
     void viewerCanReadButCannotMutateApi() throws Exception {
         mvc.perform(get("/api/read")).andExpect(status().isOk());
         mvc.perform(get("/api/v1/runs")).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/profiles/s3"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         mvc.perform(get("/settings")).andExpect(status().isForbidden());
         mvc.perform(post("/api/tests").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/history/123/rerun").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/run-history/123/rerun").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/run-history/123/rerun"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        mvc.perform(post("/api/v1/runs/s3"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
@@ -89,6 +95,8 @@ class SecurityAuthorizationTest {
     void operatorCanRunTestsButCannotChangeAdministration() throws Exception {
         mvc.perform(post("/api/tests").with(csrf())).andExpect(status().isOk());
         mvc.perform(post("/api/v1/run-history/123/rerun")).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/profiles/s3")).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/runs/s3")).andExpect(status().isOk());
         mvc.perform(post("/api/settings").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/config/import").with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post("/api/agents/123/enabled").with(csrf())).andExpect(status().isForbidden());
@@ -105,12 +113,12 @@ class SecurityAuthorizationTest {
 
     @RestController
     public static class ProbeController {
-        @GetMapping({"/settings", "/api/read", "/api/v1/runs"})
+        @GetMapping({"/settings", "/api/read", "/api/v1/runs", "/api/v1/profiles/s3"})
         public String read() { return "ok"; }
 
         @PostMapping({"/api/agents/register", "/api/agents/{id}/heartbeat", "/api/agents/{id}/enabled",
                 "/api/tests", "/api/history/{id}/rerun", "/api/run-history/{id}/rerun",
-                "/api/v1/run-history/{id}/rerun",
+                "/api/v1/run-history/{id}/rerun", "/api/v1/runs/s3",
                 "/api/settings", "/api/config/import"})
         public String write() { return "ok"; }
     }

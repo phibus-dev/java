@@ -12,13 +12,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = VersionedRunApiController.class)
+@RestControllerAdvice(assignableTypes = {
+        VersionedRunApiController.class, VersionedAutomationApiController.class
+})
 public class VersionedRunApiExceptionHandler {
     private static final Logger LOG = LoggerFactory.getLogger(VersionedRunApiExceptionHandler.class);
 
@@ -32,6 +36,18 @@ public class VersionedRunApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> historyNotFound(
             UnifiedRunRerunService.RunHistoryNotFoundException error, HttpServletRequest request) {
         return response(request, HttpStatus.NOT_FOUND, "RUN_HISTORY_NOT_FOUND", error.getMessage());
+    }
+
+    @ExceptionHandler(IdempotentS3RunService.ProfileNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> profileNotFound(
+            IdempotentS3RunService.ProfileNotFoundException error, HttpServletRequest request) {
+        return response(request, HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", error.getMessage());
+    }
+
+    @ExceptionHandler(ApiIdempotencyStore.IdempotencyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> idempotencyConflict(
+            ApiIdempotencyStore.IdempotencyConflictException error, HttpServletRequest request) {
+        return response(request, HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT", error.getMessage());
     }
 
     @ExceptionHandler(RuntimeResourceManager.RunCapacityExceededException.class)
@@ -52,10 +68,21 @@ public class VersionedRunApiExceptionHandler {
     }
 
     @ExceptionHandler({IllegalArgumentException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class})
+            ServletRequestBindingException.class, MethodArgumentNotValidException.class,
+            HttpMessageNotReadableException.class})
     public ResponseEntity<ApiErrorResponse> invalidRequest(Exception error, HttpServletRequest request) {
-        String message = error instanceof MethodArgumentTypeMismatchException mismatch
-                ? "Invalid value for " + mismatch.getName() : safeMessage(error);
+        String message;
+        if (error instanceof MethodArgumentTypeMismatchException mismatch) {
+            message = "Invalid value for " + mismatch.getName();
+        } else if (error instanceof MethodArgumentNotValidException validation) {
+            message = validation.getBindingResult().getFieldErrors().stream().findFirst()
+                    .map(field -> field.getField() + ": " + field.getDefaultMessage())
+                    .orElse("Request validation failed");
+        } else if (error instanceof HttpMessageNotReadableException) {
+            message = "Malformed JSON request";
+        } else {
+            message = safeMessage(error);
+        }
         return response(request, HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
     }
 
