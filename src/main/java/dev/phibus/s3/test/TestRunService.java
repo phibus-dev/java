@@ -70,6 +70,7 @@ public class TestRunService {
         TestRequest effectiveRequest = testType == TestType.S3 && applicationMode != ApplicationMode.AGENT
                 ? resolveProfile(request) : request;
         RunScope scope = applicationMode == ApplicationMode.AGENT ? RunScope.DISTRIBUTED : RunScope.LOCAL;
+        if (testType == TestType.S3) resources.validateDemand(s3Demand(effectiveRequest));
         TestRun run = new TestRun(runId, testType, scope, effectiveRequest, TestRun.DEFAULT_MAX_RETAINED_DETAILS);
         TestRun existing = runs.putIfAbsent(run.id(), run);
         if (existing != null) return existing;
@@ -141,6 +142,13 @@ public class TestRunService {
         Throwable current = error;
         while (current.getCause() != null) current = current.getCause();
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private static RuntimeResourceManager.RunDemand s3Demand(TestRequest request) {
+        if (request == null) throw new IllegalArgumentException("S3 test request is required");
+        long duration = request.durationMode()
+                ? Math.addExact(request.effectiveWarmupSeconds(), request.effectiveDurationSeconds()) : 0;
+        return RuntimeResourceManager.RunDemand.s3(request.parallelism(), duration, request.totalBytes());
     }
 
     public TestRun get(UUID id) {

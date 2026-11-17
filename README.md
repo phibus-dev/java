@@ -314,7 +314,16 @@ deploy/prometheus/s3-performance-alerts.yml
 |---|---:|---|
 | `S3PERF_RUNTIME_MAX_CONCURRENT_RUNS` | `8` | Одновременные локальные/agent-side прогоны |
 | `S3PERF_RUNTIME_MAX_WORKER_TASKS` | `64` | Суммарная concurrency worker-задач |
+| `S3PERF_RUNTIME_MAX_WORKER_TASKS_PER_RUN` | наследует global | Worker-задачи одного прогона |
 | `S3PERF_RUNTIME_MAX_RUN_DURATION_SECONDS` | `86400` | Жёсткий дедлайн одного прогона |
+| `S3PERF_RUNTIME_MAX_CONCURRENT_RUNS_{S3,CLICKHOUSE,KAFKA}` | наследует global | Квоты прогонов по движкам |
+| `S3PERF_RUNTIME_MAX_CONCURRENT_RUNS_{LOCAL,DISTRIBUTED}` | наследует global | Квоты прогонов Coordinator/Agent |
+| `S3PERF_RUNTIME_MAX_WORKER_TASKS_{S3,CLICKHOUSE,KAFKA}` | наследует global | Квоты worker-задач по движкам |
+| `S3PERF_RUNTIME_MAX_WORKER_TASKS_{LOCAL,DISTRIBUTED}` | наследует global | Квоты worker-задач Coordinator/Agent |
+| `S3PERF_RUNTIME_MAX_S3_BYTES_PER_RUN` | `2251799813685248` | Максимальный объём S3-прогона |
+| `S3PERF_RUNTIME_MAX_CLICKHOUSE_ROWS_PER_RUN` | `Long.MAX_VALUE` | Максимум строк ClickHouse INSERT |
+| `S3PERF_RUNTIME_MAX_CLICKHOUSE_QUERIES_PER_RUN` | `10000000` | Максимум ClickHouse SELECT-запросов |
+| `S3PERF_RUNTIME_MAX_KAFKA_MESSAGES_PER_RUN` | `Long.MAX_VALUE` | Максимум Kafka-сообщений |
 | `S3PERF_RUNTIME_EXECUTOR_QUEUE_CAPACITY` | `32` | Очередь верхнеуровневых задач |
 | `S3PERF_POSTGRESQL_POOL_MAXIMUM_SIZE` | `16` | Максимальный размер HikariCP |
 | `S3PERF_POSTGRESQL_CONNECTION_TIMEOUT_MS` | `10000` | Ожидание JDBC connection |
@@ -323,7 +332,7 @@ deploy/prometheus/s3-performance-alerts.yml
 | `S3PERF_DISTRIBUTED_RECOVERY_TIMEOUT_SECONDS` | `300` | Отмена восстановленного запуска без новых отчётов Agent |
 | `S3PERF_DISTRIBUTED_RECOVERY_SCAN_INTERVAL_MS` | `30000` | Интервал reconciliation распределённых запусков |
 
-Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Актуальная ёмкость агента также доступна в его heartbeat tags.
+Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Актуальная ёмкость агента также доступна в его heartbeat tags. Правила наследования, ответы API и порядок подбора значений описаны в [M4_RESOURCE_LIMITS.md](M4_RESOURCE_LIMITS.md).
 
 ## Сборка
 

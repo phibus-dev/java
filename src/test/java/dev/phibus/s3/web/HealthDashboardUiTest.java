@@ -17,6 +17,11 @@ class HealthDashboardUiTest {
         assertThat(template)
                 .contains("primaryNav(active='monitoring')")
                 .contains("id=\"health-components\"")
+                .contains("id=\"runtime-runs\"")
+                .contains("id=\"runtime-workers\"")
+                .contains("id=\"runtime-workers-per-run\"")
+                .contains("id=\"runtime-duration\"")
+                .contains("id=\"runtime-capacity\"")
                 .contains("src=\"/monitoring.js\"")
                 .doesNotContain("<script>")
                 .doesNotContain("onclick=");
@@ -25,6 +30,9 @@ class HealthDashboardUiTest {
                 .contains("setInterval")
                 .contains("30000")
                 .contains("replaceChildren")
+                .contains("health.runtimeCapacity")
+                .contains("capacity.byTestType")
+                .contains("capacity.byScope")
                 .doesNotContain("innerHTML");
     }
 

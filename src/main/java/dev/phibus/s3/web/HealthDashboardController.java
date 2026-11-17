@@ -1,5 +1,6 @@
 package dev.phibus.s3.web;
 
+import dev.phibus.s3.runtime.RuntimeResourceManager;
 import dev.phibus.s3.settings.ApplicationStateService;
 import dev.phibus.s3.settings.BootstrapSettings;
 import dev.phibus.s3.settings.SettingsService;
@@ -14,10 +15,13 @@ import org.springframework.web.bind.annotation.ResponseBody;
 public class HealthDashboardController {
     private final SettingsService settingsService;
     private final ApplicationStateService stateService;
+    private final RuntimeResourceManager resources;
 
-    public HealthDashboardController(SettingsService settingsService, ApplicationStateService stateService) {
+    public HealthDashboardController(SettingsService settingsService, ApplicationStateService stateService,
+                                     RuntimeResourceManager resources) {
         this.settingsService = settingsService;
         this.stateService = stateService;
+        this.resources = resources;
     }
 
     @GetMapping("/monitoring")
@@ -40,7 +44,8 @@ public class HealthDashboardController {
                         settings.keycloak().issuerUri(), settings.keycloak().enabled() ? "Включён" : "Отключён"),
                 new ComponentHealth("Приложение", "UP", "local", "Spring Boot process", null));
         long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
-        return new HealthOverview(stateService.current().name(), Instant.now(), uptimeMillis, components);
+        return new HealthOverview(stateService.current().name(), Instant.now(), uptimeMillis,
+                resources.capacity(), components);
     }
 
     private ComponentHealth component(String name, boolean ready, String target, String details) {
@@ -56,6 +61,7 @@ public class HealthDashboardController {
     }
 
     public record HealthOverview(String applicationState, Instant checkedAt, long uptimeMillis,
+                                 RuntimeResourceManager.CapacitySnapshot runtimeCapacity,
                                  List<ComponentHealth> components) {}
 
     public record ComponentHealth(String name, String status, String target, String details, Long latencyMs) {}
