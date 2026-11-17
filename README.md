@@ -231,7 +231,8 @@ KAFKA_RUN=$(./bin/evo-snt runs start kafka --scope distributed \
 ./bin/evo-snt runs assert "$RUN_ID" --policy SMOKE
 ./bin/evo-snt runs assert "$RUN_ID" --policy BASELINE_TOLERANT --baseline "$BASELINE_RUN_ID"
 ./bin/evo-snt runs soak --config config/soak-reference.example.json \
-  --output-dir target/reference-soak
+  --output-dir target/reference-soak \
+  --public-summary-dir target/reference-soak-public
 ```
 
 Все маршруты `POST /api/v1/runs/**` требуют заголовок `Idempotency-Key`. Ключ имеет область действия
@@ -252,8 +253,11 @@ CLI возвращает exit code `0` только для `COMPLETED`; `COMPLET
 gate к каждому окну и проверяет деградацию operations/s, MiB/s, p95 и суммарного error rate между
 первой и последней третью серии. Она принимает только UUID сохранённого профиля и безопасные
 параметры нагрузки: credentials и token в JSON запрещены. Код `7` означает отрицательный результат
-soak-проверки, а `3` — техническую ошибку API. Ручной, reusable и opt-in scheduled workflow хранит
-полное evidence 90 дней. Настройка эталонного окружения и правила интерпретации результата:
+soak-проверки, а `3` — техническую ошибку API. Для изолированного контура предусмотрен hardened
+systemd timer: полный evidence остаётся локально, а отдельная сводка строится по белому списку без
+URL, UUID запусков/профилей и диагностических сообщений. GitHub workflow, применимый только при
+сетевой доступности Coordinator, хранит 90 дней исключительно эту обезличенную сводку. Настройка
+эталонного окружения и правила интерпретации результата:
 [M4_SOAK_TESTS.md](M4_SOAK_TESTS.md).
 
 ## Bootstrap и секреты

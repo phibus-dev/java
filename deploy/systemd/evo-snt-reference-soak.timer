@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly EVO.SNT offline reference soak
+
+[Timer]
+OnCalendar=Sun *-*-* 01:23:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+AccuracySec=1m
+Unit=evo-snt-reference-soak.service
+
+[Install]
+WantedBy=timers.target

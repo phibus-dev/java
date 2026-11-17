@@ -19,7 +19,7 @@ from urllib import error, parse, request
 import uuid
 
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"}
 TEST_TYPES = ("s3", "clickhouse", "kafka")
 SOAK_EXIT_FAILED = 7
@@ -133,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Coordinator URL (env: EVO_SNT_URL)")
     parser.add_argument("--token", default=os.getenv("EVO_SNT_TOKEN"),
                         help="Bearer token (env: EVO_SNT_TOKEN)")
+    parser.add_argument("--token-file", default=os.getenv("EVO_SNT_TOKEN_FILE"),
+                        help="Read the bearer token from a file (env: EVO_SNT_TOKEN_FILE)")
     parser.add_argument("--ca-file", default=os.getenv("EVO_SNT_CA_FILE"),
                         help="Trusted CA bundle for HTTPS (env: EVO_SNT_CA_FILE)")
     parser.add_argument("--request-timeout", type=float, default=30.0)
@@ -230,6 +232,10 @@ def build_parser() -> argparse.ArgumentParser:
     soak.add_argument("--config", required=True, help="Path to a versioned soak JSON configuration")
     soak.add_argument("--output-dir", default="soak-results",
                       help="Directory for per-window evidence and the aggregate summary")
+    soak.add_argument("--public-summary-dir",
+                      help="Separate directory for an anonymized JSON and Markdown summary")
+    soak.add_argument("--idempotency-prefix",
+                      help="Override the config prefix for this invocation")
     soak.add_argument("--force", action="store_true",
                       help="Allow known evidence files in an existing directory to be overwritten")
     soak.add_argument("--json", action="store_true", dest="json_output")
@@ -414,11 +420,25 @@ def evaluate_quality_gate(client: ApiClient, run_id: str, policy: str,
 
 def runs_soak(client: ApiClient, args: argparse.Namespace) -> int:
     supplied = load_soak_config(Path(args.config))
+    if args.idempotency_prefix:
+        supplied = dict(supplied)
+        supplied["idempotencyPrefix"] = args.idempotency_prefix
     scenario_id = required_text(supplied.get("scenarioId"), "scenarioId")
+    output_path = Path(args.output_dir)
+    public_path = Path(args.public_summary_dir) if args.public_summary_dir else None
+    if public_path is not None:
+        private_resolved = output_path.resolve()
+        public_resolved = public_path.resolve()
+        if (private_resolved == public_resolved
+                or private_resolved in public_resolved.parents
+                or public_resolved in private_resolved.parents):
+            raise ValueError("--public-summary-dir and --output-dir must not overlap")
     scenario, _ = client.json(
         "GET", "/api/v1/benchmark-scenarios/" + parse.quote(scenario_id, safe=""))
     config = normalize_soak_config(supplied, scenario)
-    output_dir = prepare_soak_output(Path(args.output_dir), args.force)
+    output_dir = prepare_soak_output(output_path, args.force)
+    public_dir = (prepare_public_summary_output(public_path, args.force)
+                  if public_path is not None else None)
     write_json(output_dir / "resolved-config.json", public_soak_config(config, scenario))
 
     started_at = utc_now()
@@ -485,7 +505,7 @@ def runs_soak(client: ApiClient, args: argparse.Namespace) -> int:
             write_json(window_dir / "window.json", window)
             summary = build_soak_summary(
                 config, scenario, windows, started_at, technical_error=technical_error)
-            write_soak_summary(output_dir, summary)
+            write_all_soak_summaries(output_dir, public_dir, summary)
             raise
 
         window["finishedAt"] = utc_now()
@@ -496,7 +516,7 @@ def runs_soak(client: ApiClient, args: argparse.Namespace) -> int:
             time.sleep(config["cooldownSeconds"])
 
     summary = build_soak_summary(config, scenario, windows, started_at, technical_error)
-    write_soak_summary(output_dir, summary)
+    write_all_soak_summaries(output_dir, public_dir, summary)
     if args.json_output:
         print_json(summary)
     else:
@@ -822,9 +842,108 @@ def prepare_soak_output(path: Path, force: bool) -> Path:
     return path
 
 
+def prepare_public_summary_output(path: Path, force: bool) -> Path:
+    if path.is_symlink():
+        raise ValueError(f"Public summary path must not be a symlink: {path}")
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Public summary path is not a directory: {path}")
+    entries = list(path.iterdir()) if path.exists() else []
+    if entries and not force:
+        raise ValueError(f"Public summary directory is not empty: {path}; use --force to overwrite")
+    allowed = {"soak-summary.json", "soak-summary.md"}
+    unexpected = [entry for entry in entries
+                  if entry.name not in allowed or entry.is_symlink() or not entry.is_file()]
+    if unexpected:
+        names = ", ".join(sorted(entry.name for entry in unexpected))
+        raise ValueError(f"Public summary directory contains unexpected entries: {names}")
+    for entry in entries:
+        entry.unlink()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def write_soak_summary(output_dir: Path, summary: dict[str, Any]) -> None:
     write_json(output_dir / "soak-summary.json", summary)
     (output_dir / "soak-summary.md").write_text(soak_markdown(summary), encoding="utf-8")
+
+
+def write_all_soak_summaries(output_dir: Path, public_dir: Path | None,
+                             summary: dict[str, Any]) -> None:
+    write_soak_summary(output_dir, summary)
+    if public_dir is not None:
+        public_summary = anonymized_soak_summary(summary)
+        write_json(public_dir / "soak-summary.json", public_summary)
+        (public_dir / "soak-summary.md").write_text(
+            soak_markdown(public_summary), encoding="utf-8")
+
+
+def anonymized_soak_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    windows = []
+    for window in summary.get("windows", []):
+        metrics = window.get("metrics", {})
+        windows.append(compact({
+            "index": window.get("index"),
+            "status": window.get("status"),
+            "gateVerdict": window.get("gateVerdict"),
+            "passed": window.get("passed"),
+            "waitTimedOut": window.get("waitTimedOut"),
+            "metrics": compact({
+                "operationsPerSecond": metrics.get("operationsPerSecond"),
+                "throughputMiBps": metrics.get("throughputMiBps"),
+                "p95LatencyMs": metrics.get("p95LatencyMs"),
+                "p99LatencyMs": metrics.get("p99LatencyMs"),
+                "completedOperations": metrics.get("completedOperations"),
+                "errors": metrics.get("errors"),
+            }) if isinstance(metrics, dict) else {},
+        }))
+    error = summary.get("technicalError")
+    public_error = compact({
+        "window": error.get("window"),
+        "status": error.get("status"),
+        "code": error.get("code"),
+    }) if isinstance(error, dict) else None
+    return compact({
+        "schemaVersion": summary.get("schemaVersion", 1),
+        "anonymized": True,
+        "verdict": summary.get("verdict"),
+        "scenarioId": summary.get("scenarioId"),
+        "testType": summary.get("testType"),
+        "scope": summary.get("scope"),
+        "policyId": summary.get("policyId"),
+        "startedAt": summary.get("startedAt"),
+        "finishedAt": summary.get("finishedAt"),
+        "expectedWindows": summary.get("expectedWindows"),
+        "executedWindows": summary.get("executedWindows"),
+        "passedWindows": summary.get("passedWindows"),
+        "technicalError": public_error,
+        "drift": anonymized_soak_drift(summary.get("drift")),
+        "windows": windows,
+    })
+
+
+def anonymized_soak_drift(drift: Any) -> dict[str, Any]:
+    if not isinstance(drift, dict):
+        return {}
+    criteria = []
+    for criterion in drift.get("criteria", []):
+        if not isinstance(criterion, dict):
+            continue
+        criteria.append(compact({
+            "id": criterion.get("id"),
+            "passed": criterion.get("passed"),
+            "actual": criterion.get("actual"),
+            "operator": criterion.get("operator"),
+            "expected": criterion.get("expected"),
+            "unit": criterion.get("unit"),
+            "firstMedian": criterion.get("firstMedian"),
+            "lastMedian": criterion.get("lastMedian"),
+        }))
+    return compact({
+        "verdict": drift.get("verdict"),
+        "sampleWindows": drift.get("sampleWindows"),
+        "comparisonWindowSize": drift.get("comparisonWindowSize"),
+        "criteria": criteria,
+    })
 
 
 def soak_markdown(summary: dict[str, Any]) -> str:
@@ -834,18 +953,25 @@ def soak_markdown(summary: dict[str, Any]) -> str:
         f"- Quality gate: `{summary.get('policyId')}`",
         f"- Windows: {summary.get('passedWindows')}/{summary.get('expectedWindows')} passed",
         f"- Drift: **{summary.get('drift', {}).get('verdict', 'UNKNOWN')}**", "",
-        "| Window | Run | Status | Gate | ops/s | MiB/s | p95 ms | Errors |",
-        "|---:|---|---|---|---:|---:|---:|---:|",
     ]
+    show_run_ids = any("runId" in window for window in summary.get("windows", []))
+    if show_run_ids:
+        lines.extend(["| Window | Run | Status | Gate | ops/s | MiB/s | p95 ms | Errors |",
+                      "|---:|---|---|---|---:|---:|---:|---:|"])
+    else:
+        lines.extend(["| Window | Status | Gate | ops/s | MiB/s | p95 ms | Errors |",
+                      "|---:|---|---|---:|---:|---:|---:|"])
     for window in summary.get("windows", []):
         metrics = window.get("metrics", {})
-        lines.append(
-            f"| {window.get('index')} | `{window.get('runId', '—')}` | "
-            f"{window.get('status', 'ERROR')} | {window.get('gateVerdict', '—')} | "
+        row = f"| {window.get('index')} | "
+        if show_run_ids:
+            row += f"`{window.get('runId', '—')}` | "
+        row += (f"{window.get('status', 'ERROR')} | {window.get('gateVerdict', '—')} | "
             f"{format_metric(metrics.get('operationsPerSecond'))} | "
             f"{format_metric(metrics.get('throughputMiBps'))} | "
             f"{format_metric(metrics.get('p95LatencyMs'))} | "
             f"{metrics.get('errors', '—')} |")
+        lines.append(row)
     lines.extend(["", "## Drift criteria", "",
                   "| Criterion | Result | Actual | Required |",
                   "|---|---|---:|---:|"])
@@ -856,8 +982,8 @@ def soak_markdown(summary: dict[str, Any]) -> str:
                      f"{criterion.get('operator')} {criterion.get('expected')} {unit} |")
     error = summary.get("technicalError")
     if error:
-        lines.extend(["", "## Technical error", "",
-                      f"`{error.get('code')}`: {error.get('detail')}"])
+        detail = f": {error.get('detail')}" if error.get("detail") else ""
+        lines.extend(["", "## Technical error", "", f"`{error.get('code')}`{detail}"])
     return "\n".join(lines) + "\n"
 
 
@@ -1006,6 +1132,17 @@ def compact(value: dict[str, Any]) -> dict[str, Any]:
     return {key: item for key, item in value.items() if item is not None}
 
 
+def load_bearer_token(token: str | None, token_file: str | None) -> str | None:
+    if token and token_file:
+        raise ValueError("Use either --token/EVO_SNT_TOKEN or --token-file/EVO_SNT_TOKEN_FILE")
+    if not token_file:
+        return token
+    lines = Path(token_file).read_text(encoding="utf-8").splitlines()
+    if len(lines) != 1 or not lines[0].strip():
+        raise ValueError("Token file must contain exactly one non-empty line")
+    return lines[0].strip()
+
+
 def canonical_uuid(value: str, name: str) -> str:
     try:
         return str(uuid.UUID(value))
@@ -1041,7 +1178,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
-        client = ApiClient(args.url, args.token, args.request_timeout, args.ca_file)
+        token = load_bearer_token(args.token, args.token_file)
+        client = ApiClient(args.url, token, args.request_timeout, args.ca_file)
         return dispatch(args, client)
     except ApiError as exc:
         suffix = f"; requestId={exc.request_id}" if exc.request_id else ""

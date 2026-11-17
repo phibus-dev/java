@@ -231,26 +231,28 @@ jobs:
 
       - name: Execute reference soak
         shell: bash
-        run: >-
-          ./bin/evo-snt --request-timeout "$SOAK_REQUEST_TIMEOUT"
-          runs soak --config target/reference-soak-config.json
-          --output-dir target/reference-soak --json
+        run: |
+          ./bin/evo-snt --request-timeout "$SOAK_REQUEST_TIMEOUT" \
+            runs soak --config target/reference-soak-config.json \
+            --output-dir target/reference-soak \
+            --public-summary-dir target/reference-soak-public \
+            --json >target/reference-soak-cli.out 2>target/reference-soak-cli.err
 
       - name: Publish soak summary
         if: always()
         shell: bash
         run: |
-          if [[ -f target/reference-soak/soak-summary.md ]]; then
-            cat target/reference-soak/soak-summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f target/reference-soak-public/soak-summary.md ]]; then
+            cat target/reference-soak-public/soak-summary.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "# Reference soak did not produce a summary" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload complete soak evidence
+      - name: Upload anonymized soak summary
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: reference-soak-${{ github.run_id }}-${{ github.run_attempt }}
-          path: target/reference-soak
+          name: reference-soak-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/reference-soak-public
           if-no-files-found: warn
           retention-days: 90

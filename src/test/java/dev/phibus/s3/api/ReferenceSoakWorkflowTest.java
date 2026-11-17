@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 class ReferenceSoakWorkflowTest {
     @Test
-    void workflowIsReusableScheduledOptInAndAlwaysPreservesEvidence() throws IOException {
+    void workflowIsReusableScheduledOptInAndUploadsOnlyAnonymizedSummary() throws IOException {
         String workflow = Files.readString(Path.of(".github/workflows/reference-soak.yml"));
 
         assertThat(workflow).contains(
@@ -20,10 +20,16 @@ class ReferenceSoakWorkflowTest {
                 "secrets.EVO_SNT_TOKEN",
                 "runs soak",
                 "if: always()",
+                "--public-summary-dir target/reference-soak-public",
                 "soak-summary.md",
                 "actions/upload-artifact@v7",
+                "path: target/reference-soak-public",
                 "retention-days: 90");
-        assertThat(workflow).doesNotContain("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY");
+        assertThat(workflow).doesNotContain(
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "Upload complete soak evidence",
+                "path: target/reference-soak\n");
     }
 
     @Test
