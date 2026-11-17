@@ -22,8 +22,6 @@ jobs:
   chromium:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      S3_PERF_BOOTSTRAP_FILE: ${{ runner.temp }}/s3perf-browser-e2e/bootstrap-settings.json
 
     steps:
       - name: Checkout
@@ -45,6 +43,8 @@ jobs:
 
       - name: Run browser E2E tests
         run: mvn -B -Pbrowser-e2e test
+        env:
+          S3_PERF_BOOTSTRAP_FILE: ${{ runner.temp }}/s3perf-browser-e2e/bootstrap-settings.json
 
       - name: Upload screenshots, traces and reports
         if: always()
