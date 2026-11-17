@@ -16,4 +16,15 @@ class RuntimeResourceExceptionHandlerTest {
         assertThat(response.getBody()).containsEntry("status", 429)
                 .containsEntry("message", "capacity exhausted");
     }
+
+    @Test
+    void configuredLimitErrorIsReturnedAsBadRequest() {
+        var response = new RuntimeResourceExceptionHandler().limitExceeded(
+                new RuntimeResourceManager.RunLimitExceededException("worker limit exceeded"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders()).doesNotContainKey("Retry-After");
+        assertThat(response.getBody()).containsEntry("status", 400)
+                .containsEntry("message", "worker limit exceeded");
+    }
 }

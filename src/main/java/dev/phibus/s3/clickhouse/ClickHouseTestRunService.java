@@ -43,6 +43,7 @@ public class ClickHouseTestRunService {
     public ClickHouseTestRun create(UUID runId, ClickHouseTestRequest request) {
         if (runId == null) throw new IllegalArgumentException("ClickHouse run id is required");
         validate(request);
+        resources.validateDemand(demand(request));
         ClickHouseHistoryStore store = history.getIfAvailable();
         String endpoint;
         try {
@@ -87,6 +88,7 @@ public class ClickHouseTestRunService {
 
     public ClickHouseTestRun createDistributed(ClickHouseTestRequest request, ClickHouseConnectionSpec connectionSpec) {
         validate(request);
+        resources.validateDemand(demand(request));
         if (connectionSpec == null) throw new IllegalArgumentException("ClickHouse connection spec is required");
         ClickHouseTestRun run = new ClickHouseTestRun(request, connectionSpec.endpoint());
         runs.put(run.id(), run);
@@ -158,5 +160,15 @@ public class ClickHouseTestRunService {
             throw new IllegalArgumentException("Warm-up must be 0..3600 seconds");
         if (request.payloadBytes() < 1 || request.payloadBytes() > 1048576)
             throw new IllegalArgumentException("Payload size must be 1..1048576 bytes");
+    }
+
+    private static RuntimeResourceManager.RunDemand demand(ClickHouseTestRequest request) {
+        String operation = request.normalizedOperation();
+        int workers = "SELECT".equals(operation) ? 1 : request.concurrency();
+        long duration = request.durationMode()
+                ? Math.addExact(request.warmupSeconds(), request.durationSeconds()) : 0;
+        long rows = request.durationMode() || "SELECT".equals(operation) ? 0 : request.rowCount();
+        long queries = request.durationMode() || "INSERT".equals(operation) ? 0 : request.effectiveQueryCount();
+        return RuntimeResourceManager.RunDemand.clickHouse(workers, duration, rows, queries);
     }
 }

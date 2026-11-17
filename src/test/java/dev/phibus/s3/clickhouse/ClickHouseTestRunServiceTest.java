@@ -104,6 +104,24 @@ class ClickHouseTestRunServiceTest {
         verifyNoInteractions(engine);
     }
 
+    @Test
+    void validatesClickHouseDemandBeforeResolvingTheConnection() {
+        RuntimeResourceManager constrainedResources = mock(RuntimeResourceManager.class);
+        doThrow(new RuntimeResourceManager.RunLimitExceededException("row limit"))
+                .when(constrainedResources).validateDemand(any());
+
+        assertThatThrownBy(() -> new ClickHouseTestRunService(
+                engine, connections, history, directExecutor, constrainedResources).create(request()))
+                .isInstanceOf(RuntimeResourceManager.RunLimitExceededException.class)
+                .hasMessageContaining("row limit");
+
+        verify(constrainedResources).validateDemand(org.mockito.ArgumentMatchers.argThat(demand ->
+                demand.testType() == dev.phibus.s3.test.TestType.CLICKHOUSE
+                        && demand.workerTasks() == 2
+                        && demand.rows() == 100));
+        verifyNoInteractions(connections, historyStore, engine);
+    }
+
     private ClickHouseTestRunService service() {
         return new ClickHouseTestRunService(engine, connections, history, directExecutor, resources);
     }

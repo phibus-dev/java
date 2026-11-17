@@ -62,6 +62,8 @@ public class KafkaProducerRunService {
     public Snapshot start(UUID runId, ProducerRequest request, String initiator) {
         if (runId == null) throw new IllegalArgumentException("Kafka run id is required");
         validate(request);
+        resources.validateDemand(RuntimeResourceManager.RunDemand.kafka(
+                request.producerThreads(), request.messageCount()));
         KafkaProfileService.Profile profile = request.profileId() == null ? profiles.defaultProfile() : profiles.get(request.profileId());
         if (profile == null) throw new IllegalArgumentException("Kafka profile is required");
         return start(runId, request, initiator, profile, true);
@@ -69,6 +71,8 @@ public class KafkaProducerRunService {
 
     public Snapshot startDistributed(ProducerRequest request, KafkaProfileService.Profile profile, String initiator) {
         validate(request);
+        resources.validateDemand(RuntimeResourceManager.RunDemand.kafka(
+                request.producerThreads(), request.messageCount()));
         if (profile == null) throw new IllegalArgumentException("Kafka runtime profile is required");
         if ("PLAIN".equalsIgnoreCase(profile.credentialsSource())
                 || "PROFILE".equalsIgnoreCase(profile.credentialsSource())) {

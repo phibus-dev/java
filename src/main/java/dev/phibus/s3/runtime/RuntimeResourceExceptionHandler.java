@@ -10,6 +10,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class RuntimeResourceExceptionHandler {
+    @ExceptionHandler(RuntimeResourceManager.RunLimitExceededException.class)
+    ResponseEntity<Map<String, Object>> limitExceeded(
+            RuntimeResourceManager.RunLimitExceededException error) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("timestamp", Instant.now().toString(), "status", 400,
+                        "error", "Runtime limit exceeded", "message", error.getMessage()));
+    }
+
     @ExceptionHandler(RuntimeResourceManager.RunCapacityExceededException.class)
     ResponseEntity<Map<String, Object>> capacityExceeded(
             RuntimeResourceManager.RunCapacityExceededException error) {

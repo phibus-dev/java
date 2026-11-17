@@ -47,12 +47,14 @@ M3 завершён: канонические маршруты `/api/v1/runs` и
 - SLO gates по throughput, latency и error rate — реализованы политики с абсолютными override-порогами.
 - Переиспользуемые workload profiles и наборы сценариев — добавлен общий каталог для трёх движков.
 - Сравнение с baseline и формальный pass/fail результата — реализовано в API, CLI и reusable workflow.
-- Расширенные resource limits, UI E2E и эксплуатационная документация.
+- Расширенные resource limits — реализованы глобальные, engine/scope и per-run ограничения с UI и метриками.
+- UI E2E и длительные проверки в эталонном окружении.
 
-Текущий инкремент M4 фиксирует OpenAPI 1.3, страницу `/quality-gates`, CLI `evo-snt 0.3.0` и
-GitHub Actions gate с сохраняемым JSON-доказательством. Подробности и правила выбора baseline:
-[M4_PERFORMANCE_GATES.md](M4_PERFORMANCE_GATES.md). Следующий инкремент — расширенные лимиты,
-браузерные E2E и длительные проверки в эталонном окружении.
+M4 фиксирует OpenAPI 1.3, страницу `/quality-gates`, CLI `evo-snt 0.3.0` и GitHub Actions gate с
+сохраняемым JSON-доказательством. Подробности и правила выбора baseline:
+[M4_PERFORMANCE_GATES.md](M4_PERFORMANCE_GATES.md). Расширенные лимиты и правила эксплуатации:
+[M4_RESOURCE_LIMITS.md](M4_RESOURCE_LIMITS.md). Следующий инкремент — браузерные E2E и длительные
+проверки в эталонном окружении.
 
 Каждый milestone выпускается через release candidate после зелёных unit, integration,
 security и container smoke checks.

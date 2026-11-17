@@ -54,6 +54,10 @@ curl -X POST http://localhost:9090/-/reload
 
 Также используются стандартные метрики Spring Boot Actuator/Micrometer: `http_server_requests_seconds_*`, `jvm_*`, `process_*` и `executor_*`.
 
+Runtime dashboard показывает глобальную ёмкость, квоты по `test_type` и причины отказов. Для
+диагностики используйте `s3perf_runtime_type_*`, `s3perf_runtime_scope_*` и
+`s3perf_runtime_limit_rejections_total`.
+
 Некоторые панели показывают `No data`, если конкретная версия Micrometer/JVM не публикует соответствующую метрику. Это не влияет на остальные панели.
 
 ## Проверка после обновления
