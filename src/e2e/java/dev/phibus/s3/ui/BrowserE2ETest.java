@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.BDDMockito.given;
 
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
@@ -12,6 +13,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.Response;
 import com.microsoft.playwright.Tracing;
+import dev.phibus.s3.settings.ApplicationStateService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -40,6 +43,9 @@ class BrowserE2ETest {
 
     @LocalServerPort
     private int port;
+
+    @MockitoBean
+    private ApplicationStateService stateService;
 
     private Playwright playwright;
     private Browser browser;
@@ -69,6 +75,7 @@ class BrowserE2ETest {
 
     @BeforeEach
     void createPage(TestInfo testInfo) {
+        given(stateService.current()).willReturn(ApplicationStateService.State.READY);
         artifactName = testInfo.getTestMethod().orElseThrow().getName();
         pageErrors = new CopyOnWriteArrayList<>();
         context = browser.newContext(new Browser.NewContextOptions()
@@ -131,7 +138,8 @@ class BrowserE2ETest {
     @Test
     void monitoringLoadsCapacityAndSupportsManualRefresh() {
         navigate("/monitoring");
-        page.waitForFunction("() => document.querySelector('#runtime-runs').textContent !== '—'");
+        page.waitForFunction("() => { const node = document.querySelector('#runtime-runs');"
+                + " return node && node.textContent !== '—'; }");
 
         assertEquals("Мониторинг — ЭВО.СНТ", page.title());
         assertFalse(page.locator("#application-state").textContent().contains("Загрузка"));
@@ -147,7 +155,8 @@ class BrowserE2ETest {
                 response -> response.url().endsWith("/api/health/overview"),
                 () -> page.locator("#refresh-health").click());
         assertEquals(200, refreshed.status());
-        page.waitForFunction("() => !document.querySelector('#refresh-health').disabled");
+        page.waitForFunction("() => { const button = document.querySelector('#refresh-health');"
+                + " return button && !button.disabled; }");
         assertFalse(page.locator("#refresh-health").isDisabled());
         assertNoPageErrors();
     }
