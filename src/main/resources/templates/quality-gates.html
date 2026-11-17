@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Quality gates — ЭВО.СНТ</title><th:block th:replace="~{fragments/layout :: headAssets}"></th:block></head>
+<body><main class="container">
+<header th:replace="~{fragments/layout :: header(title='Quality gates', subtitle='Формальные SLO и контроль регрессий производительности для CI/CD.')}"></header>
+<nav th:replace="~{fragments/layout :: primaryNav(active='quality')}"></nav>
+<section class="panel"><h2>Политики</h2><p>Результат <strong>PASS</strong> означает, что выполнены все критерии политики. Любой нарушенный критерий даёт <strong>FAIL</strong>.</p><div class="table-wrap"><table><thead><tr><th>ID</th><th>Назначение</th><th>Baseline</th><th>Статусы</th></tr></thead><tbody>
+<tr th:each="policy : ${policies}"><td><code th:text="${policy.id()}">SMOKE</code></td><td><strong th:text="${policy.name()}">Smoke</strong><br><span th:text="${policy.description()}">Описание</span></td><td th:text="${policy.baselineRequired() ? 'обязателен' : 'не обязателен'}">нет</td><td th:text="${policy.acceptedStatuses()}">COMPLETED</td></tr>
+</tbody></table></div></section>
+<section class="panel"><h2>Эталонные сценарии</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Тип</th><th>Сценарий</th><th>Политика</th><th>Область</th></tr></thead><tbody>
+<tr th:each="scenario : ${scenarios}"><td><code th:text="${scenario.id()}">ID</code></td><td th:text="${scenario.testType()}">S3</td><td><strong th:text="${scenario.name()}">Сценарий</strong><br><span th:text="${scenario.description()}">Описание</span></td><td><code th:text="${scenario.recommendedPolicyId()}">SMOKE</code></td><td th:text="${scenario.supportedScopes()}">LOCAL</td></tr>
+</tbody></table></div></section>
+<section class="panel"><h2>Автоматизация</h2><p><code>evo-snt runs assert &lt;run-id&gt; --policy BASELINE_TOLERANT --baseline &lt;baseline-id&gt;</code></p><p>Команда возвращает код <code>0</code> для PASS и <code>6</code> для FAIL. Каталоги доступны через <code>/api/v1/quality-gates/policies</code> и <code>/api/v1/benchmark-scenarios</code>.</p></section>
+<footer th:replace="~{fragments/layout :: footer}"></footer></main><th:block th:replace="~{fragments/layout :: commonScripts}"></th:block></body></html>

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ЭВО.СНТ Run API
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Версионированный API запуска S3, ClickHouse и Kafka тестов, чтения текущих запусков, долговременной
     истории и повторного запуска безопасно сохранённой конфигурации S3, ClickHouse и Kafka тестов.
@@ -13,6 +13,8 @@ tags:
     description: Текущий жизненный цикл запусков
   - name: Run history
     description: Долговременная история и повторный запуск
+  - name: Quality gates
+    description: Политики SLO, эталонные сценарии и формальная оценка завершённых запусков
 security:
   - bearerAuth: []
 paths:
@@ -481,6 +483,106 @@ paths:
           $ref: '#/components/responses/RunStateConflict'
         '429':
           $ref: '#/components/responses/CapacityExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /quality-gates/policies:
+    get:
+      tags: [Quality gates]
+      operationId: listQualityGatePolicies
+      summary: Получить встроенные политики quality gate
+      responses:
+        '200':
+          description: Политики и их пороговые значения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QualityGatePolicy'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /benchmark-scenarios:
+    get:
+      tags: [Quality gates]
+      operationId: listBenchmarkScenarios
+      summary: Получить каталог воспроизводимых benchmark-сценариев
+      parameters:
+        - $ref: '#/components/parameters/TestType'
+      responses:
+        '200':
+          description: Сценарии всех движков либо выбранного testType
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BenchmarkScenario'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /benchmark-scenarios/{id}:
+    get:
+      tags: [Quality gates]
+      operationId: getBenchmarkScenario
+      summary: Получить один benchmark-сценарий
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Параметры сценария и рекомендуемая политика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BenchmarkScenario'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /run-history/{id}/quality-gate:
+    post:
+      tags: [Quality gates]
+      operationId: evaluateRunQualityGate
+      summary: Проверить завершённый запуск по формальной политике
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityGateRequest'
+      responses:
+        '200':
+          description: PASS или FAIL со всеми проверенными критериями
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityGateResult'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/RunHistoryNotFound'
         '500':
           $ref: '#/components/responses/InternalError'
 components:
@@ -1167,6 +1269,182 @@ components:
           $ref: '#/components/schemas/RunStatus'
         monitorUrl:
           type: string
+    QualityGateThresholds:
+      type: object
+      additionalProperties: false
+      properties:
+        minOperationsPerSecond:
+          type: number
+          format: double
+          minimum: 0
+        minThroughputMiBps:
+          type: number
+          format: double
+          minimum: 0
+        maxP95LatencyMs:
+          type: number
+          format: double
+          minimum: 0
+        maxP99LatencyMs:
+          type: number
+          format: double
+          minimum: 0
+        maxErrorRatePercent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        maxOperationsDropPercent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        maxThroughputDropPercent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        maxP95IncreasePercent:
+          type: number
+          format: double
+          minimum: 0
+        maxP99IncreasePercent:
+          type: number
+          format: double
+          minimum: 0
+        minCompletedOperations:
+          type: integer
+          format: int64
+          minimum: 0
+        minParticipants:
+          type: integer
+          minimum: 1
+    QualityGatePolicy:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, baselineRequired, supportedTestTypes, supportedScopes, acceptedStatuses, thresholds]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        baselineRequired:
+          type: boolean
+        supportedTestTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestType'
+        supportedScopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunScope'
+        acceptedStatuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunStatus'
+        thresholds:
+          $ref: '#/components/schemas/QualityGateThresholds'
+    BenchmarkScenario:
+      type: object
+      additionalProperties: false
+      required: [id, testType, name, description, supportedScopes, measurementSeconds, warmupSeconds, recommendedPolicyId, parameters]
+      properties:
+        id:
+          type: string
+        testType:
+          $ref: '#/components/schemas/TestType'
+        name:
+          type: string
+        description:
+          type: string
+        supportedScopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunScope'
+        measurementSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+        warmupSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+        recommendedPolicyId:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+    QualityGateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        policyId:
+          type: string
+          default: SMOKE
+        baselineRunId:
+          type: string
+          format: uuid
+          nullable: true
+        overrides:
+          $ref: '#/components/schemas/QualityGateThresholds'
+    QualityGateCriterion:
+      type: object
+      additionalProperties: false
+      required: [id, passed, actual, operator, expected, unit, detail]
+      properties:
+        id:
+          type: string
+        passed:
+          type: boolean
+        actual:
+          type: string
+        operator:
+          type: string
+        expected:
+          type: string
+        unit:
+          type: string
+        detail:
+          type: string
+    QualityGateResult:
+      type: object
+      additionalProperties: false
+      required: [runId, policyId, verdict, passed, evaluatedAt, testType, scope, runStatus, errorRatePercent, effectiveThresholds, criteria]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        baselineRunId:
+          type: string
+          format: uuid
+          nullable: true
+        policyId:
+          type: string
+        verdict:
+          type: string
+          enum: [PASS, FAIL]
+        passed:
+          type: boolean
+        evaluatedAt:
+          type: string
+          format: date-time
+        testType:
+          $ref: '#/components/schemas/TestType'
+        scope:
+          $ref: '#/components/schemas/RunScope'
+        runStatus:
+          $ref: '#/components/schemas/RunStatus'
+        errorRatePercent:
+          type: number
+          format: double
+        effectiveThresholds:
+          $ref: '#/components/schemas/QualityGateThresholds'
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/QualityGateCriterion'
     ApiError:
       type: object
       additionalProperties: false

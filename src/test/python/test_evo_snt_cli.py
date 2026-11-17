@@ -177,6 +177,63 @@ class EvoSntCliTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('"id","testType"', result.stdout)
 
+    def test_quality_gate_posts_policy_baseline_and_overrides(self):
+        baseline_id = "aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb"
+
+        def callback(method, path, body, _headers):
+            self.requests.append((method, path, json.loads(body)))
+            response = {"runId": RUN_ID, "policyId": "BASELINE_TOLERANT", "verdict": "PASS",
+                        "criteria": [{"id": "p95LatencyMsVsBaseline", "passed": True}]}
+            return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        result = self.run_cli("runs", "assert", RUN_ID, "--policy", "BASELINE_TOLERANT",
+                              "--baseline", baseline_id, "--max-p95-ms", "750",
+                              "--min-participants", "2", "--json")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("POST", self.requests[0][0])
+        self.assertEqual(f"/api/v1/run-history/{RUN_ID}/quality-gate", self.requests[0][1])
+        self.assertEqual(baseline_id, self.requests[0][2]["baselineRunId"])
+        self.assertEqual(750.0, self.requests[0][2]["overrides"]["maxP95LatencyMs"])
+        self.assertEqual(2, self.requests[0][2]["overrides"]["minParticipants"])
+        self.assertEqual("PASS", json.loads(result.stdout)["verdict"])
+
+    def test_quality_gate_returns_exit_six_and_prints_failed_criteria(self):
+        def callback(_method, _path, _body, _headers):
+            response = {"runId": RUN_ID, "policyId": "SMOKE", "verdict": "FAIL",
+                        "criteria": [{"id": "errorRatePercent", "passed": False,
+                                      "actual": "2.000", "operator": "<=",
+                                      "expected": "0.000", "unit": "%"}]}
+            return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        result = self.run_cli("runs", "assert", RUN_ID)
+
+        self.assertEqual(6, result.returncode)
+        self.assertIn("FAIL", result.stdout)
+        self.assertIn("errorRatePercent", result.stderr)
+
+    def test_lists_and_shows_benchmark_scenarios(self):
+        def callback(_method, path, _body, _headers):
+            if path == "/api/v1/benchmark-scenarios?testType=KAFKA":
+                response = [{"id": "KAFKA_PRODUCER_THROUGHPUT", "testType": "KAFKA",
+                             "recommendedPolicyId": "BASELINE_TOLERANT", "name": "Kafka throughput"}]
+            else:
+                self.assertEqual("/api/v1/benchmark-scenarios/KAFKA_PRODUCER_THROUGHPUT", path)
+                response = {"id": "KAFKA_PRODUCER_THROUGHPUT", "name": "Kafka throughput",
+                            "description": "Stable producer load", "parameters": {"producerThreads": 8}}
+            return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        listed = self.run_cli("benchmarks", "list", "--type", "kafka")
+        shown = self.run_cli("benchmarks", "show", "KAFKA_PRODUCER_THROUGHPUT", "--json")
+
+        self.assertEqual(0, listed.returncode, listed.stderr)
+        self.assertIn("KAFKA_PRODUCER_THROUGHPUT", listed.stdout)
+        self.assertEqual(0, shown.returncode, shown.stderr)
+        self.assertEqual(8, json.loads(shown.stdout)["parameters"]["producerThreads"])
+
     def test_prints_machine_error_code_and_request_id(self):
         def callback(_method, _path, _body, _headers):
             problem = {"code": "IDEMPOTENCY_CONFLICT", "detail": "different request",
