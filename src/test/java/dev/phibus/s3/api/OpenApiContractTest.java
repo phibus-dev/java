@@ -26,13 +26,15 @@ class OpenApiContractTest {
         Map<String, Object> paths = map(root.get("paths"));
 
         assertThat(root.get("openapi")).isEqualTo("3.0.3");
-        assertThat(info.get("version")).isEqualTo("1.2.0");
+        assertThat(info.get("version")).isEqualTo("1.3.0");
         assertThat(paths.keySet()).containsExactlyInAnyOrder(
                 "/profiles/s3", "/profiles/clickhouse", "/profiles/kafka",
                 "/runs/s3", "/runs/clickhouse", "/runs/kafka",
                 "/runs/distributed/s3", "/runs/distributed/clickhouse", "/runs/distributed/kafka",
                 "/runs", "/runs/{id}", "/run-history", "/run-history/{id}",
-                "/run-history/{id}/export/{format}", "/run-history/{id}/rerun");
+                "/run-history/{id}/export/{format}", "/run-history/{id}/rerun",
+                "/quality-gates/policies", "/benchmark-scenarios", "/benchmark-scenarios/{id}",
+                "/run-history/{id}/quality-gate");
 
         Set<String> operationIds = new LinkedHashSet<>();
         paths.values().stream().map(OpenApiContractTest::map).forEach(path -> path.forEach((method, value) -> {
@@ -47,7 +49,8 @@ class OpenApiContractTest {
                 "startS3Run", "startClickHouseRun", "startKafkaRun",
                 "startDistributedS3Run", "startDistributedClickHouseRun", "startDistributedKafkaRun",
                 "listRuns", "getRun", "listRunHistory", "getRunHistoryEntry",
-                "exportRunHistoryEntry", "rerunFromHistory");
+                "exportRunHistoryEntry", "rerunFromHistory", "listQualityGatePolicies",
+                "listBenchmarkScenarios", "getBenchmarkScenario", "evaluateRunQualityGate");
     }
 
     @Test

@@ -1,0 +1,92 @@
+name: Performance quality gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      coordinator_url:
+        description: Coordinator base URL
+        required: true
+        type: string
+      run_id:
+        description: Completed run UUID
+        required: true
+        type: string
+      policy:
+        description: Quality gate policy
+        required: true
+        default: SMOKE
+        type: string
+      baseline_run_id:
+        description: Baseline run UUID for relative policies
+        required: false
+        type: string
+      request_timeout:
+        description: HTTP timeout in seconds
+        required: true
+        default: "30"
+        type: string
+  workflow_call:
+    inputs:
+      coordinator_url:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+      policy:
+        required: false
+        default: SMOKE
+        type: string
+      baseline_run_id:
+        required: false
+        default: ""
+        type: string
+      request_timeout:
+        required: false
+        default: "30"
+        type: string
+    secrets:
+      EVO_SNT_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      EVO_SNT_URL: ${{ inputs.coordinator_url }}
+      EVO_SNT_TOKEN: ${{ secrets.EVO_SNT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Evaluate quality gate
+        id: gate
+        shell: bash
+        env:
+          GATE_RUN_ID: ${{ inputs.run_id }}
+          GATE_POLICY: ${{ inputs.policy }}
+          GATE_BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
+          GATE_REQUEST_TIMEOUT: ${{ inputs.request_timeout }}
+        run: |
+          args=(runs assert "$GATE_RUN_ID" --policy "$GATE_POLICY")
+          if [[ -n "$GATE_BASELINE_RUN_ID" ]]; then
+            args+=(--baseline "$GATE_BASELINE_RUN_ID")
+          fi
+          set +e
+          ./bin/evo-snt --request-timeout "$GATE_REQUEST_TIMEOUT" "${args[@]}" --json \
+            | tee quality-gate.json
+          code=${PIPESTATUS[0]}
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - name: Upload quality gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-quality-gate
+          path: quality-gate.json
+          if-no-files-found: warn
+          retention-days: 30

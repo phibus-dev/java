@@ -93,6 +93,7 @@ java -jar evo-snt-s3-2.4.0.jar
 ```text
 /tasks                       задания, запуск и локальные шаблоны
 /history                     общая история S3, ClickHouse и Kafka, фильтры и повтор запуска
+/quality-gates               SLO-политики и каталог воспроизводимых benchmark-сценариев
 /monitoring                  Health Dashboard
 /agents                      управление агентами
 /distributed-tests           распределённые тесты
@@ -145,6 +146,9 @@ GET  /api/v1/run-history
 GET  /api/v1/run-history/{id}
 GET  /api/v1/run-history/{id}/export/{json|csv|html|pdf}
 POST /api/v1/run-history/{id}/rerun
+POST /api/v1/run-history/{id}/quality-gate
+GET  /api/v1/quality-gates/policies
+GET  /api/v1/benchmark-scenarios
 ```
 
 Для списка доступны `scope`, `testType`, `status`, `q`, `from`, `to`, `page` и `size`.
@@ -204,6 +208,9 @@ KAFKA_RUN=$(./bin/evo-snt runs start kafka --scope distributed \
 
 ./bin/evo-snt runs wait "$RUN_ID" --timeout 900
 ./bin/evo-snt runs export "$KAFKA_RUN" --format json --output result.json
+./bin/evo-snt benchmarks list --type s3
+./bin/evo-snt runs assert "$RUN_ID" --policy SMOKE
+./bin/evo-snt runs assert "$RUN_ID" --policy BASELINE_TOLERANT --baseline "$BASELINE_RUN_ID"
 ```
 
 Все маршруты `POST /api/v1/runs/**` требуют заголовок `Idempotency-Key`. Ключ имеет область действия
@@ -214,6 +221,11 @@ KAFKA_RUN=$(./bin/evo-snt runs start kafka --scope distributed \
 CLI возвращает exit code `0` только для `COMPLETED`; `COMPLETED_WITH_ERRORS`, `FAILED` и
 `CANCELLED` завершают `runs wait` с кодом `4`, таймаут — с кодом `5`. Для внутреннего CA можно
 указать `EVO_SNT_CA_FILE`; отключение TLS-проверки намеренно не поддерживается.
+
+Команда `runs assert` формально проверяет throughput, p95/p99, error rate, число операций и
+участников. Для относительных политик она сравнивает запуск с совместимым baseline; `PASS`
+завершается кодом `0`, `FAIL` — кодом `6`. Встроенный reusable GitHub Actions workflow всегда
+сохраняет JSON результата. Полное описание политик и процесса: [M4_PERFORMANCE_GATES.md](M4_PERFORMANCE_GATES.md).
 
 ## Bootstrap и секреты
 

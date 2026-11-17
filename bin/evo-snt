@@ -15,7 +15,7 @@ from urllib import error, parse, request
 import uuid
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"}
 TEST_TYPES = ("s3", "clickhouse", "kafka")
 
@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     profile_list.add_argument("--type", choices=TEST_TYPES, default="s3", dest="profile_type")
     profile_list.add_argument("--json", action="store_true", dest="json_output")
 
-    runs = commands.add_parser("runs", help="Start, wait for and export runs")
+    runs = commands.add_parser("runs", help="Start, wait for, export and assert runs")
     run_commands = runs.add_subparsers(dest="runs_command", required=True)
 
     start = run_commands.add_parser("start", help="Idempotently start a load test")
@@ -165,6 +165,32 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--format", choices=("json", "csv", "html", "pdf"), default="json")
     export.add_argument("--output", "-o")
     export.add_argument("--force", action="store_true")
+
+    assertion = run_commands.add_parser("assert", help="Evaluate a completed run against a quality gate")
+    assertion.add_argument("run_id")
+    assertion.add_argument("--policy", default="SMOKE")
+    assertion.add_argument("--baseline")
+    assertion.add_argument("--min-ops", type=float)
+    assertion.add_argument("--min-mibps", type=float)
+    assertion.add_argument("--max-p95-ms", type=float)
+    assertion.add_argument("--max-p99-ms", type=float)
+    assertion.add_argument("--max-error-rate", type=float)
+    assertion.add_argument("--max-ops-drop-percent", type=float)
+    assertion.add_argument("--max-throughput-drop-percent", type=float)
+    assertion.add_argument("--max-p95-increase-percent", type=float)
+    assertion.add_argument("--max-p99-increase-percent", type=float)
+    assertion.add_argument("--min-completed-operations", type=int)
+    assertion.add_argument("--min-participants", type=int)
+    assertion.add_argument("--json", action="store_true", dest="json_output")
+
+    benchmarks = commands.add_parser("benchmarks", help="Inspect reusable benchmark scenarios")
+    benchmark_commands = benchmarks.add_subparsers(dest="benchmarks_command", required=True)
+    benchmark_list = benchmark_commands.add_parser("list", help="List benchmark scenarios")
+    benchmark_list.add_argument("--type", choices=TEST_TYPES, dest="test_type")
+    benchmark_list.add_argument("--json", action="store_true", dest="json_output")
+    benchmark_show = benchmark_commands.add_parser("show", help="Show a benchmark scenario")
+    benchmark_show.add_argument("scenario_id")
+    benchmark_show.add_argument("--json", action="store_true", dest="json_output")
     return parser
 
 
@@ -295,6 +321,66 @@ def runs_export(client: ApiClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def runs_assert(client: ApiClient, args: argparse.Namespace) -> int:
+    run_id = canonical_uuid(args.run_id, "run_id")
+    baseline_id = canonical_uuid(args.baseline, "--baseline") if args.baseline else None
+    overrides = compact({
+        "minOperationsPerSecond": args.min_ops,
+        "minThroughputMiBps": args.min_mibps,
+        "maxP95LatencyMs": args.max_p95_ms,
+        "maxP99LatencyMs": args.max_p99_ms,
+        "maxErrorRatePercent": args.max_error_rate,
+        "maxOperationsDropPercent": args.max_ops_drop_percent,
+        "maxThroughputDropPercent": args.max_throughput_drop_percent,
+        "maxP95IncreasePercent": args.max_p95_increase_percent,
+        "maxP99IncreasePercent": args.max_p99_increase_percent,
+        "minCompletedOperations": args.min_completed_operations,
+        "minParticipants": args.min_participants,
+    })
+    body = {"policyId": args.policy, "baselineRunId": baseline_id}
+    if overrides:
+        body["overrides"] = overrides
+    encoded = parse.quote(run_id, safe="")
+    result, _ = client.json("POST", f"/api/v1/run-history/{encoded}/quality-gate", compact(body))
+    if args.json_output:
+        print_json(result)
+    else:
+        print(f"{result.get('verdict', 'UNKNOWN')}\t{run_id}\t{result.get('policyId', args.policy)}")
+        for criterion in result.get("criteria", []):
+            if not criterion.get("passed", False):
+                print(f"FAIL\t{criterion.get('id')}\t{criterion.get('actual')} "
+                      f"{criterion.get('operator')} {criterion.get('expected')} "
+                      f"{criterion.get('unit', '')}".rstrip(), file=sys.stderr)
+    return 0 if result.get("verdict") == "PASS" else 6
+
+
+def benchmarks_list(client: ApiClient, args: argparse.Namespace) -> int:
+    query = "" if args.test_type is None else "?" + parse.urlencode({"testType": args.test_type.upper()})
+    result, _ = client.json("GET", "/api/v1/benchmark-scenarios" + query)
+    if args.json_output:
+        print_json(result)
+    else:
+        print("ID\tTYPE\tPOLICY\tNAME")
+        for scenario in result:
+            print(f"{scenario.get('id')}\t{scenario.get('testType')}\t"
+                  f"{scenario.get('recommendedPolicyId')}\t{scenario.get('name')}")
+    return 0
+
+
+def benchmarks_show(client: ApiClient, args: argparse.Namespace) -> int:
+    scenario_id = args.scenario_id.strip()
+    if not scenario_id:
+        raise ValueError("scenario_id must not be blank")
+    result, _ = client.json("GET", "/api/v1/benchmark-scenarios/" + parse.quote(scenario_id, safe=""))
+    if args.json_output:
+        print_json(result)
+    else:
+        print(f"{result.get('id')} — {result.get('name')}")
+        print(result.get("description", ""))
+        print(json.dumps(result.get("parameters", {}), ensure_ascii=False, indent=2))
+    return 0
+
+
 def retry_download(client: ApiClient, path: str) -> tuple[bytes, Any]:
     for attempt in range(6):
         try:
@@ -366,6 +452,12 @@ def dispatch(args: argparse.Namespace, client: ApiClient) -> int:
         return runs_wait(client, args)
     if args.command == "runs" and args.runs_command == "export":
         return runs_export(client, args)
+    if args.command == "runs" and args.runs_command == "assert":
+        return runs_assert(client, args)
+    if args.command == "benchmarks" and args.benchmarks_command == "list":
+        return benchmarks_list(client, args)
+    if args.command == "benchmarks" and args.benchmarks_command == "show":
+        return benchmarks_show(client, args)
     raise ValueError("Unsupported command")
 
 

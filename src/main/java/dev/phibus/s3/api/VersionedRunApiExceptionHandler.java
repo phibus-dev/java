@@ -22,7 +22,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {
         VersionedRunApiController.class, VersionedAutomationApiController.class,
-        VersionedRunExportApiController.class
+        VersionedRunExportApiController.class, VersionedQualityGateApiController.class
 })
 public class VersionedRunApiExceptionHandler {
     private static final Logger LOG = LoggerFactory.getLogger(VersionedRunApiExceptionHandler.class);
