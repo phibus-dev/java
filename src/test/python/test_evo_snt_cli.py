@@ -214,6 +214,185 @@ class EvoSntCliTest(unittest.TestCase):
         self.assertIn("FAIL", result.stdout)
         self.assertIn("errorRatePercent", result.stderr)
 
+    def test_soak_runs_repeated_scenario_and_writes_complete_evidence(self):
+        run_ids = [
+            "10000000-0000-4000-8000-000000000001",
+            "10000000-0000-4000-8000-000000000002",
+            "10000000-0000-4000-8000-000000000003",
+        ]
+        starts = []
+
+        def callback(method, path, body, headers):
+            if method == "GET" and path == "/api/v1/benchmark-scenarios/S3_MIXED_STEADY":
+                response = {
+                    "id": "S3_MIXED_STEADY", "name": "S3 mixed steady load", "testType": "S3",
+                    "supportedScopes": ["LOCAL", "DISTRIBUTED"],
+                    "parameters": {"operation": "MIXED", "executionMode": "TIME_DURATION",
+                                   "durationSeconds": 600, "warmupSeconds": 60},
+                }
+            elif method == "POST" and path == "/api/v1/runs/s3":
+                payload = json.loads(body)
+                starts.append((payload, headers.get("Idempotency-Key")))
+                response = {"runId": run_ids[len(starts) - 1], "testType": "S3",
+                            "scope": "LOCAL", "replayed": False}
+            elif method == "GET" and path.startswith("/api/v1/runs/"):
+                response = {"id": path.rsplit("/", 1)[-1], "status": "COMPLETED"}
+            elif method == "GET" and path.endswith("/export/json"):
+                run_id = path.split("/")[4]
+                index = run_ids.index(run_id)
+                response = {"id": run_id, "status": "COMPLETED",
+                            "operationsPerSecond": [100, 96, 92][index],
+                            "throughputMiBps": [50, 49, 47][index],
+                            "p95LatencyMs": [100, 105, 110][index],
+                            "p99LatencyMs": 150, "completedOperations": 1000, "errors": 0}
+            elif method == "POST" and path.endswith("/quality-gate"):
+                response = {"runId": path.split("/")[4], "policyId": "SMOKE",
+                            "verdict": "PASS", "criteria": []}
+            else:
+                raise AssertionError(f"Unexpected request: {method} {path}")
+            return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "soak.json"
+            output = root / "evidence"
+            config.write_text(json.dumps({
+                "version": 1, "scenarioId": "S3_MIXED_STEADY", "scope": "LOCAL",
+                "profileId": PROFILE_ID, "iterations": 3, "cooldownSeconds": 0,
+                "waitTimeoutSeconds": 1, "pollIntervalSeconds": 0.01,
+                "policyId": "SMOKE", "idempotencyPrefix": "test-soak-42",
+                "workloadOverrides": {"objectKey": "performance-test/soak.bin"},
+            }))
+
+            result = self.run_cli("runs", "soak", "--config", str(config),
+                                  "--output-dir", str(output), "--json")
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            summary = json.loads(result.stdout)
+            self.assertEqual("PASS", summary["verdict"])
+            self.assertEqual(3, summary["passedWindows"])
+            self.assertEqual("PASS", summary["drift"]["verdict"])
+            self.assertEqual(PROFILE_ID, starts[0][0]["profileId"])
+            self.assertEqual("performance-test/soak.bin", starts[0][0]["objectKey"])
+            self.assertEqual("MIXED", starts[0][0]["operation"])
+            self.assertEqual("test-soak-42-001", starts[0][1])
+            self.assertTrue((output / "soak-summary.md").is_file())
+            self.assertTrue((output / "window-003" / "quality-gate.json").is_file())
+
+    def test_soak_returns_exit_seven_when_long_term_drift_fails(self):
+        run_ids = [
+            "20000000-0000-4000-8000-000000000001",
+            "20000000-0000-4000-8000-000000000002",
+            "20000000-0000-4000-8000-000000000003",
+        ]
+        start_count = 0
+        distributed_requests = []
+
+        def callback(method, path, body, _headers):
+            nonlocal start_count
+            if method == "GET" and path == "/api/v1/benchmark-scenarios/KAFKA_PRODUCER_THROUGHPUT":
+                response = {"id": "KAFKA_PRODUCER_THROUGHPUT", "name": "Kafka throughput",
+                            "testType": "KAFKA", "supportedScopes": ["LOCAL", "DISTRIBUTED"],
+                            "parameters": {"messageCount": 1000, "messageSizeBytes": 1024,
+                                           "producerThreads": 2}}
+            elif method == "POST" and path == "/api/v1/runs/distributed/kafka":
+                distributed_requests.append(json.loads(body))
+                response = {"runId": run_ids[start_count], "scope": "DISTRIBUTED"}
+                start_count += 1
+            elif method == "GET" and path.startswith("/api/v1/runs/"):
+                response = {"id": path.rsplit("/", 1)[-1], "status": "COMPLETED"}
+            elif method == "GET" and path.endswith("/export/json"):
+                run_id = path.split("/")[4]
+                index = run_ids.index(run_id)
+                response = {"id": run_id, "status": "COMPLETED",
+                            "operationsPerSecond": [100, 90, 40][index],
+                            "throughputMiBps": [10, 9, 4][index],
+                            "p95LatencyMs": [100, 120, 200][index],
+                            "completedOperations": 1000, "errors": 0}
+            elif method == "POST" and path.endswith("/quality-gate"):
+                response = {"verdict": "PASS", "policyId": "SMOKE", "criteria": []}
+            else:
+                raise AssertionError(f"Unexpected request: {method} {path}")
+            return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+
+        self.callback = callback
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "soak.json"
+            output = root / "evidence"
+            config.write_text(json.dumps({
+                "version": 1, "scenarioId": "KAFKA_PRODUCER_THROUGHPUT",
+                "scope": "DISTRIBUTED", "profileId": PROFILE_ID, "agentIds": [AGENT_ID],
+                "iterations": 3, "cooldownSeconds": 0,
+                "waitTimeoutSeconds": 1, "pollIntervalSeconds": 0.01,
+                "idempotencyPrefix": "drift-soak-42", "policyId": "SMOKE",
+                "workloadOverrides": {"topic": "performance-events"},
+            }))
+
+            result = self.run_cli("runs", "soak", "--config", str(config),
+                                  "--output-dir", str(output), "--json")
+
+            self.assertEqual(7, result.returncode, result.stderr)
+            summary = json.loads(result.stdout)
+            self.assertEqual("FAIL", summary["verdict"])
+            failed = {item["id"] for item in summary["drift"]["criteria"] if not item["passed"]}
+            self.assertIn("operationsDropPercent", failed)
+            self.assertIn("throughputDropPercent", failed)
+            self.assertIn("p95IncreasePercent", failed)
+            self.assertEqual([AGENT_ID], distributed_requests[0]["agentIds"])
+            self.assertEqual(PROFILE_ID, distributed_requests[0]["testRequest"]["profileId"])
+            self.assertEqual("performance-events", distributed_requests[0]["testRequest"]["topic"])
+
+    def test_soak_rejects_credentials_before_calling_the_api(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "soak.json"
+            config.write_text(json.dumps({
+                "version": 1, "scenarioId": "S3_MIXED_STEADY", "scope": "LOCAL",
+                "profileId": PROFILE_ID, "iterations": 3,
+                "idempotencyPrefix": "unsafe-soak",
+                "workloadOverrides": {"secretKey": "must-not-be-here"},
+            }))
+
+            result = self.run_cli("runs", "soak", "--config", str(config),
+                                  "--output-dir", str(Path(directory) / "evidence"))
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("Sensitive field is not allowed", result.stderr)
+
+    def test_soak_preserves_partial_summary_on_api_error(self):
+        def callback(method, path, _body, _headers):
+            if method == "GET" and path == "/api/v1/benchmark-scenarios/S3_UPLOAD_THROUGHPUT":
+                response = {"id": "S3_UPLOAD_THROUGHPUT", "name": "S3 upload",
+                            "testType": "S3", "supportedScopes": ["LOCAL"],
+                            "parameters": {"operation": "UPLOAD", "objectCount": 1}}
+                return 200, {"Content-Type": "application/json"}, json.dumps(response).encode()
+            problem = {"code": "CAPACITY_EXHAUSTED", "detail": "reference environment is busy",
+                       "requestId": "soak-request-42"}
+            return 503, {"Content-Type": "application/problem+json"}, json.dumps(problem).encode()
+
+        self.callback = callback
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "soak.json"
+            output = root / "evidence"
+            config.write_text(json.dumps({
+                "version": 1, "scenarioId": "S3_UPLOAD_THROUGHPUT", "scope": "LOCAL",
+                "profileId": PROFILE_ID, "iterations": 3, "cooldownSeconds": 0,
+                "waitTimeoutSeconds": 1, "pollIntervalSeconds": 0.01,
+                "idempotencyPrefix": "api-error-soak", "policyId": "SMOKE",
+            }))
+
+            result = self.run_cli("runs", "soak", "--config", str(config),
+                                  "--output-dir", str(output), "--json")
+
+            self.assertEqual(3, result.returncode)
+            self.assertIn("CAPACITY_EXHAUSTED", result.stderr)
+            summary = json.loads((output / "soak-summary.json").read_text())
+            self.assertEqual("ERROR", summary["verdict"])
+            self.assertEqual("soak-request-42", summary["technicalError"]["requestId"])
+            self.assertTrue((output / "window-001" / "window.json").is_file())
+
     def test_lists_and_shows_benchmark_scenarios(self):
         def callback(_method, path, _body, _headers):
             if path == "/api/v1/benchmark-scenarios?testType=KAFKA":

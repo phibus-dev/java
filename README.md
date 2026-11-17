@@ -230,6 +230,8 @@ KAFKA_RUN=$(./bin/evo-snt runs start kafka --scope distributed \
 ./bin/evo-snt benchmarks list --type s3
 ./bin/evo-snt runs assert "$RUN_ID" --policy SMOKE
 ./bin/evo-snt runs assert "$RUN_ID" --policy BASELINE_TOLERANT --baseline "$BASELINE_RUN_ID"
+./bin/evo-snt runs soak --config config/soak-reference.example.json \
+  --output-dir target/reference-soak
 ```
 
 Все маршруты `POST /api/v1/runs/**` требуют заголовок `Idempotency-Key`. Ключ имеет область действия
@@ -245,6 +247,14 @@ CLI возвращает exit code `0` только для `COMPLETED`; `COMPLET
 участников. Для относительных политик она сравнивает запуск с совместимым baseline; `PASS`
 завершается кодом `0`, `FAIL` — кодом `6`. Встроенный reusable GitHub Actions workflow всегда
 сохраняет JSON результата. Полное описание политик и процесса: [M4_PERFORMANCE_GATES.md](M4_PERFORMANCE_GATES.md).
+
+Команда `runs soak` выполняет 3–48 последовательных окон выбранного benchmark-сценария, применяет
+gate к каждому окну и проверяет деградацию operations/s, MiB/s, p95 и суммарного error rate между
+первой и последней третью серии. Она принимает только UUID сохранённого профиля и безопасные
+параметры нагрузки: credentials и token в JSON запрещены. Код `7` означает отрицательный результат
+soak-проверки, а `3` — техническую ошибку API. Ручной, reusable и opt-in scheduled workflow хранит
+полное evidence 90 дней. Настройка эталонного окружения и правила интерпретации результата:
+[M4_SOAK_TESTS.md](M4_SOAK_TESTS.md).
 
 ## Bootstrap и секреты
 

@@ -1,0 +1,256 @@
+name: Reference soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      coordinator_url:
+        description: Coordinator base URL
+        required: true
+        type: string
+      scenario_id:
+        description: Benchmark scenario ID
+        required: true
+        default: S3_MIXED_STEADY
+        type: string
+      scope:
+        description: LOCAL or DISTRIBUTED
+        required: true
+        default: LOCAL
+        type: string
+      profile_id:
+        description: Stored profile UUID (credentials are never accepted here)
+        required: true
+        type: string
+      agent_ids:
+        description: Comma-separated Agent UUIDs for DISTRIBUTED scope
+        required: false
+        type: string
+      iterations:
+        description: Number of measurement windows (3-48)
+        required: true
+        default: "6"
+        type: string
+      cooldown_seconds:
+        description: Pause between windows
+        required: true
+        default: "30"
+        type: string
+      wait_timeout_seconds:
+        description: Maximum duration of one window
+        required: true
+        default: "1800"
+        type: string
+      poll_interval_seconds:
+        description: Run-state polling interval
+        required: true
+        default: "5"
+        type: string
+      policy_id:
+        description: Quality gate policy
+        required: true
+        default: SMOKE
+        type: string
+      baseline_run_id:
+        description: Baseline UUID for BASELINE_* policies
+        required: false
+        type: string
+      workload_overrides_json:
+        description: Safe workload overrides as a JSON object
+        required: false
+        default: "{}"
+        type: string
+      quality_gate_overrides_json:
+        description: Quality gate threshold overrides as a JSON object
+        required: false
+        default: "{}"
+        type: string
+      drift_thresholds_json:
+        description: Long-term drift thresholds as a JSON object
+        required: false
+        default: "{}"
+        type: string
+      request_timeout:
+        description: Coordinator HTTP timeout in seconds
+        required: true
+        default: "30"
+        type: string
+  workflow_call:
+    inputs:
+      coordinator_url:
+        required: true
+        type: string
+      scenario_id:
+        required: false
+        default: S3_MIXED_STEADY
+        type: string
+      scope:
+        required: false
+        default: LOCAL
+        type: string
+      profile_id:
+        required: true
+        type: string
+      agent_ids:
+        required: false
+        default: ""
+        type: string
+      iterations:
+        required: false
+        default: "6"
+        type: string
+      cooldown_seconds:
+        required: false
+        default: "30"
+        type: string
+      wait_timeout_seconds:
+        required: false
+        default: "1800"
+        type: string
+      poll_interval_seconds:
+        required: false
+        default: "5"
+        type: string
+      policy_id:
+        required: false
+        default: SMOKE
+        type: string
+      baseline_run_id:
+        required: false
+        default: ""
+        type: string
+      workload_overrides_json:
+        required: false
+        default: "{}"
+        type: string
+      quality_gate_overrides_json:
+        required: false
+        default: "{}"
+        type: string
+      drift_thresholds_json:
+        required: false
+        default: "{}"
+        type: string
+      request_timeout:
+        required: false
+        default: "30"
+        type: string
+    secrets:
+      EVO_SNT_TOKEN:
+        required: true
+  schedule:
+    - cron: "23 1 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reference-soak-${{ github.ref }}-${{ inputs.scenario_id || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    if: github.event_name != 'schedule' || vars.SOAK_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      EVO_SNT_URL: ${{ inputs.coordinator_url || vars.SOAK_COORDINATOR_URL }}
+      EVO_SNT_TOKEN: ${{ secrets.EVO_SNT_TOKEN }}
+      SOAK_SCENARIO_ID: ${{ inputs.scenario_id || vars.SOAK_SCENARIO_ID || 'S3_MIXED_STEADY' }}
+      SOAK_SCOPE: ${{ inputs.scope || vars.SOAK_SCOPE || 'LOCAL' }}
+      SOAK_PROFILE_ID: ${{ inputs.profile_id || vars.SOAK_PROFILE_ID }}
+      SOAK_AGENT_IDS: ${{ inputs.agent_ids || vars.SOAK_AGENT_IDS }}
+      SOAK_ITERATIONS: ${{ inputs.iterations || vars.SOAK_ITERATIONS || '6' }}
+      SOAK_COOLDOWN_SECONDS: ${{ inputs.cooldown_seconds || vars.SOAK_COOLDOWN_SECONDS || '30' }}
+      SOAK_WAIT_TIMEOUT_SECONDS: ${{ inputs.wait_timeout_seconds || vars.SOAK_WAIT_TIMEOUT_SECONDS || '1800' }}
+      SOAK_POLL_INTERVAL_SECONDS: ${{ inputs.poll_interval_seconds || vars.SOAK_POLL_INTERVAL_SECONDS || '5' }}
+      SOAK_POLICY_ID: ${{ inputs.policy_id || vars.SOAK_POLICY_ID || 'SMOKE' }}
+      SOAK_BASELINE_RUN_ID: ${{ inputs.baseline_run_id || vars.SOAK_BASELINE_RUN_ID }}
+      SOAK_WORKLOAD_OVERRIDES_JSON: ${{ inputs.workload_overrides_json || vars.SOAK_WORKLOAD_OVERRIDES_JSON || '{}' }}
+      SOAK_QUALITY_GATE_OVERRIDES_JSON: ${{ inputs.quality_gate_overrides_json || vars.SOAK_QUALITY_GATE_OVERRIDES_JSON || '{}' }}
+      SOAK_DRIFT_THRESHOLDS_JSON: ${{ inputs.drift_thresholds_json || vars.SOAK_DRIFT_THRESHOLDS_JSON || '{}' }}
+      SOAK_REQUEST_TIMEOUT: ${{ inputs.request_timeout || vars.SOAK_REQUEST_TIMEOUT || '30' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Prepare safe soak configuration
+        shell: bash
+        env:
+          SOAK_IDEMPOTENCY_PREFIX: soak-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          test -n "$EVO_SNT_URL"
+          test -n "$EVO_SNT_TOKEN"
+          test -n "$SOAK_PROFILE_ID"
+          mkdir -p target
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def required(name):
+              value = os.environ.get(name, "").strip()
+              if not value:
+                  raise SystemExit(f"{name} is required")
+              return value
+
+          def json_object(name):
+              def reject_constant(value):
+                  raise ValueError(f"non-finite number is not allowed: {value}")
+              value = json.loads(os.environ.get(name, "{}"), parse_constant=reject_constant)
+              if not isinstance(value, dict):
+                  raise SystemExit(f"{name} must contain a JSON object")
+              return value
+
+          config = {
+              "version": 1,
+              "scenarioId": required("SOAK_SCENARIO_ID"),
+              "scope": required("SOAK_SCOPE").upper(),
+              "profileId": required("SOAK_PROFILE_ID"),
+              "agentIds": [item.strip() for item in os.environ.get("SOAK_AGENT_IDS", "").split(",")
+                           if item.strip()],
+              "iterations": int(required("SOAK_ITERATIONS")),
+              "cooldownSeconds": float(required("SOAK_COOLDOWN_SECONDS")),
+              "waitTimeoutSeconds": float(required("SOAK_WAIT_TIMEOUT_SECONDS")),
+              "pollIntervalSeconds": float(required("SOAK_POLL_INTERVAL_SECONDS")),
+              "policyId": required("SOAK_POLICY_ID"),
+              "baselineRunId": os.environ.get("SOAK_BASELINE_RUN_ID", "").strip() or None,
+              "idempotencyPrefix": required("SOAK_IDEMPOTENCY_PREFIX"),
+              "workloadOverrides": json_object("SOAK_WORKLOAD_OVERRIDES_JSON"),
+              "qualityGateOverrides": json_object("SOAK_QUALITY_GATE_OVERRIDES_JSON"),
+              "driftThresholds": json_object("SOAK_DRIFT_THRESHOLDS_JSON"),
+          }
+          Path("target/reference-soak-config.json").write_text(
+              json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Execute reference soak
+        shell: bash
+        run: >-
+          ./bin/evo-snt --request-timeout "$SOAK_REQUEST_TIMEOUT"
+          runs soak --config target/reference-soak-config.json
+          --output-dir target/reference-soak --json
+
+      - name: Publish soak summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f target/reference-soak/soak-summary.md ]]; then
+            cat target/reference-soak/soak-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# Reference soak did not produce a summary" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload complete soak evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reference-soak-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/reference-soak
+          if-no-files-found: warn
+          retention-days: 90
