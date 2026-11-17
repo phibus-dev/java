@@ -25,7 +25,8 @@ cp config/soak-reference.example.json target/reference-soak.json
 # Укажите существующий profileId и уникальный idempotencyPrefix.
 ./bin/evo-snt runs soak \
   --config target/reference-soak.json \
-  --output-dir target/reference-soak-evidence
+  --output-dir target/reference-soak-evidence \
+  --public-summary-dir target/reference-soak-public
 ```
 
 Для `DISTRIBUTED` необходимо указать непустой `agentIds`; для `LOCAL` список должен быть пуст.
@@ -57,7 +58,7 @@ Exit codes сохраняют различие между результатом
 | `3` | ошибка Coordinator/API |
 | `7` | серия выполнена, но окно, gate, таймаут или drift не прошли |
 
-## Доказательства
+## Приватные доказательства и обезличенная сводка
 
 CLI не перезаписывает непустой каталог без `--force`. В каталоге сохраняются:
 
@@ -74,13 +75,89 @@ soak-summary.md
 ```
 
 При технической ошибке частичный summary и данные уже завершённых окон сохраняются до возврата
-кода `3`. Bearer token и credentials профиля в artifacts не попадают.
+кода `3`. Каталог `--output-dir` является приватным: он содержит UUID профиля и запусков,
+idempotency keys, ответы API и диагностические детали. Его нельзя публиковать в GitHub или
+передавать за пределы внутреннего контура.
+
+Если указан отдельный `--public-summary-dir`, CLI создаёт в нём только `soak-summary.json` и
+`soak-summary.md`. Каталоги не могут совпадать, быть вложенными друг в друга или ссылаться друг на
+друга через разрешённый путь. Публичная сводка формируется по белому списку и содержит только:
+
+- общий verdict, тип и scope теста, идентификатор сценария и политики;
+- время начала/окончания и количество окон;
+- числовые метрики окон и агрегированные критерии drift;
+- при технической ошибке — номер окна, HTTP status и машинный код без detail/request ID.
+
+В публичную сводку не попадают URL, имя сценария, UUID профиля, Agent/baseline/run UUID,
+idempotency keys, параметры нагрузки, replay/request ID и диагностические сообщения. Bearer token
+не сохраняется ни в одном отчёте.
+
+## Изолированный внутренний контур
+
+Для сервера без доступа к GitHub предназначены
+`scripts/reference-soak-local.sh` и systemd units из `deploy/systemd`. Тест общается только с
+внутренним Coordinator. Полный evidence остаётся в
+`/var/lib/evo-snt-reference-soak/private/<UTC timestamp>`, а разрешённая к передаче сводка — в
+`/var/lib/evo-snt-reference-soak/public/<UTC timestamp>`. Автоматической отправки в GitHub нет.
+
+Разверните уже проверенный пакет приложения через разрешённый внутренний канал и выполните:
+
+```bash
+sudo useradd --system --home-dir /var/lib/evo-snt-reference-soak \
+  --shell /usr/sbin/nologin evo-snt
+sudo install -d -o root -g evo-snt -m 0750 /etc/evo-snt
+
+sudo install -o root -g evo-snt -m 0640 \
+  config/reference-soak.env.example /etc/evo-snt/reference-soak.env
+sudo install -o root -g evo-snt -m 0640 \
+  config/soak-reference.example.json /etc/evo-snt/reference-soak.json
+# Создайте token-файл через утверждённый секретный канал; не помещайте token в env/json.
+sudo install -o root -g root -m 0600 /secure/source/reference-soak.token \
+  /etc/evo-snt/reference-soak.token
+
+sudo install -o root -g root -m 0644 deploy/systemd/evo-snt-reference-soak.service \
+  /etc/systemd/system/evo-snt-reference-soak.service
+sudo install -o root -g root -m 0644 deploy/systemd/evo-snt-reference-soak.timer \
+  /etc/systemd/system/evo-snt-reference-soak.timer
+sudo systemd-analyze verify /etc/systemd/system/evo-snt-reference-soak.service \
+  /etc/systemd/system/evo-snt-reference-soak.timer
+sudo systemctl daemon-reload
+```
+
+Отредактируйте внутренний URL/CA в `reference-soak.env`, а существующий `profileId`, сценарий и
+нагрузку — в `reference-soak.json`. Значение `idempotencyPrefix` из JSON при автономном запуске
+заменяется уникальным UTC prefix. Token читается через systemd `LoadCredential`, а не через
+аргументы процесса или environment.
+
+Первый запуск выполните вручную и проверьте оба каталога:
+
+```bash
+sudo systemctl start evo-snt-reference-soak.service
+sudo systemctl status evo-snt-reference-soak.service
+sudo journalctl -u evo-snt-reference-soak.service --since today
+sudo find /var/lib/evo-snt-reference-soak/public -maxdepth 2 -type f -print
+```
+
+Только после успешной проверки включите расписание:
+
+```bash
+sudo systemctl enable --now evo-snt-reference-soak.timer
+systemctl list-timers evo-snt-reference-soak.timer
+```
+
+Timer стартует по воскресеньям в `01:23 UTC` (`04:23 MSK`) с задержкой до 15 минут и догоняет
+пропущенный запуск после включения сервера. Автоматическое удаление evidence не выполняется:
+срок хранения приватных данных должен задаваться локальной политикой внутреннего контура.
 
 ## GitHub Actions
 
-Workflow `.github/workflows/reference-soak.yml` поддерживает ручной запуск, `workflow_call` и
-еженедельное расписание. Scheduled job намеренно пропускается, пока repository variable
-`SOAK_ENABLED` не равна `true`. До включения расписания настройте:
+Workflow `.github/workflows/reference-soak.yml` предназначен только для окружений, где GitHub
+runner имеет сетевой доступ к Coordinator. Для изолированного внутреннего сервера он неприменим:
+`SOAK_ENABLED` должен оставаться выключенным, а запуск выполняется systemd timer выше.
+
+В подключённом окружении workflow поддерживает ручной запуск, `workflow_call` и еженедельное
+расписание. Scheduled job пропускается, пока repository variable `SOAK_ENABLED` не равна `true`.
+До включения расписания настройте:
 
 | Тип | Имя | Назначение |
 |---|---|---|
@@ -97,8 +174,9 @@ Workflow `.github/workflows/reference-soak.yml` поддерживает руч�
 
 Дополнительно поддерживаются `SOAK_COOLDOWN_SECONDS`, `SOAK_WAIT_TIMEOUT_SECONDS`,
 `SOAK_POLL_INTERVAL_SECONDS`, `SOAK_REQUEST_TIMEOUT`, `SOAK_QUALITY_GATE_OVERRIDES_JSON` и
-`SOAK_DRIFT_THRESHOLDS_JSON`. Workflow сохраняет полный каталог evidence на 90 дней и выводит
-Markdown summary в интерфейсе Actions даже при `FAIL` или технической ошибке.
+`SOAK_DRIFT_THRESHOLDS_JSON`. Workflow загружает на 90 дней только отдельный обезличенный каталог
+`reference-soak-public` и выводит его Markdown summary в интерфейсе Actions. Полный evidence,
+конфигурация, stdout и stderr CLI в artifact не включаются.
 
 Перед `SOAK_ENABLED=true` выполните один ручной запуск, проверьте корректность профиля, очистку
 тестовых данных, лимиты эталонного контура и полученный baseline. Профиль должен указывать только на

@@ -73,6 +73,24 @@ class EvoSntCliTest(unittest.TestCase):
         self.assertIn("primary", result.stdout)
         self.assertEqual("Bearer test-token", self.requests[0][3])
 
+    def test_reads_bearer_token_from_systemd_credential_file(self):
+        def callback(_method, _path, _body, headers):
+            self.requests.append(headers.get("Authorization"))
+            return 200, {"Content-Type": "application/json"}, b"[]"
+
+        self.callback = callback
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / "api-token"
+            token_file.write_text("credential-token\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(CLI), "--url", self.url, "--token-file", str(token_file),
+                 "profiles", "list"],
+                cwd=ROOT, text=True, capture_output=True, timeout=10, check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["Bearer credential-token"], self.requests)
+
     def test_starts_with_idempotency_key_and_reports_replay(self):
         def callback(method, path, body, headers):
             self.requests.append((method, path, json.loads(body), headers.get("Idempotency-Key")))
@@ -257,6 +275,7 @@ class EvoSntCliTest(unittest.TestCase):
             root = Path(directory)
             config = root / "soak.json"
             output = root / "evidence"
+            public = root / "public"
             config.write_text(json.dumps({
                 "version": 1, "scenarioId": "S3_MIXED_STEADY", "scope": "LOCAL",
                 "profileId": PROFILE_ID, "iterations": 3, "cooldownSeconds": 0,
@@ -266,7 +285,9 @@ class EvoSntCliTest(unittest.TestCase):
             }))
 
             result = self.run_cli("runs", "soak", "--config", str(config),
-                                  "--output-dir", str(output), "--json")
+                                  "--output-dir", str(output),
+                                  "--public-summary-dir", str(public),
+                                  "--idempotency-prefix", "offline-20261118T012300Z", "--json")
 
             self.assertEqual(0, result.returncode, result.stderr)
             summary = json.loads(result.stdout)
@@ -276,9 +297,20 @@ class EvoSntCliTest(unittest.TestCase):
             self.assertEqual(PROFILE_ID, starts[0][0]["profileId"])
             self.assertEqual("performance-test/soak.bin", starts[0][0]["objectKey"])
             self.assertEqual("MIXED", starts[0][0]["operation"])
-            self.assertEqual("test-soak-42-001", starts[0][1])
+            self.assertEqual("offline-20261118T012300Z-001", starts[0][1])
             self.assertTrue((output / "soak-summary.md").is_file())
             self.assertTrue((output / "window-003" / "quality-gate.json").is_file())
+            public_summary = json.loads((public / "soak-summary.json").read_text())
+            serialized = json.dumps(public_summary)
+            self.assertTrue(public_summary["anonymized"])
+            self.assertEqual("PASS", public_summary["verdict"])
+            self.assertEqual(100.0, public_summary["windows"][0]["metrics"]["operationsPerSecond"])
+            self.assertNotIn(PROFILE_ID, serialized)
+            self.assertNotIn("offline-20261118T012300Z", serialized)
+            self.assertNotIn("performance-test/soak.bin", serialized)
+            for run_id in run_ids:
+                self.assertNotIn(run_id, serialized)
+            self.assertNotIn("| Run |", (public / "soak-summary.md").read_text())
 
     def test_soak_returns_exit_seven_when_long_term_drift_fails(self):
         run_ids = [
@@ -321,6 +353,7 @@ class EvoSntCliTest(unittest.TestCase):
             root = Path(directory)
             config = root / "soak.json"
             output = root / "evidence"
+            public = root / "public"
             config.write_text(json.dumps({
                 "version": 1, "scenarioId": "KAFKA_PRODUCER_THROUGHPUT",
                 "scope": "DISTRIBUTED", "profileId": PROFILE_ID, "agentIds": [AGENT_ID],
@@ -331,7 +364,8 @@ class EvoSntCliTest(unittest.TestCase):
             }))
 
             result = self.run_cli("runs", "soak", "--config", str(config),
-                                  "--output-dir", str(output), "--json")
+                                  "--output-dir", str(output),
+                                  "--public-summary-dir", str(public), "--json")
 
             self.assertEqual(7, result.returncode, result.stderr)
             summary = json.loads(result.stdout)
@@ -376,6 +410,7 @@ class EvoSntCliTest(unittest.TestCase):
             root = Path(directory)
             config = root / "soak.json"
             output = root / "evidence"
+            public = root / "public"
             config.write_text(json.dumps({
                 "version": 1, "scenarioId": "S3_UPLOAD_THROUGHPUT", "scope": "LOCAL",
                 "profileId": PROFILE_ID, "iterations": 3, "cooldownSeconds": 0,
@@ -384,7 +419,8 @@ class EvoSntCliTest(unittest.TestCase):
             }))
 
             result = self.run_cli("runs", "soak", "--config", str(config),
-                                  "--output-dir", str(output), "--json")
+                                  "--output-dir", str(output),
+                                  "--public-summary-dir", str(public), "--json")
 
             self.assertEqual(3, result.returncode)
             self.assertIn("CAPACITY_EXHAUSTED", result.stderr)
@@ -392,6 +428,33 @@ class EvoSntCliTest(unittest.TestCase):
             self.assertEqual("ERROR", summary["verdict"])
             self.assertEqual("soak-request-42", summary["technicalError"]["requestId"])
             self.assertTrue((output / "window-001" / "window.json").is_file())
+            public_summary = json.loads((public / "soak-summary.json").read_text())
+            self.assertEqual(
+                {"window": 1, "status": 503, "code": "CAPACITY_EXHAUSTED"},
+                public_summary["technicalError"],
+            )
+            public_text = json.dumps(public_summary)
+            self.assertNotIn("reference environment is busy", public_text)
+            self.assertNotIn("soak-request-42", public_text)
+
+    def test_soak_rejects_overlapping_private_and_public_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "soak.json"
+            config.write_text(json.dumps({
+                "version": 1, "scenarioId": "S3_MIXED_STEADY", "scope": "LOCAL",
+                "profileId": PROFILE_ID, "iterations": 3,
+                "idempotencyPrefix": "overlap-soak",
+            }))
+            output = root / "evidence"
+
+            result = self.run_cli(
+                "runs", "soak", "--config", str(config), "--output-dir", str(output),
+                "--public-summary-dir", str(output / "public"),
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("must not overlap", result.stderr)
 
     def test_lists_and_shows_benchmark_scenarios(self):
         def callback(_method, path, _body, _headers):
