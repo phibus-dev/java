@@ -19,6 +19,8 @@ class QualityGateCatalogTest {
         assertThat(scenarios.list(TestType.KAFKA)).hasSize(2);
         assertThat(scenarios.get("s3_upload_throughput").recommendedPolicyId())
                 .isEqualTo("BASELINE_TOLERANT");
+        assertThat(scenarios.get("S3_MIXED_STEADY").parameters())
+                .containsEntry("workloadProfile", "ETL");
     }
 
     @Test

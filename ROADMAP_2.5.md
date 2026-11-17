@@ -50,14 +50,16 @@ M3 завершён: канонические маршруты `/api/v1/runs` и
 - Расширенные resource limits — реализованы глобальные, engine/scope и per-run ограничения с UI и метриками.
 - UI E2E — реализован отдельный Chromium workflow для общего каркаса, навигации, мониторинга,
   мобильного представления и legacy-redirect с сохранением screenshot/trace.
-- Длительные проверки в эталонном окружении.
+- Длительные проверки в эталонном окружении — реализованы повторяемые soak-окна, контроль drift,
+  полный evidence и ручной/reusable/opt-in scheduled workflow.
 
-M4 фиксирует OpenAPI 1.3, страницу `/quality-gates`, CLI `evo-snt 0.3.0` и GitHub Actions gate с
-сохраняемым JSON-доказательством. Подробности и правила выбора baseline:
+M4 завершён: зафиксированы OpenAPI 1.3, страница `/quality-gates`, CLI `evo-snt 0.4.0`, GitHub
+Actions quality gate и reference soak с сохраняемым evidence. Длительная серия применяет gate к
+каждому окну и сравнивает первую и последнюю треть по throughput, latency и error rate. Подробности
+эталонного запуска: [M4_SOAK_TESTS.md](M4_SOAK_TESTS.md). Политики и правила выбора baseline:
 [M4_PERFORMANCE_GATES.md](M4_PERFORMANCE_GATES.md). Расширенные лимиты и правила эксплуатации:
 [M4_RESOURCE_LIMITS.md](M4_RESOURCE_LIMITS.md). Браузерные E2E запускаются отдельным Maven-профилем
-`browser-e2e` и workflow `Browser E2E`. Следующий инкремент — длительные проверки в эталонном
-окружении.
+`browser-e2e` и workflow `Browser E2E`.
 
 Каждый milestone выпускается через release candidate после зелёных unit, integration,
 security и container smoke checks.

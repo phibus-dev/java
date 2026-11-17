@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
+import re
 import ssl
+from statistics import median
 import sys
 import time
 from typing import Any
@@ -15,9 +19,47 @@ from urllib import error, parse, request
 import uuid
 
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"}
 TEST_TYPES = ("s3", "clickhouse", "kafka")
+SOAK_EXIT_FAILED = 7
+SOAK_CONFIG_KEYS = {
+    "version", "scenarioId", "scope", "profileId", "agentIds", "name", "iterations",
+    "cooldownSeconds", "waitTimeoutSeconds", "pollIntervalSeconds", "policyId",
+    "baselineRunId", "idempotencyPrefix", "workloadOverrides", "qualityGateOverrides",
+    "driftThresholds",
+}
+SOAK_WORKLOAD_KEYS = {
+    "S3": {
+        "objectKey", "objectSizeMiB", "partSizeMiB", "parallelism", "objectCount",
+        "deleteAfterTest", "operation", "executionMode", "durationSeconds", "warmupSeconds",
+        "workloadProfile", "workloadWeights", "targetOperationsPerSecond", "operationThreads",
+    },
+    "CLICKHOUSE": {
+        "endpoint", "table", "operation", "concurrency", "batchSize", "rowCount",
+        "durationSeconds", "warmupSeconds", "payloadBytes", "queryCount", "autoCreateTable",
+    },
+    "KAFKA": {
+        "topic", "messageSizeBytes", "messageCount", "producerThreads", "acks",
+        "compressionType", "batchSize", "lingerMs", "enableIdempotence",
+        "targetMessagesPerSec", "maxInFlightMessages",
+    },
+}
+QUALITY_GATE_OVERRIDE_KEYS = {
+    "minOperationsPerSecond", "minThroughputMiBps", "maxP95LatencyMs", "maxP99LatencyMs",
+    "maxErrorRatePercent", "maxOperationsDropPercent", "maxThroughputDropPercent",
+    "maxP95IncreasePercent", "maxP99IncreasePercent", "minCompletedOperations",
+    "minParticipants",
+}
+DRIFT_THRESHOLD_DEFAULTS = {
+    "maxOperationsDropPercent": 20.0,
+    "maxThroughputDropPercent": 20.0,
+    "maxP95IncreasePercent": 25.0,
+    "maxErrorRatePercent": 1.0,
+}
+SENSITIVE_KEY = re.compile(
+    r"(?:password|secret|token|credential|authorization|privatekey|accesskey|apikey)", re.I)
+SAFE_IDEMPOTENCY_PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,119}")
 
 
 class ApiError(RuntimeError):
@@ -183,6 +225,15 @@ def build_parser() -> argparse.ArgumentParser:
     assertion.add_argument("--min-participants", type=int)
     assertion.add_argument("--json", action="store_true", dest="json_output")
 
+    soak = run_commands.add_parser(
+        "soak", help="Run repeated benchmark windows and verify long-duration stability")
+    soak.add_argument("--config", required=True, help="Path to a versioned soak JSON configuration")
+    soak.add_argument("--output-dir", default="soak-results",
+                      help="Directory for per-window evidence and the aggregate summary")
+    soak.add_argument("--force", action="store_true",
+                      help="Allow known evidence files in an existing directory to be overwritten")
+    soak.add_argument("--json", action="store_true", dest="json_output")
+
     benchmarks = commands.add_parser("benchmarks", help="Inspect reusable benchmark scenarios")
     benchmark_commands = benchmarks.add_subparsers(dest="benchmarks_command", required=True)
     benchmark_list = benchmark_commands.add_parser("list", help="List benchmark scenarios")
@@ -337,11 +388,7 @@ def runs_assert(client: ApiClient, args: argparse.Namespace) -> int:
         "minCompletedOperations": args.min_completed_operations,
         "minParticipants": args.min_participants,
     })
-    body = {"policyId": args.policy, "baselineRunId": baseline_id}
-    if overrides:
-        body["overrides"] = overrides
-    encoded = parse.quote(run_id, safe="")
-    result, _ = client.json("POST", f"/api/v1/run-history/{encoded}/quality-gate", compact(body))
+    result = evaluate_quality_gate(client, run_id, args.policy, baseline_id, overrides)
     if args.json_output:
         print_json(result)
     else:
@@ -352,6 +399,533 @@ def runs_assert(client: ApiClient, args: argparse.Namespace) -> int:
                       f"{criterion.get('operator')} {criterion.get('expected')} "
                       f"{criterion.get('unit', '')}".rstrip(), file=sys.stderr)
     return 0 if result.get("verdict") == "PASS" else 6
+
+
+def evaluate_quality_gate(client: ApiClient, run_id: str, policy: str,
+                          baseline_id: str | None, overrides: dict[str, Any]) -> Any:
+    body = {"policyId": policy, "baselineRunId": baseline_id}
+    if overrides:
+        body["overrides"] = overrides
+    encoded = parse.quote(run_id, safe="")
+    result, _ = client.json(
+        "POST", f"/api/v1/run-history/{encoded}/quality-gate", compact(body))
+    return result
+
+
+def runs_soak(client: ApiClient, args: argparse.Namespace) -> int:
+    supplied = load_soak_config(Path(args.config))
+    scenario_id = required_text(supplied.get("scenarioId"), "scenarioId")
+    scenario, _ = client.json(
+        "GET", "/api/v1/benchmark-scenarios/" + parse.quote(scenario_id, safe=""))
+    config = normalize_soak_config(supplied, scenario)
+    output_dir = prepare_soak_output(Path(args.output_dir), args.force)
+    write_json(output_dir / "resolved-config.json", public_soak_config(config, scenario))
+
+    started_at = utc_now()
+    windows: list[dict[str, Any]] = []
+    technical_error: dict[str, Any] | None = None
+    stop_after_window = False
+
+    for index in range(1, config["iterations"] + 1):
+        window_dir = output_dir / f"window-{index:03d}"
+        window_dir.mkdir(parents=True, exist_ok=True)
+        window: dict[str, Any] = {"index": index, "startedAt": utc_now()}
+        windows.append(window)
+        try:
+            request_body, request_path = soak_start_request(config)
+            idempotency_key = f"{config['idempotencyPrefix']}-{index:03d}"
+            accepted, headers = client.json(
+                "POST", request_path, request_body, {"Idempotency-Key": idempotency_key})
+            if not isinstance(accepted, dict):
+                raise ApiError(502, "INVALID_RESPONSE", "Run start response is not a JSON object")
+            run_id = canonical_uuid(str(accepted.get("runId", "")), "runId")
+            window.update({
+                "runId": run_id,
+                "idempotencyKey": idempotency_key,
+                "replayed": headers.get("Idempotency-Replayed", "false").lower() == "true",
+            })
+            write_json(window_dir / "start.json", accepted)
+
+            state, timed_out = wait_for_soak_terminal(
+                client, run_id, config["waitTimeoutSeconds"], config["pollIntervalSeconds"])
+            write_json(window_dir / "state.json", state)
+            window["status"] = str(state.get("status", "UNKNOWN"))
+            window["waitTimedOut"] = timed_out
+            if timed_out:
+                window["passed"] = False
+                stop_after_window = True
+            else:
+                encoded = parse.quote(run_id, safe="")
+                report = retry_json(client, f"/api/v1/run-history/{encoded}/export/json")
+                if not isinstance(report, dict):
+                    raise ApiError(502, "INVALID_RESPONSE", "Run export is not a JSON object")
+                write_json(window_dir / "report.json", report)
+                window["metrics"] = soak_metrics(report)
+
+                gate = evaluate_quality_gate(
+                    client, run_id, config["policyId"], config["baselineRunId"],
+                    config["qualityGateOverrides"])
+                if not isinstance(gate, dict):
+                    raise ApiError(502, "INVALID_RESPONSE", "Quality gate response is not a JSON object")
+                write_json(window_dir / "quality-gate.json", gate)
+                window["gateVerdict"] = str(gate.get("verdict", "UNKNOWN"))
+                window["passed"] = (window["status"] == "COMPLETED"
+                                    and window["gateVerdict"] == "PASS")
+        except ApiError as exc:
+            technical_error = {
+                "window": index,
+                "status": exc.status,
+                "code": exc.code,
+                "detail": exc.detail,
+                "requestId": exc.request_id,
+            }
+            window["technicalError"] = compact(technical_error)
+            window["passed"] = False
+            window["finishedAt"] = utc_now()
+            write_json(window_dir / "window.json", window)
+            summary = build_soak_summary(
+                config, scenario, windows, started_at, technical_error=technical_error)
+            write_soak_summary(output_dir, summary)
+            raise
+
+        window["finishedAt"] = utc_now()
+        write_json(window_dir / "window.json", window)
+        if stop_after_window:
+            break
+        if index < config["iterations"] and config["cooldownSeconds"] > 0:
+            time.sleep(config["cooldownSeconds"])
+
+    summary = build_soak_summary(config, scenario, windows, started_at, technical_error)
+    write_soak_summary(output_dir, summary)
+    if args.json_output:
+        print_json(summary)
+    else:
+        print(f"{summary['verdict']}\t{scenario.get('id')}\t"
+              f"{len(windows)}/{config['iterations']} windows\t{output_dir}")
+    return 0 if summary["verdict"] == "PASS" else SOAK_EXIT_FAILED
+
+
+def load_soak_config(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_json_constant)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"Invalid soak JSON configuration: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError("Soak configuration must be a JSON object")
+    reject_sensitive_keys(value)
+    unknown = sorted(set(value) - SOAK_CONFIG_KEYS)
+    if unknown:
+        raise ValueError("Unsupported soak configuration fields: " + ", ".join(unknown))
+    if type(value.get("version")) is not int or value["version"] != 1:
+        raise ValueError("Soak configuration version must be 1")
+    return value
+
+
+def normalize_soak_config(supplied: dict[str, Any], scenario: Any) -> dict[str, Any]:
+    if not isinstance(scenario, dict):
+        raise ApiError(502, "INVALID_RESPONSE", "Benchmark scenario is not a JSON object")
+    test_type = required_text(scenario.get("testType"), "scenario.testType").upper()
+    if test_type not in SOAK_WORKLOAD_KEYS:
+        raise ValueError(f"Unsupported benchmark test type: {test_type}")
+    scope = required_text(supplied.get("scope", "LOCAL"), "scope").upper()
+    if scope not in {"LOCAL", "DISTRIBUTED"}:
+        raise ValueError("scope must be LOCAL or DISTRIBUTED")
+    supported_scopes = {str(item).upper() for item in scenario.get("supportedScopes", [])}
+    if scope not in supported_scopes:
+        raise ValueError(f"Scenario {scenario.get('id')} does not support scope {scope}")
+
+    profile_id = canonical_uuid(required_text(supplied.get("profileId"), "profileId"), "profileId")
+    agent_ids = supplied.get("agentIds", [])
+    if not isinstance(agent_ids, list):
+        raise ValueError("agentIds must be an array")
+    normalized_agents = [canonical_uuid(item, "agentIds") for item in agent_ids]
+    if len(set(normalized_agents)) != len(normalized_agents):
+        raise ValueError("agentIds must not contain duplicate UUIDs")
+    if scope == "DISTRIBUTED" and not normalized_agents:
+        raise ValueError("agentIds must contain at least one UUID for DISTRIBUTED scope")
+    if scope == "LOCAL" and normalized_agents:
+        raise ValueError("agentIds must be empty for LOCAL scope")
+
+    scenario_parameters = scenario.get("parameters", {})
+    overrides = supplied.get("workloadOverrides", {})
+    if not isinstance(scenario_parameters, dict) or not isinstance(overrides, dict):
+        raise ValueError("Scenario parameters and workloadOverrides must be JSON objects")
+    allowed = SOAK_WORKLOAD_KEYS[test_type]
+    unsupported = sorted((set(scenario_parameters) | set(overrides)) - allowed)
+    if unsupported:
+        raise ValueError(f"Unsupported {test_type} workload fields: " + ", ".join(unsupported))
+    workload = dict(scenario_parameters)
+    workload.update(overrides)
+    reject_embedded_credentials(workload)
+
+    gate_overrides = supplied.get("qualityGateOverrides", {})
+    if not isinstance(gate_overrides, dict):
+        raise ValueError("qualityGateOverrides must be a JSON object")
+    unsupported_gate = sorted(set(gate_overrides) - QUALITY_GATE_OVERRIDE_KEYS)
+    if unsupported_gate:
+        raise ValueError("Unsupported quality gate override fields: " + ", ".join(unsupported_gate))
+    for key, value in gate_overrides.items():
+        if key in {"minCompletedOperations", "minParticipants"}:
+            require_integer(value, f"qualityGateOverrides.{key}", 0, 1_000_000_000)
+        else:
+            require_non_negative_number(value, f"qualityGateOverrides.{key}")
+
+    drift = supplied.get("driftThresholds", {})
+    if not isinstance(drift, dict):
+        raise ValueError("driftThresholds must be a JSON object")
+    unsupported_drift = sorted(set(drift) - set(DRIFT_THRESHOLD_DEFAULTS))
+    if unsupported_drift:
+        raise ValueError("Unsupported drift threshold fields: " + ", ".join(unsupported_drift))
+    drift_thresholds = dict(DRIFT_THRESHOLD_DEFAULTS)
+    for key, value in drift.items():
+        maximum = 100 if key != "maxP95IncreasePercent" else 1_000_000
+        drift_thresholds[key] = require_number(value, f"driftThresholds.{key}", 0, maximum)
+
+    iterations = require_integer(supplied.get("iterations", 6), "iterations", 3, 48)
+    cooldown = require_number(supplied.get("cooldownSeconds", 30), "cooldownSeconds", 0, 86400)
+    wait_timeout = require_number(
+        supplied.get("waitTimeoutSeconds", 3600), "waitTimeoutSeconds", 0.01, 604800)
+    poll_interval = require_number(
+        supplied.get("pollIntervalSeconds", 5), "pollIntervalSeconds", 0.01, 300)
+    prefix = required_text(supplied.get("idempotencyPrefix"), "idempotencyPrefix")
+    if not SAFE_IDEMPOTENCY_PREFIX.fullmatch(prefix):
+        raise ValueError("idempotencyPrefix must contain 1-120 letters, digits, dots, "
+                         "underscores, colons or hyphens")
+    policy_id = required_text(supplied.get("policyId", "SMOKE"), "policyId").upper()
+    baseline_id = (canonical_uuid(supplied["baselineRunId"], "baselineRunId")
+                   if supplied.get("baselineRunId") else None)
+    if policy_id.startswith("BASELINE_") and baseline_id is None:
+        raise ValueError(f"baselineRunId is required for policy {policy_id}")
+
+    return {
+        "scenarioId": required_text(scenario.get("id"), "scenario.id"),
+        "testType": test_type,
+        "scope": scope,
+        "profileId": profile_id,
+        "agentIds": normalized_agents,
+        "name": required_text(
+            supplied.get("name", f"reference-soak-{scenario.get('id', '').lower()}"), "name"),
+        "iterations": iterations,
+        "cooldownSeconds": cooldown,
+        "waitTimeoutSeconds": wait_timeout,
+        "pollIntervalSeconds": poll_interval,
+        "policyId": policy_id,
+        "baselineRunId": baseline_id,
+        "idempotencyPrefix": prefix,
+        "workload": workload,
+        "qualityGateOverrides": gate_overrides,
+        "driftThresholds": drift_thresholds,
+    }
+
+
+def soak_start_request(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    test_request = dict(config["workload"])
+    test_request["profileId"] = config["profileId"]
+    test_type = config["testType"].lower()
+    if config["scope"] == "LOCAL":
+        return test_request, f"/api/v1/runs/{test_type}"
+    return {
+        "name": config["name"],
+        "agentIds": config["agentIds"],
+        "testRequest": test_request,
+    }, f"/api/v1/runs/distributed/{test_type}"
+
+
+def wait_for_soak_terminal(client: ApiClient, run_id: str, timeout: float,
+                           interval: float) -> tuple[dict[str, Any], bool]:
+    deadline = time.monotonic() + timeout
+    last_state: dict[str, Any] = {"id": run_id, "status": "UNKNOWN"}
+    last_status = None
+    while True:
+        state = get_run_state(client, run_id)
+        if not isinstance(state, dict):
+            raise ApiError(502, "INVALID_RESPONSE", "Run state is not a JSON object")
+        last_state = state
+        status = str(state.get("status", "UNKNOWN"))
+        if status != last_status:
+            print(f"{run_id}: {status}", file=sys.stderr)
+            last_status = status
+        if status in TERMINAL_STATUSES:
+            return state, False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last_state, True
+        time.sleep(min(interval, remaining))
+
+
+def build_soak_summary(config: dict[str, Any], scenario: dict[str, Any],
+                       windows: list[dict[str, Any]], started_at: str,
+                       technical_error: dict[str, Any] | None = None) -> dict[str, Any]:
+    drift = calculate_soak_drift(windows, config["driftThresholds"])
+    all_windows_passed = (len(windows) == config["iterations"]
+                          and all(window.get("passed") is True for window in windows))
+    verdict = "ERROR" if technical_error else (
+        "PASS" if all_windows_passed and drift["verdict"] == "PASS" else "FAIL")
+    return compact({
+        "schemaVersion": 1,
+        "verdict": verdict,
+        "scenarioId": scenario.get("id"),
+        "scenarioName": scenario.get("name"),
+        "testType": config["testType"],
+        "scope": config["scope"],
+        "policyId": config["policyId"],
+        "baselineRunId": config["baselineRunId"],
+        "startedAt": started_at,
+        "finishedAt": utc_now(),
+        "expectedWindows": config["iterations"],
+        "executedWindows": len(windows),
+        "passedWindows": sum(1 for window in windows if window.get("passed") is True),
+        "technicalError": compact(technical_error) if technical_error else None,
+        "drift": drift,
+        "windows": windows,
+    })
+
+
+def calculate_soak_drift(windows: list[dict[str, Any]], thresholds: dict[str, float]) -> dict[str, Any]:
+    samples = [window["metrics"] for window in windows
+               if window.get("status") == "COMPLETED" and isinstance(window.get("metrics"), dict)]
+    criteria: list[dict[str, Any]] = []
+    enough = len(samples) >= 3
+    criteria.append(soak_criterion(
+        "completedMeasurementWindows", len(samples), ">=", 3, "windows", enough))
+    if not enough:
+        return {"verdict": "FAIL", "sampleWindows": len(samples), "criteria": criteria}
+
+    size = max(1, len(samples) // 3)
+    first = samples[:size]
+    last = samples[-size:]
+    first_ops = median(float(item.get("operationsPerSecond", 0) or 0) for item in first)
+    last_ops = median(float(item.get("operationsPerSecond", 0) or 0) for item in last)
+    ops_drop = percentage_drop(first_ops, last_ops)
+    criteria.append(soak_criterion(
+        "operationsDropPercent", ops_drop, "<=", thresholds["maxOperationsDropPercent"], "%",
+        first_ops > 0 and ops_drop <= thresholds["maxOperationsDropPercent"], first_ops, last_ops))
+
+    throughput_values = [float(item.get("throughputMiBps", 0) or 0) for item in samples]
+    if any(value > 0 for value in throughput_values):
+        first_mibps = median(float(item.get("throughputMiBps", 0) or 0) for item in first)
+        last_mibps = median(float(item.get("throughputMiBps", 0) or 0) for item in last)
+        mibps_drop = percentage_drop(first_mibps, last_mibps)
+        criteria.append(soak_criterion(
+            "throughputDropPercent", mibps_drop, "<=",
+            thresholds["maxThroughputDropPercent"], "%",
+            first_mibps > 0 and mibps_drop <= thresholds["maxThroughputDropPercent"],
+            first_mibps, last_mibps))
+
+    latency_values = [float(item.get("p95LatencyMs", 0) or 0) for item in samples]
+    if any(value > 0 for value in latency_values):
+        first_p95 = median(float(item.get("p95LatencyMs", 0) or 0) for item in first)
+        last_p95 = median(float(item.get("p95LatencyMs", 0) or 0) for item in last)
+        p95_increase = percentage_increase(first_p95, last_p95)
+        criteria.append(soak_criterion(
+            "p95IncreasePercent", p95_increase, "<=", thresholds["maxP95IncreasePercent"], "%",
+            first_p95 > 0 and p95_increase <= thresholds["maxP95IncreasePercent"],
+            first_p95, last_p95))
+
+    completed = sum(int(item.get("completedOperations", 0) or 0) for item in samples)
+    errors = sum(int(item.get("errors", 0) or 0) for item in samples)
+    total = completed + errors
+    error_rate = errors * 100.0 / total if total > 0 else 100.0
+    criteria.append(soak_criterion(
+        "aggregateErrorRatePercent", error_rate, "<=", thresholds["maxErrorRatePercent"], "%",
+        error_rate <= thresholds["maxErrorRatePercent"]))
+    return {
+        "verdict": "PASS" if all(item["passed"] for item in criteria) else "FAIL",
+        "sampleWindows": len(samples),
+        "comparisonWindowSize": size,
+        "criteria": criteria,
+    }
+
+
+def soak_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "operationsPerSecond": soak_metric_number(report, "operationsPerSecond"),
+        "throughputMiBps": soak_metric_number(report, "throughputMiBps"),
+        "p95LatencyMs": soak_metric_number(report, "p95LatencyMs"),
+        "p99LatencyMs": soak_metric_number(report, "p99LatencyMs"),
+        "completedOperations": soak_metric_integer(report, "completedOperations"),
+        "errors": soak_metric_integer(report, "errors"),
+    }
+
+
+def soak_metric_number(report: dict[str, Any], key: str) -> float:
+    try:
+        value = float(report.get(key, 0) or 0)
+    except (TypeError, ValueError) as exc:
+        raise ApiError(502, "INVALID_RESPONSE", f"Run export field {key} is not numeric") from exc
+    if not math.isfinite(value) or value < 0:
+        raise ApiError(502, "INVALID_RESPONSE", f"Run export field {key} is not non-negative")
+    return value
+
+
+def soak_metric_integer(report: dict[str, Any], key: str) -> int:
+    value = soak_metric_number(report, key)
+    if not value.is_integer():
+        raise ApiError(502, "INVALID_RESPONSE", f"Run export field {key} is not an integer")
+    return int(value)
+
+
+def soak_criterion(identifier: str, actual: float, operator: str, expected: float,
+                   unit: str, passed: bool, first: float | None = None,
+                   last: float | None = None) -> dict[str, Any]:
+    return compact({
+        "id": identifier,
+        "passed": passed,
+        "actual": round(actual, 3),
+        "operator": operator,
+        "expected": round(expected, 3),
+        "unit": unit,
+        "firstMedian": round(first, 3) if first is not None else None,
+        "lastMedian": round(last, 3) if last is not None else None,
+    })
+
+
+def percentage_drop(first: float, last: float) -> float:
+    if first <= 0:
+        return 0.0 if last > 0 else 100.0
+    return max(0.0, (first - last) * 100.0 / first)
+
+
+def percentage_increase(first: float, last: float) -> float:
+    if first <= 0:
+        return 0.0 if last <= 0 else 1_000_000_000.0
+    return max(0.0, (last - first) * 100.0 / first)
+
+
+def public_soak_config(config: dict[str, Any], scenario: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "scenario": scenario,
+        "scope": config["scope"],
+        "profileId": config["profileId"],
+        "agentIds": config["agentIds"],
+        "name": config["name"],
+        "iterations": config["iterations"],
+        "cooldownSeconds": config["cooldownSeconds"],
+        "waitTimeoutSeconds": config["waitTimeoutSeconds"],
+        "pollIntervalSeconds": config["pollIntervalSeconds"],
+        "policyId": config["policyId"],
+        "baselineRunId": config["baselineRunId"],
+        "idempotencyPrefix": config["idempotencyPrefix"],
+        "workload": config["workload"],
+        "qualityGateOverrides": config["qualityGateOverrides"],
+        "driftThresholds": config["driftThresholds"],
+    }
+
+
+def prepare_soak_output(path: Path, force: bool) -> Path:
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Soak output path is not a directory: {path}")
+    if path.exists() and any(path.iterdir()) and not force:
+        raise ValueError(f"Soak output directory is not empty: {path}; use --force to overwrite evidence")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_soak_summary(output_dir: Path, summary: dict[str, Any]) -> None:
+    write_json(output_dir / "soak-summary.json", summary)
+    (output_dir / "soak-summary.md").write_text(soak_markdown(summary), encoding="utf-8")
+
+
+def soak_markdown(summary: dict[str, Any]) -> str:
+    lines = [
+        f"# Reference soak: {summary['verdict']}", "",
+        f"- Scenario: `{summary.get('scenarioId')}` ({summary.get('testType')} / {summary.get('scope')})",
+        f"- Quality gate: `{summary.get('policyId')}`",
+        f"- Windows: {summary.get('passedWindows')}/{summary.get('expectedWindows')} passed",
+        f"- Drift: **{summary.get('drift', {}).get('verdict', 'UNKNOWN')}**", "",
+        "| Window | Run | Status | Gate | ops/s | MiB/s | p95 ms | Errors |",
+        "|---:|---|---|---|---:|---:|---:|---:|",
+    ]
+    for window in summary.get("windows", []):
+        metrics = window.get("metrics", {})
+        lines.append(
+            f"| {window.get('index')} | `{window.get('runId', '—')}` | "
+            f"{window.get('status', 'ERROR')} | {window.get('gateVerdict', '—')} | "
+            f"{format_metric(metrics.get('operationsPerSecond'))} | "
+            f"{format_metric(metrics.get('throughputMiBps'))} | "
+            f"{format_metric(metrics.get('p95LatencyMs'))} | "
+            f"{metrics.get('errors', '—')} |")
+    lines.extend(["", "## Drift criteria", "",
+                  "| Criterion | Result | Actual | Required |",
+                  "|---|---|---:|---:|"])
+    for criterion in summary.get("drift", {}).get("criteria", []):
+        result = "PASS" if criterion.get("passed") else "FAIL"
+        unit = criterion.get("unit", "")
+        lines.append(f"| `{criterion.get('id')}` | {result} | {criterion.get('actual')} {unit} | "
+                     f"{criterion.get('operator')} {criterion.get('expected')} {unit} |")
+    error = summary.get("technicalError")
+    if error:
+        lines.extend(["", "## Technical error", "",
+                      f"`{error.get('code')}`: {error.get('detail')}"])
+    return "\n".join(lines) + "\n"
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def reject_sensitive_keys(value: Any, parent: str = "configuration") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = re.sub(r"[^A-Za-z0-9]", "", str(key))
+            if SENSITIVE_KEY.search(normalized):
+                raise ValueError(f"Sensitive field is not allowed in soak configuration: {parent}.{key}")
+            reject_sensitive_keys(item, f"{parent}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            reject_sensitive_keys(item, f"{parent}[{index}]")
+
+
+def reject_embedded_credentials(workload: dict[str, Any]) -> None:
+    endpoint = workload.get("endpoint")
+    if isinstance(endpoint, str) and endpoint.strip():
+        parsed = parse.urlparse(endpoint)
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("Credentials must not be embedded in workloadOverrides.endpoint")
+        for key, _value in parse.parse_qsl(parsed.query, keep_blank_values=True):
+            if SENSITIVE_KEY.search(re.sub(r"[^A-Za-z0-9]", "", key)):
+                raise ValueError("Credential-like query parameters are not allowed in "
+                                 "workloadOverrides.endpoint")
+
+
+def reject_json_constant(value: str) -> Any:
+    raise ValueError(f"Non-finite JSON number is not allowed: {value}")
+
+
+def required_text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-blank string")
+    return value.strip()
+
+
+def require_non_negative_number(value: Any, name: str) -> float:
+    return require_number(value, name, 0, 1_000_000_000)
+
+
+def require_number(value: Any, name: str, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a number")
+    result = float(value)
+    if not math.isfinite(result) or result < minimum or result > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return result
+
+
+def require_integer(value: Any, name: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    if value < minimum or value > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def format_metric(value: Any) -> str:
+    return "—" if value is None else f"{float(value):.3f}"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def benchmarks_list(client: ApiClient, args: argparse.Namespace) -> int:
@@ -454,6 +1028,8 @@ def dispatch(args: argparse.Namespace, client: ApiClient) -> int:
         return runs_export(client, args)
     if args.command == "runs" and args.runs_command == "assert":
         return runs_assert(client, args)
+    if args.command == "runs" and args.runs_command == "soak":
+        return runs_soak(client, args)
     if args.command == "benchmarks" and args.benchmarks_command == "list":
         return benchmarks_list(client, args)
     if args.command == "benchmarks" and args.benchmarks_command == "show":

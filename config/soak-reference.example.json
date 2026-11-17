@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "scenarioId": "S3_MIXED_STEADY",
+  "scope": "LOCAL",
+  "profileId": "11111111-2222-4333-8444-555555555555",
+  "agentIds": [],
+  "name": "reference-s3-mixed-soak",
+  "iterations": 6,
+  "cooldownSeconds": 30,
+  "waitTimeoutSeconds": 1800,
+  "pollIntervalSeconds": 5,
+  "policyId": "SMOKE",
+  "baselineRunId": null,
+  "idempotencyPrefix": "reference-soak-example",
+  "workloadOverrides": {
+    "objectKey": "performance-test/reference-soak.bin"
+  },
+  "qualityGateOverrides": {
+    "maxErrorRatePercent": 1
+  },
+  "driftThresholds": {
+    "maxOperationsDropPercent": 20,
+    "maxThroughputDropPercent": 20,
+    "maxP95IncreasePercent": 25,
+    "maxErrorRatePercent": 1
+  }
+}
