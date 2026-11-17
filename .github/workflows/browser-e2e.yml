@@ -1,0 +1,58 @@
+name: Browser E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - 'release/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      S3_PERF_BOOTSTRAP_FILE: ${{ runner.temp }}/s3perf-browser-e2e/bootstrap-settings.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Install Chromium and system dependencies
+        run: >-
+          mvn -B -Pbrowser-e2e test-compile exec:java
+          -Dexec.mainClass=com.microsoft.playwright.CLI
+          -Dexec.classpathScope=test
+          -Dexec.args="install --with-deps chromium"
+
+      - name: Run browser E2E tests
+        run: mvn -B -Pbrowser-e2e test
+
+      - name: Upload screenshots, traces and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-e2e-${{ github.run_id }}
+          path: |
+            target/playwright
+            target/surefire-reports
+          if-no-files-found: warn
+          retention-days: 14

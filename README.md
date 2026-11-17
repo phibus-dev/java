@@ -88,6 +88,25 @@ java -jar evo-snt-s3-2.4.0.jar
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
 
+## Браузерные E2E-тесты
+
+Профиль `browser-e2e` запускает приложение на случайном порту и проверяет общий каркас UI,
+навигацию, Health Dashboard, мобильное представление Quality gates и legacy-redirect. Тесты не
+требуют настроенной PostgreSQL: используйте отдельный несуществующий bootstrap-файл.
+
+```bash
+export S3_PERF_BOOTSTRAP_FILE=target/browser-e2e-bootstrap.json
+mvn -B -Pbrowser-e2e test-compile exec:java \
+  -Dexec.mainClass=com.microsoft.playwright.CLI \
+  -Dexec.classpathScope=test \
+  -Dexec.args="install --with-deps chromium"
+mvn -B -Pbrowser-e2e test
+```
+
+Screenshot и Playwright trace каждого сценария сохраняются в `target/playwright`. Отдельный
+workflow `Browser E2E` выполняет тот же набор для pull request и веток `main`/`release/**`, а
+артефакты сохраняет даже при падении теста.
+
 ## Основные страницы
 
 ```text
