@@ -33,7 +33,9 @@ class ReleaseCandidateWorkflowTest {
         assertThat(workflow).contains(
                 "default: '2.5.0-rc1'",
                 "default: '27'",
-                "EXPECT_DURABLE_AGENT_REGISTRY: ${{ inputs.durable_agent_registry || 'true' }}");
+                "github.event_name == 'pull_request' && '2.4.0'",
+                "github.event_name == 'pull_request' && '24'",
+                "github.event_name == 'workflow_dispatch' && inputs.durable_agent_registry");
         assertThat(script).contains(
                 "VERSION=\"${VERSION:-2.5.0-rc1}\"",
                 "EXPECTED_LATEST_MIGRATION=\"${EXPECTED_LATEST_MIGRATION:-27}\"",

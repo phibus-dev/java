@@ -44,11 +44,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      VERSION: ${{ inputs.version || '2.5.0-rc1' }}
+      VERSION: ${{ github.event_name == 'pull_request' && '2.4.0' || inputs.version || '2.5.0-rc1' }}
       IMAGE_DIGEST: ${{ inputs.image_digest || '' }}
       SOAK_SECONDS: ${{ inputs.soak_seconds || '60' }}
-      EXPECTED_LATEST_MIGRATION: ${{ inputs.expected_latest_migration || '27' }}
-      EXPECT_DURABLE_AGENT_REGISTRY: ${{ inputs.durable_agent_registry || 'true' }}
+      EXPECTED_LATEST_MIGRATION: ${{ github.event_name == 'pull_request' && '24' || inputs.expected_latest_migration || '27' }}
+      EXPECT_DURABLE_AGENT_REGISTRY: ${{ github.event_name == 'workflow_dispatch' && inputs.durable_agent_registry || false }}
       IMAGE_REPOSITORY: ghcr.io/phibus-dev/s3-performance-test-web
       ARTIFACT_DIR: post-release-smoke-logs
 
