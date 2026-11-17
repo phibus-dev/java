@@ -100,7 +100,17 @@ idempotency keys, параметры нагрузки, replay/request ID и ди
 `/var/lib/evo-snt-reference-soak/private/<UTC timestamp>`, а разрешённая к передаче сводка — в
 `/var/lib/evo-snt-reference-soak/public/<UTC timestamp>`. Автоматической отправки в GitHub нет.
 
-Разверните уже проверенный пакет приложения через разрешённый внутренний канал и выполните:
+Передайте `evo-snt-offline-soak-<version>.tar.gz` во внутренний контур через разрешённый канал,
+сверьте SHA-256 и разверните его в `/opt/evo-snt`:
+
+```bash
+SOAK_PACKAGE=/secure/source/evo-snt-offline-soak-2.5.0-rc1.tar.gz
+sudo install -d -o root -g root -m 0755 /opt/evo-snt
+sudo tar -xzf "$SOAK_PACKAGE" \
+  --strip-components=1 -C /opt/evo-snt
+```
+
+Затем выполните:
 
 ```bash
 sudo useradd --system --home-dir /var/lib/evo-snt-reference-soak \
