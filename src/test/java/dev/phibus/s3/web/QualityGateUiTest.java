@@ -12,9 +12,11 @@ class QualityGateUiTest {
     void pageUsesSharedShellAndDocumentsAutomationContract() throws IOException {
         String page = Files.readString(Path.of("src/main/resources/templates/quality-gates.html"));
         String layout = Files.readString(Path.of("src/main/resources/templates/fragments/layout.html"));
+        String commonUi = Files.readString(Path.of("src/main/resources/static/app-ui.js"));
 
         assertThat(page).contains("primaryNav(active='quality')", "th:each=\"policy : ${policies}\"",
                 "th:each=\"scenario : ${scenarios}\"", "evo-snt runs assert", "PASS", "FAIL");
         assertThat(layout).contains("href=\"/quality-gates\"", "active == 'quality'");
+        assertThat(commonUi).contains("'/quality-gates': [['Quality gates']]");
     }
 }

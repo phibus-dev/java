@@ -33,6 +33,7 @@
       '/kafka/m4': [['Kafka', '/kafka'], ['Failover / Resilience']],
       '/settings/kafka-profiles': [['Kafka', '/kafka'], ['Профили']],
       '/distributed-tests': [['Распределённые тесты']],
+      '/quality-gates': [['Quality gates']],
       '/agents': [['Агенты']],
       '/monitoring': [['Мониторинг']],
       '/settings': [['Настройки']],

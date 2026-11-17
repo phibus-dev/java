@@ -43,6 +43,6 @@ class HistoryPaginationUiTest {
     @Test
     void commonUiScriptIsCacheBustedInSharedLayout() throws IOException {
         String layout = Files.readString(Path.of("src/main/resources/templates/fragments/layout.html"));
-        assertThat(layout).contains("/app-ui.js?v=20261109.1");
+        assertThat(layout).contains("/app-ui.js?v=20261117.1");
     }
 }
