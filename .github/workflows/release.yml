@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, for example v2.4.0'
+        description: 'Release tag, for example v2.5.0-rc1'
         required: true
-        default: 'v2.4.0'
+        default: 'v2.5.0-rc1'
   push:
     tags:
       - 'v*'
@@ -70,7 +70,19 @@ jobs:
           cp target/classes/META-INF/sbom/application.cdx.json "dist/evo-snt-s3-${VERSION}-sbom.cdx.json"
           cp bin/evo-snt dist/evo-snt
           cp README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md dist/
-          cd dist; sha256sum *.jar *.json evo-snt README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md > SHA256SUMS
+          BUNDLE_NAME="evo-snt-offline-soak-${VERSION}"
+          BUNDLE_ROOT="dist/${BUNDLE_NAME}"
+          install -D -m 0755 bin/evo-snt "$BUNDLE_ROOT/bin/evo-snt"
+          install -D -m 0755 scripts/reference-soak-local.sh "$BUNDLE_ROOT/scripts/reference-soak-local.sh"
+          install -D -m 0644 deploy/systemd/evo-snt-reference-soak.service "$BUNDLE_ROOT/deploy/systemd/evo-snt-reference-soak.service"
+          install -D -m 0644 deploy/systemd/evo-snt-reference-soak.timer "$BUNDLE_ROOT/deploy/systemd/evo-snt-reference-soak.timer"
+          install -D -m 0644 config/soak-reference.example.json "$BUNDLE_ROOT/config/soak-reference.example.json"
+          install -D -m 0644 config/reference-soak.env.example "$BUNDLE_ROOT/config/reference-soak.env.example"
+          install -D -m 0644 M4_SOAK_TESTS.md "$BUNDLE_ROOT/M4_SOAK_TESTS.md"
+          cd dist
+          tar --owner=0 --group=0 --numeric-owner -czf "${BUNDLE_NAME}.tar.gz" "$BUNDLE_NAME"
+          rm -r "$BUNDLE_NAME"
+          sha256sum *.jar *.json *.tar.gz evo-snt README.md "$RELEASE_NOTES" "$UPGRADE_GUIDE" KAFKA_M3_ACCEPTANCE.md KAFKA_M4_ACCEPTANCE.md > SHA256SUMS
       - name: Upload release assets to Actions
         uses: actions/upload-artifact@v7
         with:
@@ -121,6 +133,7 @@ jobs:
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-sources.jar
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-javadoc.jar
             dist/evo-snt-s3-${{ steps.version.outputs.project }}-sbom.cdx.json
+            dist/evo-snt-offline-soak-${{ steps.version.outputs.project }}.tar.gz
             dist/evo-snt
             dist/SHA256SUMS
             dist/README.md

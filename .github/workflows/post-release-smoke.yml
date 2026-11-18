@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable release version without the v prefix
+        description: Release version without the v prefix
         required: true
-        default: '2.4.0'
+        default: '2.5.0-rc1'
       image_digest:
         description: Optional immutable sha256 digest
         required: false
@@ -18,12 +18,12 @@ on:
       expected_latest_migration:
         description: Expected latest Flyway migration number
         required: true
-        default: '24'
+        default: '27'
       durable_agent_registry:
         description: Require Agent identity to survive Coordinator restart
         required: true
         type: boolean
-        default: false
+        default: true
   pull_request:
     branches:
       - main
@@ -44,11 +44,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      VERSION: ${{ inputs.version || '2.4.0' }}
+      VERSION: ${{ github.event_name == 'pull_request' && '2.4.0' || inputs.version || '2.5.0-rc1' }}
       IMAGE_DIGEST: ${{ inputs.image_digest || '' }}
       SOAK_SECONDS: ${{ inputs.soak_seconds || '60' }}
-      EXPECTED_LATEST_MIGRATION: ${{ inputs.expected_latest_migration || '24' }}
-      EXPECT_DURABLE_AGENT_REGISTRY: ${{ inputs.durable_agent_registry || 'false' }}
+      EXPECTED_LATEST_MIGRATION: ${{ github.event_name == 'pull_request' && '24' || inputs.expected_latest_migration || '27' }}
+      EXPECT_DURABLE_AGENT_REGISTRY: ${{ github.event_name == 'workflow_dispatch' && inputs.durable_agent_registry || false }}
       IMAGE_REPOSITORY: ghcr.io/phibus-dev/s3-performance-test-web
       ARTIFACT_DIR: post-release-smoke-logs
 
