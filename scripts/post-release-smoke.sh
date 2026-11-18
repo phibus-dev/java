@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="${VERSION:-2.5.0-rc1}"
+VERSION="${VERSION:-2.5.0-rc2}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/phibus-dev/s3-performance-test-web}"
 IMAGE_DIGEST="${IMAGE_DIGEST:-}"
 SOAK_SECONDS="${SOAK_SECONDS:-60}"
@@ -120,6 +120,12 @@ agent_is_online() {
 wait_for_agent() {
   local deadline=$((SECONDS + 120))
   until agent_is_online; do
+    if docker inspect "$AGENT_CONTAINER" >/dev/null 2>&1 \
+        && [[ "$(docker inspect --format '{{.State.Running}}' "$AGENT_CONTAINER")" != "true" ]]; then
+      echo "Agent container stopped before registering as ONLINE" >&2
+      docker logs "$AGENT_CONTAINER" >&2 || true
+      return 1
+    fi
     if (( SECONDS >= deadline )); then
       echo "Agent did not register as ONLINE with version $VERSION" >&2
       return 1
