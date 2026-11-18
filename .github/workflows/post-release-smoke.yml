@@ -6,7 +6,7 @@ on:
       version:
         description: Release version without the v prefix
         required: true
-        default: '2.5.0-rc1'
+        default: '2.5.0-rc2'
       image_digest:
         description: Optional immutable sha256 digest
         required: false
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      VERSION: ${{ github.event_name == 'pull_request' && '2.4.0' || inputs.version || '2.5.0-rc1' }}
+      VERSION: ${{ github.event_name == 'pull_request' && '2.4.0' || inputs.version || '2.5.0-rc2' }}
       IMAGE_DIGEST: ${{ inputs.image_digest || '' }}
       SOAK_SECONDS: ${{ inputs.soak_seconds || '60' }}
       EXPECTED_LATEST_MIGRATION: ${{ github.event_name == 'pull_request' && '24' || inputs.expected_latest_migration || '27' }}

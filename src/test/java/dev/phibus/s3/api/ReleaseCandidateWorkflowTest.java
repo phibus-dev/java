@@ -13,7 +13,7 @@ class ReleaseCandidateWorkflowTest {
         String workflow = Files.readString(Path.of(".github/workflows/release.yml"));
 
         assertThat(workflow).contains(
-                "default: 'v2.5.0-rc1'",
+                "default: 'v2.5.0-rc2'",
                 "BUNDLE_NAME=\"evo-snt-offline-soak-${VERSION}\"",
                 "\"${BUNDLE_NAME}.tar.gz\"",
                 "scripts/reference-soak-local.sh",
@@ -31,13 +31,13 @@ class ReleaseCandidateWorkflowTest {
         String script = Files.readString(Path.of("scripts/post-release-smoke.sh"));
 
         assertThat(workflow).contains(
-                "default: '2.5.0-rc1'",
+                "default: '2.5.0-rc2'",
                 "default: '27'",
                 "github.event_name == 'pull_request' && '2.4.0'",
                 "github.event_name == 'pull_request' && '24'",
                 "github.event_name == 'workflow_dispatch' && inputs.durable_agent_registry");
         assertThat(script).contains(
-                "VERSION=\"${VERSION:-2.5.0-rc1}\"",
+                "VERSION=\"${VERSION:-2.5.0-rc2}\"",
                 "EXPECTED_LATEST_MIGRATION=\"${EXPECTED_LATEST_MIGRATION:-27}\"",
                 "EXPECT_DURABLE_AGENT_REGISTRY=\"${EXPECT_DURABLE_AGENT_REGISTRY:-true}\"");
     }

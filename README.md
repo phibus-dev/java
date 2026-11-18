@@ -2,12 +2,12 @@
 
 Java 21 / Spring Boot платформа для функционального, нагрузочного, распределённого, регрессионного и отказоустойчивого тестирования S3-совместимых хранилищ, ClickHouse и Kafka.
 
-> **Текущая версия:** `2.5.0-rc1`<br>
+> **Текущая версия:** `2.5.0-rc2`<br>
 > **Статус:** Release Candidate для эталонного soak-тестирования<br>
-> **Релизный тег:** `v2.5.0-rc1`<br>
+> **Релизный тег:** `v2.5.0-rc2`<br>
 > **Последний стабильный релиз:** `2.4.0`
 
-## Что нового в 2.5.0-rc1
+## Что нового в 2.5.0-rc2
 
 - реестр Agent и распределённые прогоны сохраняются в PostgreSQL и восстанавливаются после рестарта Coordinator;
 - унифицированы lifecycle, история, фильтры и повторный запуск локальных/распределённых S3, ClickHouse и Kafka-тестов;
@@ -16,6 +16,7 @@ Java 21 / Spring Boot платформа для функционального, 
 - quality gates формально проверяют throughput, latency, error rate и сравнение с baseline;
 - reference soak контролирует долгосрочный drift и поддерживает автономный systemd timer без доступа к GitHub;
 - полный soak evidence остаётся внутри контура, а отдельная сводка формируется по белому списку без URL, UUID профилей/запусков и диагностических сообщений.
+- исправлен запуск в режиме Agent: coordinator-only сервис Run API больше не создаётся в Agent-контексте; добавлен регрессионный тест полного старта Agent.
 
 ## Возможности
 
@@ -82,7 +83,7 @@ PostgreSQL, Vault, Keycloak, S3, ClickHouse и Kafka являются внешн
 ```bash
 export S3_PERF_BOOTSTRAP_FILE=/opt/s3perf/config/bootstrap-settings.json
 export S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret'
-java -jar evo-snt-s3-2.5.0-rc1.jar
+java -jar evo-snt-s3-2.5.0-rc2.jar
 ```
 
 Откройте `http://localhost:8080/settings`. После первого сохранения PostgreSQL-настроек перезапустите приложение.
@@ -280,10 +281,10 @@ docker run --rm -p 8080:8080 \
   -e S3_PERF_BOOTSTRAP_KEY='replace-with-long-random-secret' \
   -e S3_PERF_BOOTSTRAP_FILE=/app/config/bootstrap-settings.json \
   -v "$PWD/config:/app/config" \
-  ghcr.io/phibus-dev/s3-performance-test-web:2.5.0-rc1
+  ghcr.io/phibus-dev/s3-performance-test-web:2.5.0-rc2
 ```
 
-Для проверки RC используйте фиксированный тег `2.5.0-rc1`. Для production остаётся рекомендован
+Для проверки RC используйте фиксированный тег `2.5.0-rc2`. Для production остаётся рекомендован
 стабильный тег `2.4.0`; prerelease не обновляет теги `2.5`, `2.4` и `latest`.
 
 ## ClickHouse
@@ -371,23 +372,23 @@ Prometheus экспортирует `s3perf_runtime_*` и `hikaricp_*`. Акту
 
 ```bash
 mvn clean verify
-java -jar target/s3-multipart-uploader-2.5.0-rc1.jar
+java -jar target/s3-multipart-uploader-2.5.0-rc2.jar
 ```
 
 Интеграционные тесты используют Testcontainers и требуют доступного Docker daemon.
 
 ## Обновление с 2.4.0
 
-См. `UPGRADE_2.5.0-rc1.md`. При старте Coordinator применяет Flyway V25–V27 для durable Agent,
+См. `UPGRADE_2.5.0-rc2.md`. При старте Coordinator применяет Flyway V25–V27 для durable Agent,
 распределённых запусков и API idempotency. До обновления сохраните bootstrap-файл и резервную копию
 PostgreSQL; Coordinator и все Agent обновляйте одновременно.
 
 ## Релиз
 
 ```bash
-gh workflow run release.yml --ref main -f version=v2.5.0-rc1
+gh workflow run release.yml --ref main -f version=v2.5.0-rc2
 ```
 
 Release workflow публикует executable JAR, sources, Javadoc, CycloneDX SBOM, SHA256SUMS, README,
-release notes, upgrade guide, Docker image `2.5.0-rc1` и автономный пакет
-`evo-snt-offline-soak-2.5.0-rc1.tar.gz`. Stable-теги образа при выпуске RC не изменяются.
+release notes, upgrade guide, Docker image `2.5.0-rc2` и автономный пакет
+`evo-snt-offline-soak-2.5.0-rc2.tar.gz`. Stable-теги образа при выпуске RC не изменяются.
