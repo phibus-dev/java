@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.phibus.s3.api.IdempotentAutomationRunService;
 import dev.phibus.s3.distributed.AgentRuntimeService;
+import dev.phibus.s3.quality.RunQualityGateService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,5 +27,6 @@ class AgentApplicationStartupTest {
     void applicationContextStartsWithOnlyAgentRuntimeServices() {
         assertThat(context.getBeansOfType(AgentRuntimeService.class)).hasSize(1);
         assertThat(context.getBeansOfType(IdempotentAutomationRunService.class)).isEmpty();
+        assertThat(context.getBeansOfType(RunQualityGateService.class)).isEmpty();
     }
 }
