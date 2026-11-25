@@ -7,7 +7,7 @@
     <groupId>dev.phibus</groupId><artifactId>s3-multipart-uploader</artifactId><version>2.5.0-rc2</version><name>ЭВО.СНТ S3</name>
     <properties>
         <java.version>21</java.version>
-        <aws.sdk.version>2.57.11</aws.sdk.version>
+        <aws.sdk.version>2.59.7</aws.sdk.version>
         <clickhouse.jdbc.version>0.9.8</clickhouse.jdbc.version>
         <kafka.clients.version>4.4.0</kafka.clients.version>
         <pdfbox.version>3.0.8</pdfbox.version>
